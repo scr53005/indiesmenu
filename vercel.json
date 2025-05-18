@@ -1,0 +1,5 @@
+{
+    "env": {
+      "PG_CONNECTION_STRING": "postgres://hafsql_public:hafsql_public@hafsql-sql.mahdiyari.info:5432/haf_block_log"
+    }
+  }
