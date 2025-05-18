@@ -5,7 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 
 interface Transfer {
   id: string;
-  from_account?: string; // Optional, added for display
+  from_account: string; // Optional, added for display
   symbol: string;
   amount: string;
   memo: string;
@@ -14,13 +14,13 @@ interface Transfer {
 
 interface PollResponse {
   transfers: Transfer[];
-  latestId: number;
+  latestId: string;
   error?: string;
 }
 
 export default function Home() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [lastId, setLastId] = useState(0);
+  const [lastId, setLastId] = useState('0');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,18 +28,23 @@ export default function Home() {
       try {
         const res = await fetch(`/api/poll-hbd?lastId=${lastId}`);
         const data: PollResponse = await res.json();
-        if (res.ok && data.transfers?.length) {
-          setTransfers(prev => [...data.transfers, ...prev].slice(0, 50)); // Limit to 50 transfers;
-          setLastId(data.latestId);
-          data.transfers.forEach(tx => {
-            toast.info(
-              `New HBD Transfer from ${tx.from_account || 'unknown'}: ${tx.amount} ${tx.symbol} (Memo: ${tx.memo})`,
-              {
-                autoClose: 5000,
-                className: 'flash-toast',
-              }
-            );
-          });
+        if (res.ok) {
+          if (data.transfers?.length) {
+            setTransfers(data.transfers);
+            setLastId(data.latestId);
+            data.transfers.forEach(tx => {
+              toast.info(
+               `New HBD Transfer from ${tx.from_account || 'unknown'}: ${tx.amount} ${tx.symbol} (Memo: ${tx.memo})`,
+               {
+                  autoClose: 5000,
+                  className: 'flash-toast',
+               }
+              );
+            });
+          }
+        } else {
+          //const error = data.error || 'Failed to fetch transfers';
+          toast.error(`Poll error: ${data.error}`);
         }
       } catch (error) {
         console.error('Poll error:', error);
@@ -53,14 +58,24 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [lastId]);
 
-  const handleFulfill = (id: string) => {
-    setTransfers(prev => {
-      const fulfilled = prev.find(tx => tx.id === id);
-      if (fulfilled) {
-        localStorage.setItem(`archive_${id}`, JSON.stringify(fulfilled));
+  const handleFulfill = async (id: string) => {
+    try {
+      const res = await fetch('/api/fulfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }), // Send id as string
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTransfers(prev => prev.filter(tx => tx.id !== id));
+        toast.success('Transfer fulfilled');
+      } else {
+        toast.error(`Fulfill error: ${data.error}`);
       }
-      return prev.filter(tx => tx.id !== id);
-    });
+    } catch (error) {
+      console.error('Fulfill error:', error);
+      toast.error('Failed to fulfill transfer');
+    }
   };
 
   return (
@@ -70,13 +85,13 @@ export default function Home() {
       {loading ? (
         <p>Loading...</p>
       ) : transfers.length === 0 ? (
-        <p>No transfers found.</p>
+        <p>No unfulfilled transfers found.</p>
       ) : (
         <ul>
           {transfers.map(tx => (
-            <li key={tx.id}>
+            <li key={tx.id.toString()}> {/* Convert to string for React key */}
               <p>
-                <strong>From:</strong> {tx.from_account || 'unknown'}
+                <strong>From:</strong> {tx.from_account}
               </p>
               <p>
                 <strong>Amount:</strong> {tx.amount} {tx.symbol}
@@ -88,7 +103,7 @@ export default function Home() {
                   : tx.parsedMemo}
               </p>
               <p>
-                <strong>Transfer ID:</strong> {tx.id}
+                <strong>Transfer ID:</strong> {tx.id.toString()}
               </p>
               <button onClick={() => handleFulfill(tx.id)}>Fulfill</button>
             </li>
@@ -109,6 +124,7 @@ export default function Home() {
           border: 1px solid #ddd;
           padding: 10px;
           margin-bottom: 10px;
+          border-radius: 5px;
         }
         button {
           background: #0070f3;
@@ -116,6 +132,7 @@ export default function Home() {
           border: none;
           padding: 5px 10px;
           cursor: pointer;
+          border-radius: 3px;
         }
         button:hover {
           background: #005bb5;
