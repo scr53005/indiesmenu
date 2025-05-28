@@ -6,8 +6,8 @@ import 'react-toastify/dist/ReactToastify.css';
 interface Transfer {
   id: string;
   from_account: string; // Optional, added for display
-  symbol: string;
   amount: string;
+  symbol: string;
   memo: string;
   parsedMemo: string | object;
 }
@@ -22,22 +22,44 @@ export default function Home() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [lastId, setLastId] = useState('0');
   const [loading, setLoading] = useState(true);
+  const [seenTransferIds, setSeenTransferIds] = useState<Set<string>>(new Set()); // Track seen IDs
 
   useEffect(() => {
+    let isPolling = false; // Prevent overlapping polls
     const pollHbd = async () => {
+      if (isPolling) return; // Skip if already polling
+      isPolling = true;
+
       try {
         const res = await fetch(`/api/poll-hbd?lastId=${lastId}`);
         const data: PollResponse = await res.json();
         if (res.ok) {
           if (data.transfers?.length) {
+            // Use local Set to track IDs for this poll
+            const currentSeenIds = new Set(seenTransferIds);
+            const newTransfers = data.transfers.filter(tx => !currentSeenIds.has(tx.id));
+            // Identify new transfers
+            // const newTransfers = data.transfers.filter(tx => !seenTransferIds.has(tx.id));
+
+            // Update seen IDs
+            // const updatedSeenIds = new Set(seenTransferIds);
+            data.transfers.forEach(tx => currentSeenIds.add(tx.id));
+
+            // setSeenTransferIds(updatedSeenIds);
+
+            // Update state                        
             setTransfers(data.transfers);
             setLastId(data.latestId);
-            data.transfers.forEach(tx => {
+            setSeenTransferIds(currentSeenIds);
+
+            // Show toasts only for new transfers
+            newTransfers.forEach(tx => {
               toast.info(
                `New HBD Transfer from ${tx.from_account || 'unknown'}: ${tx.amount} ${tx.symbol} (Memo: ${tx.memo})`,
                {
                   autoClose: 5000,
                   className: 'flash-toast',
+                  toastId: tx.id, // Unique toast ID to prevent duplicates
                }
               );
             });
@@ -49,13 +71,21 @@ export default function Home() {
       } catch (error) {
         console.error('Poll error:', error);
         toast.error('Failed to fetch transfers');
+      } finally {
+        isPolling = false;
       }
     };
 
-    const interval = setInterval(pollHbd, 5000); // Poll every 5 seconds
-    pollHbd(); // Initial poll
+    //const interval = setInterval(pollHbd, 5000); // Poll every 5 seconds
+    //pollHbd(); // Initial poll
+    // Run initial poll after a short delay to avoid overlap
+    const initialPoll = setTimeout(pollHbd, 100);
+    const interval = setInterval(pollHbd, 5000);
     setLoading(false);
-    return () => clearInterval(interval);
+    return () => { 
+      clearTimeout(initialPoll);
+      clearInterval(interval);
+    };
   }, [lastId]);
 
   const handleFulfill = async (id: string) => {
@@ -68,6 +98,12 @@ export default function Home() {
       const data = await res.json();
       if (res.ok) {
         setTransfers(prev => prev.filter(tx => tx.id !== id));
+        // Remove fulfilled transfer from seen IDs to allow re-toast if re-added
+        setSeenTransferIds(prev => {
+          const updated = new Set(prev);
+          updated.delete(id);
+          return updated;
+        });
         toast.success('Transfer fulfilled');
       } else {
         toast.error(`Fulfill error: ${data.error}`);
