@@ -31,6 +31,35 @@ initializeDatabase().catch(error => console.error('Initialization failed:', erro
 
 export default pool;
 
+/*
+  # Recommended for most uses
+DATABASE_URL=postgres://neondb_owner:npg_QTdeUb2YofS3@ep-silent-smoke-a2axro2k-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require
+
+# For uses requiring a connection without pgbouncer
+DATABASE_URL_UNPOOLED=postgresql://neondb_owner:npg_QTdeUb2YofS3@ep-silent-smoke-a2axro2k.eu-central-1.aws.neon.tech/neondb?sslmode=require
+
+# Parameters for constructing your own connection string
+PGHOST=ep-silent-smoke-a2axro2k-pooler.eu-central-1.aws.neon.tech
+PGHOST_UNPOOLED=ep-silent-smoke-a2axro2k.eu-central-1.aws.neon.tech
+PGUSER=neondb_owner
+PGDATABASE=neondb
+PGPASSWORD=npg_QTdeUb2YofS3
+
+# Parameters for Vercel Postgres Templates
+POSTGRES_URL=postgres://neondb_owner:npg_QTdeUb2YofS3@ep-silent-smoke-a2axro2k-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require
+POSTGRES_URL_NON_POOLING=postgres://neondb_owner:npg_QTdeUb2YofS3@ep-silent-smoke-a2axro2k.eu-central-1.aws.neon.tech/neondb?sslmode=require
+POSTGRES_USER=neondb_owner
+POSTGRES_HOST=ep-silent-smoke-a2axro2k-pooler.eu-central-1.aws.neon.tech
+POSTGRES_PASSWORD=npg_QTdeUb2YofS3
+POSTGRES_DATABASE=neondb
+POSTGRES_URL_NO_SSL=postgres://neondb_owner:npg_QTdeUb2YofS3@ep-silent-smoke-a2axro2k-pooler.eu-central-1.aws.neon.tech/neondb
+POSTGRES_PRISMA_URL=postgres://neondb_owner:npg_QTdeUb2YofS3@ep-silent-smoke-a2axro2k-pooler.eu-central-1.aws.neon.tech/neondb?connect_timeout=15&sslmode=require
+
+# Neon Auth environment variables for Next.js
+NEXT_PUBLIC_STACK_PROJECT_ID=f24ae760-c780-4eca-9664-2a00178a9c0f
+NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY=pck_kczgzyayvnecrkch57dfgq0vg7p2cf8speh2w5bfn7hy8
+STACK_SECRET_SERVER_KEY=ssk_knnjv0gxvx9bxf7qt5dw22wqwbbkk4x4kaw3jcecffrcr
+*/
 
 
 /*import Database from 'better-sqlite3';
