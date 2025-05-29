@@ -19,7 +19,7 @@ async function initializeDatabase() {
         fulfilled_at TIMESTAMP
       )
     `);
-    console.log('PostgreSQL transfers table initialized in public schema');
+    console.log('PostgreSQL transfers table initialized in public schema', process.env.DATABASE_URL);
   } catch (error) {
     console.error('PostgreSQL initialization error:', error);
     throw error;
