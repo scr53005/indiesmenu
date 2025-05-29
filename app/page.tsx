@@ -55,11 +55,15 @@ export default function Home() {
             // Show toasts only for new transfers
             newTransfers.forEach(tx => {
               toast.info(
-               `New HBD Transfer from ${tx.from_account || 'unknown'}: ${tx.amount} ${tx.symbol} (Memo: ${tx.memo})`,
+               `${tx.memo} for ${tx.from_account || 'unknown'}: ${tx.amount} ${tx.symbol}`,
                {
                   autoClose: 5000,
                   className: 'flash-toast',
                   toastId: tx.id, // Unique toast ID to prevent duplicates
+                  hideProgressBar: false,
+                  closeOnClick: true,
+                  pauseOnHover: true,
+                  draggable: true,
                }
               );
             });
@@ -104,19 +108,31 @@ export default function Home() {
           updated.delete(id);
           return updated;
         });
-        toast.success('Transfer fulfilled');
+        toast.success('Order fulfilled!', {
+          autoClose: 5000,
+          toastId: `fulfill-${id}`,
+        });
+        // Explicitly dismiss the "New HBD Transfer" toast
+        toast.dismiss(id);
       } else {
         toast.error(`Fulfill error: ${data.error}`);
       }
     } catch (error) {
       console.error('Fulfill error:', error);
-      toast.error('Failed to fulfill transfer');
+      toast.error('Fulfill order command failed');
     }
   };
 
   return (
     <div className="container">
-      <ToastContainer />
+      <ToastContainer 
+        autoClose={5000}
+        hideProgressBar={false}
+        closeOnClick
+        pauseOnHover
+        draggable
+        limit={5} // Prevent toast overload
+      />
       <h1>HBD Transfers to @indies-test</h1>
       {loading ? (
         <p>Loading...</p>
@@ -127,16 +143,16 @@ export default function Home() {
           {transfers.map(tx => (
             <li key={tx.id.toString()}> {/* Convert to string for React key */}
               <p>
-                <strong>From:</strong> {tx.from_account}
-              </p>
-              <p>
-                <strong>Amount:</strong> {tx.amount} {tx.symbol}
-              </p>
-              <p>
-                <strong>Memo:</strong>{' '}
-                {typeof tx.parsedMemo === 'object'
+                Order:{' '}
+                <strong>{typeof tx.parsedMemo === 'object'
                   ? JSON.stringify(tx.parsedMemo)
-                  : tx.parsedMemo}
+                  : tx.parsedMemo}</strong>
+              </p>
+              <p>
+                For: <strong>{tx.from_account}</strong> 
+              </p>
+              <p>
+                Prix en {tx.symbol}: <strong>{tx.amount}</strong> 
               </p>
               <p>
                 <strong>Transfer ID:</strong> {tx.id.toString()}
@@ -178,7 +194,7 @@ export default function Home() {
         .flash-toast {
           background: #ffcc00;
           color: #000;
-          animation: flash 1s infinite;
+          animation: flash 2s;
         }
         @keyframes flash {
           0%,
