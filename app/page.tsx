@@ -133,11 +133,11 @@ export default function Home() {
         draggable
         limit={5} // Prevent toast overload
       />
-      <h1>HBD Transfers to @indies-test</h1>
+      <h1>Orders to @indies-test</h1>
       {loading ? (
         <p>Loading...</p>
       ) : transfers.length === 0 ? (
-        <p>No unfulfilled transfers found.</p>
+        <p>No unfulfilled orders found.</p>
       ) : (
         <ul>
           {transfers.map(tx => (
