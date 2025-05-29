@@ -1,7 +1,14 @@
 import { Pool } from 'pg';
 
+console.log('DATABASE_URL:', process.env.DATABASE_URL || 'undefined');
+
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is not defined in environment variables');
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL, // Use DATABASE_URL for local and production
+  ssl: { rejectUnauthorized: false }, // For Neon SSL
 });
 
 // Initialize table (run once, can be commented out after first run)
@@ -25,6 +32,16 @@ async function initializeDatabase() {
     throw error;
   }
 }
+
+// Test connection
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('Database connection error:', err.stack);
+    return;
+  }
+  console.log('Successfully connected to database:', process.env.DATABASE_URL);
+  release();
+});
 
 // Run initialization (comment out after first run)
 initializeDatabase().catch(error => console.error('Initialization failed:', error));
