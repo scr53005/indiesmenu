@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2020", // Matches your Next.js project
+    "module": "commonjs", // For Node.js CommonJS modules like qrcode, pg
+    "strict": true,
+    "esModuleInterop": true, // Allows default imports for CommonJS
+    "allowSyntheticDefaultImports": true, // Supports qrcode imports
+    "skipLibCheck": true,
+    "outDir": "../../dist/menu", // Output to root dist/menu
+    "rootDir": ".", // menu folder
+    "moduleResolution": "node", // Node.js module resolution
+    "resolveJsonModule": true // Optional: for package.json
+  },
+  "include": [
+    "*.ts" // Only .ts files in menu
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
