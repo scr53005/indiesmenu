@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     const query = `
       SELECT id, amount, symbol, memo 
       FROM hafsql.operation_transfer_table
-      WHERE to_account = 'indies-test'
+      WHERE to_account = 'indies.cafe'
       AND symbol = 'HBD'
       AND id > $1
       ORDER BY id DESC
