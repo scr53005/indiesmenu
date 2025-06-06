@@ -18,6 +18,14 @@ interface PollResponse {
   error?: string;
 }
 
+function order(memo: string): string {
+  return memo.substring(0, memo.lastIndexOf('TABLE ') === -1 ? memo.length : memo.lastIndexOf('TABLE '));
+}
+
+function getTable(memo: string): string {
+  return (memo.lastIndexOf('TABLE ') === -1 ? 'no table information found' : memo.substring(memo.lastIndexOf('TABLE ')));
+}
+
 export default function Home() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [lastId, setLastId] = useState('0');
@@ -55,7 +63,7 @@ export default function Home() {
             // Show toasts only for new transfers
             newTransfers.forEach(tx => {
               toast.info(
-               `${tx.memo} for ${tx.from_account || 'unknown'}: ${tx.amount} ${tx.symbol}`,
+               `${order(tx.memo)} for ${getTable(tx.memo) || 'unknown'}; ${tx.amount} ${tx.symbol}`,
                {
                   autoClose: 5000,
                   className: 'flash-toast',
@@ -133,7 +141,7 @@ export default function Home() {
         draggable
         limit={5} // Prevent toast overload
       />
-      <h1>Orders to @indies-test</h1>
+      <h1>Orders to @indies.cafe</h1>
       {loading ? (
         <p>Loading...</p>
       ) : transfers.length === 0 ? (
@@ -145,11 +153,16 @@ export default function Home() {
               <p>
                 Order:{' '}
                 <strong>{typeof tx.parsedMemo === 'object'
-                  ? JSON.stringify(tx.parsedMemo)
-                  : tx.parsedMemo}</strong>
+                  ? order(JSON.stringify(tx.parsedMemo))
+                  : order(tx.parsedMemo)}</strong>
               </p>
               <p>
-                For: <strong>{tx.from_account}</strong> 
+                For table: <strong>{typeof tx.parsedMemo === 'object'
+                  ? getTable(JSON.stringify(tx.parsedMemo))
+                  : getTable(tx.parsedMemo)}</strong> 
+              </p>
+              <p>
+                Customer: <strong>{tx.from_account || 'unknown'}</strong>
               </p>
               <p>
                 Prix en {tx.symbol}: <strong>{tx.amount}</strong> 

@@ -9,13 +9,15 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const lastId = searchParams.get('lastId') || '0';
+    const lastId = searchParams.get('lastId') || '411975049738723586';
+
+    console.log('Polling HAF with lastId:', lastId);
 
     // Poll HAF
     const query = `
       SELECT id, from_account, amount, symbol, memo
       FROM hafsql.operation_transfer_table
-      WHERE to_account = 'indies-test'
+      WHERE to_account = 'indies.cafe'
       AND symbol = 'HBD'
       AND id > $1
       ORDER BY id DESC
