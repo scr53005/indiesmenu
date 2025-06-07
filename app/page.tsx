@@ -5,11 +5,12 @@ import 'react-toastify/dist/ReactToastify.css';
 
 interface Transfer {
   id: string;
-  from_account: string; // Optional, added for display
+  from_account: string; 
   amount: string;
   symbol: string;
   memo: string;
   parsedMemo: string | object;
+  received_at: string; 
 }
 
 interface PollResponse {
@@ -34,6 +35,7 @@ export default function Home() {
 
   useEffect(() => {
     let isPolling = false; // Prevent overlapping polls
+    // Initial fetch to get the latest transfers
     const pollHbd = async () => {
       if (isPolling) return; // Skip if already polling
       isPolling = true;
@@ -46,14 +48,8 @@ export default function Home() {
             // Use local Set to track IDs for this poll
             const currentSeenIds = new Set(seenTransferIds);
             const newTransfers = data.transfers.filter(tx => !currentSeenIds.has(tx.id));
-            // Identify new transfers
-            // const newTransfers = data.transfers.filter(tx => !seenTransferIds.has(tx.id));
 
-            // Update seen IDs
-            // const updatedSeenIds = new Set(seenTransferIds);
             data.transfers.forEach(tx => currentSeenIds.add(tx.id));
-
-            // setSeenTransferIds(updatedSeenIds);
 
             // Update state                        
             setTransfers(data.transfers);
@@ -62,6 +58,15 @@ export default function Home() {
 
             // Show toasts only for new transfers
             newTransfers.forEach(tx => {
+              const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
+                timeZone: 'Europe/Paris', // CEST
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              });
               toast.info(
                `${order(tx.memo)} for ${getTable(tx.memo) || 'unknown'}; ${tx.amount} ${tx.symbol}`,
                {
@@ -69,20 +74,29 @@ export default function Home() {
                   className: 'flash-toast',
                   toastId: tx.id, // Unique toast ID to prevent duplicates
                   hideProgressBar: false,
+                  closeButton: true,
+                  position: 'top-right',
                   closeOnClick: true,
                   pauseOnHover: true,
                   draggable: true,
+                  onOpen: () => {
+                    setTimeout(() => toast.dismiss(tx.id), 6000);
+                  },
                }
               );
             });
           }
         } else {
           //const error = data.error || 'Failed to fetch transfers';
-          toast.error(`Poll error: ${data.error}`);
+          toast.error(`Poll error: ${data.error}`, {
+            autoClose: 5000,
+          });
         }
       } catch (error) {
         console.error('Poll error:', error);
-        toast.error('Failed to fetch transfers');
+        toast.error('Failed to fetch transfers', {
+          autoClose: 5000,
+        });
       } finally {
         isPolling = false;
       }
@@ -116,7 +130,7 @@ export default function Home() {
           updated.delete(id);
           return updated;
         });
-        toast.success('Order fulfilled!', {
+        toast.success('Commande satisfaite!', {
           autoClose: 5000,
           toastId: `fulfill-${id}`,
         });
@@ -127,7 +141,9 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Fulfill error:', error);
-      toast.error('Fulfill order command failed');
+      toast.error('Fulfill order command failed', {
+        autoClose: 5000,
+      });
     }
   };
 
@@ -141,38 +157,57 @@ export default function Home() {
         draggable
         limit={5} // Prevent toast overload
       />
-      <h1>Orders to @indies.cafe</h1>
+      <h1>Commandes pour @indies.cafe</h1>
       {loading ? (
-        <p>Loading...</p>
+        <p>Chargement...</p>
       ) : transfers.length === 0 ? (
-        <p>No unfulfilled orders found.</p>
+        <p>Pas de commandes en attente</p>
       ) : (
         <ul>
-          {transfers.map(tx => (
+          {transfers.map(tx => { 
+          // Format received_at as CEST
+          const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
+            timeZone: 'Europe/Paris',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+
+           // Compute time difference in seconds
+            const now = new Date();
+            const receivedTime = new Date(tx.received_at);
+            const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
+            const isLate = timeDiffSeconds > 600; // 600 seconds = 10 minutes
+
+          return (
             <li key={tx.id.toString()}> {/* Convert to string for React key */}
               <p>
-                Order:{' '}
+                Commande:{' '}
                 <strong>{typeof tx.parsedMemo === 'object'
                   ? order(JSON.stringify(tx.parsedMemo))
                   : order(tx.parsedMemo)}</strong>
               </p>
               <p>
-                For table: <strong>{typeof tx.parsedMemo === 'object'
+                Pour la table: <strong>{typeof tx.parsedMemo === 'object'
                   ? getTable(JSON.stringify(tx.parsedMemo))
                   : getTable(tx.parsedMemo)}</strong> 
               </p>
               <p>
-                Customer: <strong>{tx.from_account || 'unknown'}</strong>
+                Client: <strong>{tx.from_account || 'unknown'}</strong>
               </p>
               <p>
                 Prix en {tx.symbol}: <strong>{tx.amount}</strong> 
               </p>
-              <p>
-                <strong>Transfer ID:</strong> {tx.id.toString()}
-              </p>
+              <p className={isLate ? 'late-order' : ''}>
+                Order recu le:<strong> {receivedDateTime}</strong>
+              </p>              
               <button onClick={() => handleFulfill(tx.id)}>Fulfill</button>
             </li>
-          ))}
+          );
+          })}
         </ul>
       )}
       <style jsx>{`
@@ -201,6 +236,10 @@ export default function Home() {
         }
         button:hover {
           background: #005bb5;
+        }
+        .late-order {
+          color: red;
+          font-weight: bold;
         }
       `}</style>
       <style jsx global>{`

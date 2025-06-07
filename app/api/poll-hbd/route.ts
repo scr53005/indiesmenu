@@ -24,6 +24,7 @@ export async function GET(request: Request) {
       LIMIT 10;
     `;
     const result = await hafPool.query(query, [lastId]);
+    console.log('HAF query result:', result.rows.length, 'rows');
 
     const transfers = [];
     for (const row of result.rows) {
@@ -49,8 +50,8 @@ export async function GET(request: Request) {
       if (exists.rows.length === 0) {
         console.log('Inserting transfer:', transfer.id);
         await db.query(`
-          INSERT INTO public.transfers (id, from_account, amount, symbol, memo, parsed_memo, fulfilled)
-          VALUES ($1, $2, $3, $4, $5, $6, FALSE)
+          INSERT INTO public.transfers (id, from_account, amount, symbol, memo, parsed_memo, fulfilled, received_at)
+          VALUES ($1, $2, $3, $4, $5, $6, FALSE, CURRENT_TIMESTAMP)
         `, [
           transfer.id,
           transfer.from_account,
@@ -59,7 +60,7 @@ export async function GET(request: Request) {
           transfer.memo,
           transfer.parsedMemo,
         ]);
-        console.log('Inserted transfer:', transfer.id);
+        console.log('Inserted transfer to Neon:', transfer.id);
       }
 
       transfers.push(transfer);
@@ -67,12 +68,13 @@ export async function GET(request: Request) {
 
     // Fetch unfulfilled transfers
     const unfulfilledResult = await db.query(`
-      SELECT id, from_account, amount, symbol, memo, parsed_memo
+      SELECT id, from_account, amount, symbol, memo, parsed_memo, received_at
       FROM public.transfers
       WHERE fulfilled = FALSE
       ORDER BY id DESC
       LIMIT 50
     `);
+    console.log('Unfulfilled transfers from Neon:', unfulfilledResult.rows.length, 'rows');
     const unfulfilledTransfers = unfulfilledResult.rows.map(t => ({
       id: t.id.toString(),
       from_account: t.from_account,
@@ -80,6 +82,7 @@ export async function GET(request: Request) {
       symbol: t.symbol,
       memo: t.memo,
       parsedMemo: t.parsed_memo,
+      received_at: t.received_at.toISOString(), // Convert to ISO string
     }));
 
     const latestId = result.rows.length
