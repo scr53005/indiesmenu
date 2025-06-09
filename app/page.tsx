@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -33,34 +33,53 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [seenTransferIds, setSeenTransferIds] = useState<Set<string>>(new Set()); // Track seen IDs
   const [canPlayAudio, setCanPlayAudio] = useState(false);
+  const bell1Ref = useRef<HTMLAudioElement | null>(null);
+  const bell2Ref = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    // Initialize audio instances
-    const bell1 = new Audio('/sounds/modern.mp3');
-    const bell2 = new Audio('/sounds/doorbell.mp3');
-
-    const playBellSounds = () => {
-      if (canPlayAudio) {
-        bell1.play().catch(error => console.error('Modern playback error:', error));
-        setTimeout(() => {
-          bell2.play().catch(error => console.error('Doorbell playback error:', error));
-        }, 4000); // 4-second delay
+    // Initialize audio in browser only
+    if (typeof window !== 'undefined') {
+      bell1Ref.current = new Audio('/sounds/doorbell.mp3');
+      bell2Ref.current = new Audio('/sounds/chime-2.mp3');
+      bell1Ref.current.load();
+      bell2Ref.current.load();
+      console.log('Audio files preloaded');
+    }
+    return () => {
+      // Cleanup
+      if (bell1Ref.current) {
+        bell1Ref.current.pause();
+        bell1Ref.current = null;
+      }
+      if (bell2Ref.current) {
+        bell2Ref.current.pause();
+        bell2Ref.current = null;
       }
     };
+  }, []);    
+
+  const playBellSounds = () => {
+    if (canPlayAudio && bell1Ref.current && bell2Ref.current) {
+      console.log('Playing bell sounds');
+      bell1Ref.current.currentTime = 0; // Reset to start
+      bell1Ref.current.play().catch(error => console.error('Doorbell playback error:', error));
+      setTimeout(() => {
+        bell2Ref.current!.currentTime = 0;
+        bell2Ref.current!.play().catch(error => console.error('Chime-2 playback error:', error));
+      }, 2000); // 2-second delay
+    } else {
+      console.log('Audio not unlocked or not initialized; skipping bell sounds');
+    }
+  };
 
     // Unlock audio on first user interaction
     const unlockAudio = () => {
-      setCanPlayAudio(true);
-      playBellSounds(); // Play sounds at page load after unlock
-      document.removeEventListener('click', unlockAudio); // Remove listener after unlock
+      if (!canPlayAudio) {
+        setCanPlayAudio(true);
+        console.log('Audio unlocked via button');
+        playBellSounds(); // Play at page load after unlock
+      }
     };
-
-    document.addEventListener('click', unlockAudio);
-
-    return () => {
-      document.removeEventListener('click', unlockAudio);
-    };
-  }, [canPlayAudio]);
 
   useEffect(() => {
     let isPolling = false; // Prevent overlapping polls
@@ -86,14 +105,8 @@ export default function Home() {
             setLastId(data.latestId);
             setSeenTransferIds(currentSeenIds);
 
-            if (newTransfers.length > 0 && canPlayAudio) {
-              const bell1 = new Audio('/sounds/modern.mp3');
-              const bell2 = new Audio('/sounds/doorbell.mp3');
-              bell1.play().catch(error => console.error('Modern playback error:', error));
-              setTimeout(() => {
-                bell2.play().catch(error => console.error('Doorbell playback error:', error));
-              }, 4000); // 4-second delay
-
+            if (newTransfers.length > 0) {
+              playBellSounds(); // Play for new orders
               // Show toasts only for new transfers
               newTransfers.forEach(tx => {
                 const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
@@ -141,17 +154,16 @@ export default function Home() {
       }
     };
 
-    //const interval = setInterval(pollHbd, 5000); // Poll every 5 seconds
-    //pollHbd(); // Initial poll
     // Run initial poll after a short delay to avoid overlap
     const initialPoll = setTimeout(pollHbd, 100);
     const interval = setInterval(pollHbd, 5000);
     setLoading(false);
+
     return () => { 
       clearTimeout(initialPoll);
       clearInterval(interval);
     };
-  }, [lastId]);
+  }, [lastId, canPlayAudio]);
 
   const handleFulfill = async (id: string) => {
     try {
@@ -197,6 +209,13 @@ export default function Home() {
         limit={5} // Prevent toast overload
       />
       <h1>Commandes pour @indies.cafe</h1>
+      <br/>
+      {!canPlayAudio && (
+        <button onClick={unlockAudio} className="unlock-audio-button">
+          Unlock Audio
+        </button>
+      )} 
+      <br/>    
       {loading ? (
         <p>Chargement...</p>
       ) : transfers.length === 0 ? (
