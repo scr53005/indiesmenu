@@ -32,9 +32,39 @@ export default function Home() {
   const [lastId, setLastId] = useState('0');
   const [loading, setLoading] = useState(true);
   const [seenTransferIds, setSeenTransferIds] = useState<Set<string>>(new Set()); // Track seen IDs
+  const [canPlayAudio, setCanPlayAudio] = useState(false);
+
+  useEffect(() => {
+    // Initialize audio instances
+    const bell1 = new Audio('/sounds/modern.mp3');
+    const bell2 = new Audio('/sounds/doorbell.mp3');
+
+    const playBellSounds = () => {
+      if (canPlayAudio) {
+        bell1.play().catch(error => console.error('Modern playback error:', error));
+        setTimeout(() => {
+          bell2.play().catch(error => console.error('Doorbell playback error:', error));
+        }, 4000); // 4-second delay
+      }
+    };
+
+    // Unlock audio on first user interaction
+    const unlockAudio = () => {
+      setCanPlayAudio(true);
+      playBellSounds(); // Play sounds at page load after unlock
+      document.removeEventListener('click', unlockAudio); // Remove listener after unlock
+    };
+
+    document.addEventListener('click', unlockAudio);
+
+    return () => {
+      document.removeEventListener('click', unlockAudio);
+    };
+  }, [canPlayAudio]);
 
   useEffect(() => {
     let isPolling = false; // Prevent overlapping polls
+
     // Initial fetch to get the latest transfers
     const pollHbd = async () => {
       if (isPolling) return; // Skip if already polling
@@ -56,36 +86,45 @@ export default function Home() {
             setLastId(data.latestId);
             setSeenTransferIds(currentSeenIds);
 
-            // Show toasts only for new transfers
-            newTransfers.forEach(tx => {
-              const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
-                timeZone: 'Europe/Paris', // CEST
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
+            if (newTransfers.length > 0 && canPlayAudio) {
+              const bell1 = new Audio('/sounds/modern.mp3');
+              const bell2 = new Audio('/sounds/doorbell.mp3');
+              bell1.play().catch(error => console.error('Modern playback error:', error));
+              setTimeout(() => {
+                bell2.play().catch(error => console.error('Doorbell playback error:', error));
+              }, 4000); // 4-second delay
+
+              // Show toasts only for new transfers
+              newTransfers.forEach(tx => {
+                const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
+                  timeZone: 'Europe/Paris', // CEST
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                toast.info(
+                `${order(tx.memo)} for ${getTable(tx.memo) || 'unknown'}; ${tx.amount} ${tx.symbol} (Order received: ${receivedDateTime})`,
+                {
+                    autoClose: 5000,
+                    className: 'flash-toast',
+                    toastId: tx.id, // Unique toast ID to prevent duplicates
+                    hideProgressBar: false,
+                    closeButton: true,
+                    position: 'top-right',
+                    closeOnClick: true,
+                    pauseOnHover: true,
+                    draggable: true,
+                    onOpen: () => {
+                      setTimeout(() => toast.dismiss(tx.id), 6000);
+                    },
+                }
+                );
               });
-              toast.info(
-               `${order(tx.memo)} for ${getTable(tx.memo) || 'unknown'}; ${tx.amount} ${tx.symbol}`,
-               {
-                  autoClose: 5000,
-                  className: 'flash-toast',
-                  toastId: tx.id, // Unique toast ID to prevent duplicates
-                  hideProgressBar: false,
-                  closeButton: true,
-                  position: 'top-right',
-                  closeOnClick: true,
-                  pauseOnHover: true,
-                  draggable: true,
-                  onOpen: () => {
-                    setTimeout(() => toast.dismiss(tx.id), 6000);
-                  },
-               }
-              );
-            });
+            }
           }
+          // If no new transfers, just update lastId
         } else {
           //const error = data.error || 'Failed to fetch transfers';
           toast.error(`Poll error: ${data.error}`, {
@@ -173,7 +212,6 @@ export default function Home() {
             day: '2-digit',
             hour: '2-digit',
             minute: '2-digit',
-            second: '2-digit',
           });
 
            // Compute time difference in seconds
@@ -202,7 +240,7 @@ export default function Home() {
                 Prix en {tx.symbol}: <strong>{tx.amount}</strong> 
               </p>
               <p className={isLate ? 'late-order' : ''}>
-                Order recu le:<strong> {receivedDateTime}</strong>
+                Ordre recu le:<strong> {receivedDateTime}</strong>
               </p>              
               <button onClick={() => handleFulfill(tx.id)}>Fulfill</button>
             </li>
