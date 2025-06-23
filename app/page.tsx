@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
+import { getTable } from '@/lib/utils';
 import 'react-toastify/dist/ReactToastify.css';
 
 interface Transfer {
@@ -21,10 +22,6 @@ interface PollResponse {
 
 function order(memo: string): string {
   return memo.substring(0, memo.lastIndexOf('TABLE ') === -1 ? memo.length : memo.lastIndexOf('TABLE '));
-}
-
-function getTable(memo: string): string {
-  return (memo.lastIndexOf('TABLE ') === -1 ? 'no table information found' : memo.substring(memo.lastIndexOf('TABLE ')));
 }
 
 export default function Home() {
@@ -208,7 +205,7 @@ export default function Home() {
         draggable
         limit={5} // Prevent toast overload
       />
-      <h1>Commandes pour @indies.cafe</h1>
+      <h1>Commandes pour @{ process.env.NEXT_PUBLIC_HIVE_ACCOUNT }</h1>
       <br/>
       {!canPlayAudio && (
         <button onClick={unlockAudio} className="unlock-audio-button">

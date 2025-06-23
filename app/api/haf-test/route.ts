@@ -33,16 +33,18 @@ export async function GET(request: Request) {
       txCount,
     }); */
     // Query the operation_transfer table
+    const hiveAccount = process.env.HIVE_ACCOUNT || 'indies.cafe';
     const query = `
       SELECT id, amount, symbol, memo 
       FROM hafsql.operation_transfer_table
-      WHERE to_account = 'indies.cafe'
+      WHERE to_account = $1
       AND symbol = 'HBD'
-      AND id > $1
+      AND memo LIKE '%TABLE %'
+      AND id > $2
       ORDER BY id DESC
       LIMIT 10;
     `;
-    const result = await pool.query(query, [lastId]);
+    const result = await pool.query(query, [hiveAccount, lastId]);
     const transfers = result.rows.map((row) => ({
       // Map the result to a more readable format
       id: row.id.toString(),
