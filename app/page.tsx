@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import { getTable } from '@/lib/utils';
 import 'react-toastify/dist/ReactToastify.css';
@@ -29,9 +29,58 @@ export default function Home() {
   const [lastId, setLastId] = useState('0');
   const [loading, setLoading] = useState(true);
   const [seenTransferIds, setSeenTransferIds] = useState<Set<string>>(new Set()); // Track seen IDs
+  const [canPlayAudio, setCanPlayAudio] = useState(false);
+  const bell1Ref = useRef<HTMLAudioElement | null>(null);
+  const bell2Ref = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    // Initialize audio in browser only
+    if (typeof window !== 'undefined') {
+      bell1Ref.current = new Audio('/sounds/doorbell.mp3');
+      bell2Ref.current = new Audio('/sounds/chime-2.mp3');
+      bell1Ref.current.load();
+      bell2Ref.current.load();
+      console.log('Audio files preloaded');
+    }
+    return () => {
+      // Cleanup
+      if (bell1Ref.current) {
+        bell1Ref.current.pause();
+        bell1Ref.current = null;
+      }
+      if (bell2Ref.current) {
+        bell2Ref.current.pause();
+        bell2Ref.current = null;
+      }
+    };
+  }, []);    
+
+  const playBellSounds = () => {
+    if (canPlayAudio && bell1Ref.current && bell2Ref.current) {
+      console.log('Playing bell sounds');
+      bell1Ref.current.currentTime = 0; // Reset to start
+      bell1Ref.current.play().catch(error => console.error('Doorbell playback error:', error));
+      setTimeout(() => {
+        bell2Ref.current!.currentTime = 0;
+        bell2Ref.current!.play().catch(error => console.error('Chime-2 playback error:', error));
+      }, 2000); // 2-second delay
+    } else {
+      console.log('Audio not unlocked or not initialized; skipping bell sounds');
+    }
+  };
+
+    // Unlock audio on first user interaction
+    const unlockAudio = () => {
+      if (!canPlayAudio) {
+        setCanPlayAudio(true);
+        console.log('Audio unlocked via button');
+        playBellSounds(); // Play at page load after unlock
+      }
+    };
 
   useEffect(() => {
     let isPolling = false; // Prevent overlapping polls
+
     // Initial fetch to get the latest transfers
     const pollHbd = async () => {
       if (isPolling) return; // Skip if already polling
@@ -53,36 +102,39 @@ export default function Home() {
             setLastId(data.latestId);
             setSeenTransferIds(currentSeenIds);
 
-            // Show toasts only for new transfers
-            newTransfers.forEach(tx => {
-              const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
-                timeZone: 'Europe/Paris', // CEST
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
+            if (newTransfers.length > 0) {
+              playBellSounds(); // Play for new orders
+              // Show toasts only for new transfers
+              newTransfers.forEach(tx => {
+                const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
+                  timeZone: 'Europe/Paris', // CEST
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                toast.info(
+                `${order(tx.memo)} for ${getTable(tx.memo) || 'unknown'}; ${tx.amount} ${tx.symbol} (Order received: ${receivedDateTime})`,
+                {
+                    autoClose: 5000,
+                    className: 'flash-toast',
+                    toastId: tx.id, // Unique toast ID to prevent duplicates
+                    hideProgressBar: false,
+                    closeButton: true,
+                    position: 'top-right',
+                    closeOnClick: true,
+                    pauseOnHover: true,
+                    draggable: true,
+                    onOpen: () => {
+                      setTimeout(() => toast.dismiss(tx.id), 6000);
+                    },
+                }
+                );
               });
-              toast.info(
-               `${order(tx.memo)} for ${getTable(tx.memo) || 'unknown'}; ${tx.amount} ${tx.symbol}`,
-               {
-                  autoClose: 5000,
-                  className: 'flash-toast',
-                  toastId: tx.id, // Unique toast ID to prevent duplicates
-                  hideProgressBar: false,
-                  closeButton: true,
-                  position: 'top-right',
-                  closeOnClick: true,
-                  pauseOnHover: true,
-                  draggable: true,
-                  onOpen: () => {
-                    setTimeout(() => toast.dismiss(tx.id), 6000);
-                  },
-               }
-              );
-            });
+            }
           }
+          // If no new transfers, just update lastId
         } else {
           //const error = data.error || 'Failed to fetch transfers';
           toast.error(`Poll error: ${data.error}`, {
@@ -99,17 +151,16 @@ export default function Home() {
       }
     };
 
-    //const interval = setInterval(pollHbd, 5000); // Poll every 5 seconds
-    //pollHbd(); // Initial poll
     // Run initial poll after a short delay to avoid overlap
     const initialPoll = setTimeout(pollHbd, 100);
     const interval = setInterval(pollHbd, 5000);
     setLoading(false);
+
     return () => { 
       clearTimeout(initialPoll);
       clearInterval(interval);
     };
-  }, [lastId]);
+  }, [lastId, canPlayAudio]);
 
   const handleFulfill = async (id: string) => {
     try {
@@ -155,6 +206,13 @@ export default function Home() {
         limit={5} // Prevent toast overload
       />
       <h1>Commandes pour @{ process.env.NEXT_PUBLIC_HIVE_ACCOUNT }</h1>
+      <br/>
+      {!canPlayAudio && (
+        <button onClick={unlockAudio} className="unlock-audio-button">
+          Unlock Audio
+        </button>
+      )} 
+      <br/>    
       {loading ? (
         <p>Chargement...</p>
       ) : transfers.length === 0 ? (
@@ -170,7 +228,6 @@ export default function Home() {
             day: '2-digit',
             hour: '2-digit',
             minute: '2-digit',
-            second: '2-digit',
           });
 
            // Compute time difference in seconds
@@ -199,7 +256,7 @@ export default function Home() {
                 Prix en {tx.symbol}: <strong>{tx.amount}</strong> 
               </p>
               <p className={isLate ? 'late-order' : ''}>
-                Order recu le:<strong> {receivedDateTime}</strong>
+                Ordre recu le:<strong> {receivedDateTime}</strong>
               </p>              
               <button onClick={() => handleFulfill(tx.id)}>Fulfill</button>
             </li>
