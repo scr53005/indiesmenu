@@ -12,7 +12,7 @@ const pool = new Pool({
 });
 
 // Initialize table (run once, can be commented out after first run)
-async function initializeDatabase() {
+export async function initializeDatabase() {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.transfers (
@@ -27,13 +27,7 @@ async function initializeDatabase() {
       )
     `);
     console.log('PostgreSQL transfers table initialized in public schema', process.env.DATABASE_URL);
-  } catch (error) {
-    console.error('PostgreSQL initialization error:', error);
-    throw error;
-  }
-}
-
-    // Create restaurants table
+   // Create restaurants table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS restaurants (
         id SERIAL PRIMARY KEY,
@@ -43,7 +37,7 @@ async function initializeDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
+    console.log('PostgreSQL restaurants table initialized in public schema', process.env.DATABASE_URL);
     // Create users table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -55,7 +49,7 @@ async function initializeDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
+    console.log('PostgreSQL users table initialized in public schema', process.env.DATABASE_URL);
     // Create user_restaurant_authorizations table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_restaurant_authorizations (
@@ -89,6 +83,36 @@ async function initializeDatabase() {
       ON CONFLICT (hive_username) DO NOTHING
     `);
 
+    // Get restaurant and user IDs for authorization
+    const restaurant = await pool.query('SELECT id FROM restaurants WHERE name = $1', ['indies']);
+    const user1 = await pool.query('SELECT id FROM users WHERE hive_username = $1', ['indies-test']);
+    const user2 = await pool.query('SELECT id FROM users WHERE hive_username = $1', ['indies.cafe']);
+
+    // Create authorizations
+    if (restaurant.rows.length > 0 && user1.rows.length > 0) {
+      await pool.query(`
+        INSERT INTO user_restaurant_authorizations (user_id, restaurant_id, role) 
+        VALUES ($1, $2, 'admin')
+        ON CONFLICT (user_id, restaurant_id) DO NOTHING
+      `, [user1.rows[0].id, restaurant.rows[0].id]);
+    }
+
+    if (restaurant.rows.length > 0 && user2.rows.length > 0) {
+      await pool.query(`
+        INSERT INTO user_restaurant_authorizations (user_id, restaurant_id, role) 
+        VALUES ($1, $2, 'admin')
+        ON CONFLICT (user_id, restaurant_id) DO NOTHING
+      `, [user2.rows[0].id, restaurant.rows[0].id]);
+    }
+
+  } catch (error) {
+    console.error('PostgreSQL initialization error:', error);
+    throw error;
+  }
+}
+
+ 
+
 // Test connection
 pool.connect((err, client, release) => {
   if (err) {
@@ -100,7 +124,7 @@ pool.connect((err, client, release) => {
 });
 
 // Run initialization (comment out after first run)
-initializeDatabase().catch(error => console.error('Initialization failed:', error));
+// initializeDatabase().catch(error => console.error('Initialization failed:', error));
 
 export default pool;
 
