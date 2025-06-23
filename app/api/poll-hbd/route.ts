@@ -12,18 +12,19 @@ export async function GET(request: Request) {
     const lastId = searchParams.get('lastId') || '411975049738723586';
 
     console.log('Polling HAF with lastId:', lastId);
-
+    const hiveAccount = process.env.HIVE_ACCOUNT || 'indies.cafe';
     // Poll HAF
     const query = `
       SELECT id, from_account, amount, symbol, memo
       FROM hafsql.operation_transfer_table
-      WHERE to_account = 'indies.cafe'
+      WHERE to_account = $1
       AND symbol = 'HBD'
-      AND id > $1
+      AND memo LIKE '%TABLE %'
+      AND id > $2
       ORDER BY id DESC
       LIMIT 10;
     `;
-    const result = await hafPool.query(query, [lastId]);
+    const result = await hafPool.query(query, [hiveAccount, lastId]);
     console.log('HAF query result:', result.rows.length, 'rows');
 
     const transfers = [];
