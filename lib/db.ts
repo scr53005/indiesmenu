@@ -33,6 +33,62 @@ async function initializeDatabase() {
   }
 }
 
+    // Create restaurants table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS restaurants (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        display_name VARCHAR(255) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        hive_username VARCHAR(100) NOT NULL UNIQUE,
+        display_name VARCHAR(255),
+        email VARCHAR(255),
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create user_restaurant_authorizations table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_restaurant_authorizations (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        restaurant_id INTEGER NOT NULL,
+        role VARCHAR(50) NOT NULL DEFAULT 'admin',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (restaurant_id) REFERENCES restaurants (id),
+        UNIQUE(user_id, restaurant_id)
+      )
+    `);
+
+    // Insert default restaurant (Indie's)
+    await pool.query(`
+      INSERT INTO restaurants (name, display_name, description) 
+      VALUES ('indies', 'Indie''s', 'Indie''s Cafe and Restaurant')
+      ON CONFLICT (name) DO NOTHING
+    `);
+
+    // Insert default users
+    await pool.query(`
+      INSERT INTO users (hive_username, display_name) 
+      VALUES ('indies-test', 'Indie''s Test Account')
+      ON CONFLICT (hive_username) DO NOTHING
+    `);
+    await pool.query(`
+      INSERT INTO users (hive_username, display_name) 
+      VALUES ('indies.cafe', 'Indie''s Cafe Account')
+      ON CONFLICT (hive_username) DO NOTHING
+    `);
+
 // Test connection
 pool.connect((err, client, release) => {
   if (err) {
