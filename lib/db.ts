@@ -27,7 +27,13 @@ export async function initializeDatabase() {
       )
     `);
     console.log('PostgreSQL transfers table initialized in public schema', process.env.DATABASE_URL);
-   // Create restaurants table
+    // Drop unwanted tables (safe if they don’t exist)
+    await pool.query(`
+      DROP TABLE IF EXISTS menu_items_test;
+      DROP TABLE IF EXISTS orders_test;
+      DROP TABLE IF EXISTS menu_items;
+    `);   
+    // Create restaurants table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS restaurants (
         id SERIAL PRIMARY KEY,
