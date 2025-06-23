@@ -26,6 +26,10 @@ export async function initializeDatabase() {
         fulfilled_at TIMESTAMP
       )
     `);
+    await pool.query(`
+      ALTER TABLE transfers
+      ADD COLUMN IF NOT EXISTS received_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+    `);    
     console.log('PostgreSQL transfers table initialized in public schema', process.env.DATABASE_URL);
     // Drop unwanted tables (safe if they don’t exist)
     await pool.query(`
