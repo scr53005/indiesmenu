@@ -31,3 +31,27 @@ export function distriate(tag?: string): string {
 
     return `${effectiveTag}-inno-${randomPart1}-${randomPart2}`;
 }
+
+export function generateDistriatedHiveOp(recipient: string, amountHbd: string, memo: string): string {
+  const distriatedMemo = distriate(memo);
+  const amountNum = parseFloat(amountHbd);
+
+  if (isNaN(amountNum)) {
+    // Consider how to handle errors, perhaps throw or return an error string
+    // For now, let's adapt the throw from the original function
+    throw new Error(`Invalid amount_hbd: ${amountHbd}`);
+  }
+
+  const operation = [
+    'transfer',
+    {
+      to: recipient,
+      amount: `${amountNum.toFixed(3)} HBD`,
+      memo: distriatedMemo,
+    },
+  ];
+
+  // Node.js Buffer for Base64 encoding
+  const encodedOperation = Buffer.from(JSON.stringify(operation)).toString('base64');
+  return `hive://sign/op/${encodedOperation}`;
+}

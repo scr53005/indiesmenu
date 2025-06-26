@@ -1,4 +1,4 @@
-import { getTable, distriate } from './utils';
+import { getTable, distriate, generateDistriatedHiveOp } from './utils';
 
 describe('getTable', () => {
   // Test case 1: Input string contains "TABLE " followed by digits and a space.
@@ -99,5 +99,64 @@ describe('distriate', () => {
     const parts = result.split('-');
     expect(parts[2]).toMatch(/^[a-z0-9]+$/);
     expect(parts[3]).toMatch(/^[a-z0-9]+$/);
+  });
+});
+
+describe('generateDistriatedHiveOp', () => {
+  test('should correctly construct Hive URI with distriated memo', () => {
+    const recipient = 'testuser';
+    const amountHbd = '1.000';
+    const memo = 'testmemo';
+    const result = generateDistriatedHiveOp(recipient, amountHbd, memo);
+
+    expect(result).toMatch(/^hive:\/\/sign\/op\/.+/);
+    const encodedPart = result.substring('hive://sign/op/'.length);
+    const decodedOp = JSON.parse(Buffer.from(encodedPart, 'base64').toString());
+
+    expect(decodedOp[0]).toBe('transfer');
+    expect(decodedOp[1].to).toBe(recipient);
+    expect(decodedOp[1].amount).toBe('1.000 HBD');
+    expect(decodedOp[1].memo).toMatch(/^testmemo-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
+  });
+
+  test('should handle different amounts correctly', () => {
+    const result = generateDistriatedHiveOp('anotheruser', '0.5', 'anothermemo');
+    const encodedPart = result.substring('hive://sign/op/'.length);
+    const decodedOp = JSON.parse(Buffer.from(encodedPart, 'base64').toString());
+    expect(decodedOp[1].amount).toBe('0.500 HBD');
+  });
+
+  test('should use "kcs" for distriate if memo is empty', () => {
+    const result = generateDistriatedHiveOp('user3', '10.123', '');
+    const encodedPart = result.substring('hive://sign/op/'.length);
+    const decodedOp = JSON.parse(Buffer.from(encodedPart, 'base64').toString());
+    expect(decodedOp[1].memo).toMatch(/^kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
+  });
+
+  test('should throw error for invalid amountHbd', () => {
+    expect(() => {
+      generateDistriatedHiveOp('user4', 'invalidAmount', 'somememo');
+    }).toThrow('Invalid amount_hbd: invalidAmount');
+  });
+
+  // User requested test case
+  test('should correctly handle specific input: indies.cafe, 0.20, "Simon Pils 25cl TABLE 21"', () => {
+    const recipient = 'indies.cafe';
+    const amountHbd = '0.20';
+    const memo = 'Simon Pils 25cl TABLE 21';
+    const result = generateDistriatedHiveOp(recipient, amountHbd, memo);
+    console.log('Output for specific test case (indies.cafe, 0.20, "Simon Pils 25cl TABLE 21"):', result);
+
+    expect(result).toMatch(/^hive:\/\/sign\/op\/.+/);
+    const encodedPart = result.substring('hive://sign/op/'.length);
+    const decodedOp = JSON.parse(Buffer.from(encodedPart, 'base64').toString());
+
+    expect(decodedOp[0]).toBe('transfer');
+    expect(decodedOp[1].to).toBe(recipient);
+    expect(decodedOp[1].amount).toBe('0.200 HBD');
+    // Check that the memo was processed by distriate
+    // The original memo "Simon Pils 25cl TABLE 21" should be the tag part of the distriated memo
+    expect(decodedOp[1].memo.startsWith(memo + '-inno-')).toBe(true);
+    expect(decodedOp[1].memo).toMatch(new RegExp(`^${memo}-inno-[a-z0-9]{4}-[a-z0-9]{4}$`));
   });
 });
