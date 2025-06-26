@@ -17,3 +17,17 @@ export function getTable(memo: string, returnBoolean: boolean=false): string | b
         return 'no table information found'; // Or appropriate error/default
     }
 }
+
+export function distriate(tag?: string): string {
+    const effectiveTag = tag || 'kcs';
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let randomPart1 = '';
+    let randomPart2 = '';
+
+    for (let i = 0; i < 4; i++) {
+        randomPart1 += chars.charAt(Math.floor(Math.random() * chars.length));
+        randomPart2 += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    return `${effectiveTag}-inno-${randomPart1}-${randomPart2}`;
+}

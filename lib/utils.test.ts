@@ -1,4 +1,4 @@
-import { getTable } from './utils';
+import { getTable, distriate } from './utils';
 
 describe('getTable', () => {
   // Test case 1: Input string contains "TABLE " followed by digits and a space.
@@ -49,5 +49,55 @@ describe('getTable', () => {
   // Test case 10: Multiple "TABLE " occurrences, ensure the last one is used.
   test('should use the last occurrence of "TABLE " when multiple are present', () => {
     expect(getTable("TABLE 1 Ignore this TABLE 789 Process this")).toBe("789");
+  });
+});
+
+describe('distriate', () => {
+  // Test case 1: Calling distriate with a specific tag.
+  test('should return a string with the specified tag', () => {
+    const result = distriate("myTag");
+    expect(result).toMatch(/^myTag-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
+  });
+
+  // Test case 2: Calling distriate with no arguments.
+  test('should default to "kcs" when no tag is provided', () => {
+    const result = distriate();
+    expect(result).toMatch(/^kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
+  });
+
+  // Test case 3: Calling distriate with an empty string.
+  test('should default to "kcs" when an empty tag is provided', () => {
+    const result = distriate("");
+    expect(result).toMatch(/^kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
+  });
+
+  // Test case 4: Verifying the output format (correct separators, lengths of random parts).
+  test('should return a string in the correct format', () => {
+    const result = distriate("formatTest");
+    const parts = result.split('-');
+    expect(parts.length).toBe(4);
+    expect(parts[0]).toBe("formatTest");
+    expect(parts[1]).toBe("inno");
+    expect(parts[2]).toMatch(/^[a-z0-9]{4}$/);
+    expect(parts[3]).toMatch(/^[a-z0-9]{4}$/);
+  });
+
+  // Test case 5: Verifying that subsequent calls with the same tag produce different random parts.
+  test('should produce different random parts on subsequent calls', () => {
+    const result1 = distriate("uniqueTest");
+    const result2 = distriate("uniqueTest");
+    expect(result1).not.toBe(result2);
+    // Further check if just the random parts are different
+    const randomPart1_call1 = result1.split('-').slice(2).join('-');
+    const randomPart1_call2 = result2.split('-').slice(2).join('-');
+    expect(randomPart1_call1).not.toBe(randomPart1_call2);
+  });
+
+  // Test case 6: Check if the random parts only contain lowercase alphanumeric characters
+  test('random parts should only contain lowercase alphanumeric characters', () => {
+    const result = distriate("charsetTest");
+    const parts = result.split('-');
+    expect(parts[2]).toMatch(/^[a-z0-9]+$/);
+    expect(parts[3]).toMatch(/^[a-z0-9]+$/);
   });
 });
