@@ -116,20 +116,24 @@ describe('generateDistriatedHiveOp', () => {
     expect(decodedOp[0]).toBe('transfer');
     expect(decodedOp[1].to).toBe(recipient);
     expect(decodedOp[1].amount).toBe('1.000 HBD');
-    expect(decodedOp[1].memo).toMatch(/^testmemo-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
+    // Updated expectation for memo structure
+    expect(decodedOp[1].memo).toMatch(/^testmemo kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
   });
 
-  test('should handle different amounts correctly', () => {
-    const result = generateDistriatedHiveOp('anotheruser', '0.5', 'anothermemo');
+  test('should handle different amounts correctly and new memo format', () => {
+    const memo = 'anothermemo';
+    const result = generateDistriatedHiveOp('anotheruser', '0.5', memo);
     const encodedPart = result.substring('hive://sign/op/'.length);
     const decodedOp = JSON.parse(Buffer.from(encodedPart, 'base64').toString());
     expect(decodedOp[1].amount).toBe('0.500 HBD');
+    expect(decodedOp[1].memo).toMatch(new RegExp(`^${memo} kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$`));
   });
 
-  test('should use "kcs" for distriate if memo is empty', () => {
+  test('should use only distriate output (kcs-inno-...) if original memo is empty', () => {
     const result = generateDistriatedHiveOp('user3', '10.123', '');
     const encodedPart = result.substring('hive://sign/op/'.length);
     const decodedOp = JSON.parse(Buffer.from(encodedPart, 'base64').toString());
+    // Expect only the kcs part, as original memo is empty
     expect(decodedOp[1].memo).toMatch(/^kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
   });
 
@@ -140,23 +144,43 @@ describe('generateDistriatedHiveOp', () => {
   });
 
   // User requested test case
-  test('should correctly handle specific input: indies.cafe, 0.20, "Simon Pils 25cl TABLE 21"', () => {
+  test('should correctly handle specific input: indies.cafe, 0.20, "Simon Pils 25cl TABLE 21" (run twice for visual check)', () => {
     const recipient = 'indies.cafe';
     const amountHbd = '0.20';
     const memo = 'Simon Pils 25cl TABLE 21';
-    const result = generateDistriatedHiveOp(recipient, amountHbd, memo);
-    console.log('Output for specific test case (indies.cafe, 0.20, "Simon Pils 25cl TABLE 21"):', result);
 
-    expect(result).toMatch(/^hive:\/\/sign\/op\/.+/);
-    const encodedPart = result.substring('hive://sign/op/'.length);
-    const decodedOp = JSON.parse(Buffer.from(encodedPart, 'base64').toString());
+    // First call
+    const result1 = generateDistriatedHiveOp(recipient, amountHbd, memo);
+    console.log('Output 1 (indies.cafe, 0.20, "Simon Pils 25cl TABLE 21"):', result1);
 
-    expect(decodedOp[0]).toBe('transfer');
-    expect(decodedOp[1].to).toBe(recipient);
-    expect(decodedOp[1].amount).toBe('0.200 HBD');
-    // Check that the memo was processed by distriate
-    // The original memo "Simon Pils 25cl TABLE 21" should be the tag part of the distriated memo
-    expect(decodedOp[1].memo.startsWith(memo + '-inno-')).toBe(true);
-    expect(decodedOp[1].memo).toMatch(new RegExp(`^${memo}-inno-[a-z0-9]{4}-[a-z0-9]{4}$`));
+    expect(result1).toMatch(/^hive:\/\/sign\/op\/.+/);
+    const encodedPart1 = result1.substring('hive://sign/op/'.length);
+    const decodedOp1 = JSON.parse(Buffer.from(encodedPart1, 'base64').toString());
+
+    expect(decodedOp1[0]).toBe('transfer');
+    expect(decodedOp1[1].to).toBe(recipient);
+    expect(decodedOp1[1].amount).toBe('0.200 HBD');
+    // Check the new memo structure: original memo + space + kcs-inno-xxxx-xxxx
+    expect(decodedOp1[1].memo).toMatch(new RegExp(`^${memo} kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$`));
+    const distriatePart1 = decodedOp1[1].memo.substring(memo.length + 1);
+
+    // Second call
+    const result2 = generateDistriatedHiveOp(recipient, amountHbd, memo);
+    console.log('Output 2 (indies.cafe, 0.20, "Simon Pils 25cl TABLE 21"):', result2);
+
+    expect(result2).toMatch(/^hive:\/\/sign\/op\/.+/);
+    const encodedPart2 = result2.substring('hive://sign/op/'.length);
+    const decodedOp2 = JSON.parse(Buffer.from(encodedPart2, 'base64').toString());
+
+    expect(decodedOp2[0]).toBe('transfer');
+    expect(decodedOp2[1].to).toBe(recipient);
+    expect(decodedOp2[1].amount).toBe('0.200 HBD');
+    expect(decodedOp2[1].memo).toMatch(new RegExp(`^${memo} kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$`));
+    const distriatePart2 = decodedOp2[1].memo.substring(memo.length + 1);
+
+    // Ensure the distriate parts are different
+    expect(distriatePart1).not.toBe(distriatePart2);
+    expect(distriatePart1).toMatch(/^kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
+    expect(distriatePart2).toMatch(/^kcs-inno-[a-z0-9]{4}-[a-z0-9]{4}$/);
   });
 });

@@ -33,7 +33,8 @@ export function distriate(tag?: string): string {
 }
 
 export function generateDistriatedHiveOp(recipient: string, amountHbd: string, memo: string): string {
-  const distriatedMemo = distriate(memo);
+  const distriateSuffix = distriate(); // Call without args to use 'kcs' default
+  const finalMemo = memo ? `${memo} ${distriateSuffix}` : distriateSuffix; // Handle empty original memo
   const amountNum = parseFloat(amountHbd);
 
   if (isNaN(amountNum)) {
@@ -47,7 +48,7 @@ export function generateDistriatedHiveOp(recipient: string, amountHbd: string, m
     {
       to: recipient,
       amount: `${amountNum.toFixed(3)} HBD`,
-      memo: distriatedMemo,
+      memo: finalMemo,
     },
   ];
 
