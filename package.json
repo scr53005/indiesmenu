@@ -16,6 +16,7 @@
     "@vercel/postgres": "^0.10.0",
     "axios": "^1.9.0",
     "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "fs": "^0.0.1-security",
     "next": "15.3.1",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
     "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/pg": "^8.15.2",

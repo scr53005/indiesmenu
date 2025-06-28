@@ -163,6 +163,7 @@ export default function Home() {
   }, [lastId, canPlayAudio]);
 
   const handleFulfill = async (id: string) => {
+    console.log(`Attempting to fulfill transfer ID: ${id}`);
     try {
       const res = await fetch('/api/fulfill', {
         method: 'POST',
@@ -258,7 +259,7 @@ export default function Home() {
               <p className={isLate ? 'late-order' : ''}>
                 Ordre recu le:<strong> {receivedDateTime}</strong>
               </p>              
-              <button onClick={() => handleFulfill(tx.id)}>Fulfill</button>
+              <button onClick={() => handleFulfill(tx.id.toString())}>Fulfill</button>
             </li>
           );
           })}

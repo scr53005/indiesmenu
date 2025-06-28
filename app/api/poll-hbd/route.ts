@@ -53,7 +53,7 @@ export async function GET(request: Request) {
             received_at: new Date(),
           },
         });
-        console.log('Inserted transfer to Neon:', transfer.id);
+        console.log('Inserted transfer to back-end DB:', transfer.id);
       }
       transfers.push(transfer);
     }
@@ -73,7 +73,7 @@ export async function GET(request: Request) {
       orderBy: { id: 'desc' },
       take: 50,
     });
-    console.log('Unfulfilled transfers from Neon:', unfulfilledTransfers.length, 'rows');
+    console.log('Unfulfilled transfers from back-end DB:', unfulfilledTransfers.length, 'rows');
 
     const formattedUnfulfilled = unfulfilledTransfers.map(t => ({
       id: t.id.toString(),
@@ -96,5 +96,5 @@ export async function GET(request: Request) {
     );
   } 
 }
-// This code polls the HAF for HBD transfers, checks for new transfers, and stores them in a Neon database using Prisma.
-// It also retrieves unfulfilled transfers from the Neon database and returns them in the response.
+// This code polls the HAF for HBD transfers, checks for new transfers, and stores them in a back-end database using Prisma.
+// It also retrieves unfulfilled transfers from the back-end database and returns them in the response.
