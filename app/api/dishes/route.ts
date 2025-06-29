@@ -22,3 +22,16 @@ export async function GET(req: NextRequest) {
     await prisma.$disconnect();
   }
 }
+
+// This OPTIONS handler is for CORS preflight requests
+// It allows the browser to check if the POST request is allowed from the specified origin
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': 'http://localhost:3030',
+      'Access-Control-Allow-Methods': 'GET',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
+}
