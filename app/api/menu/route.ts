@@ -58,6 +58,7 @@ export async function GET() {
       type: 'drink';
       availableSizes: { size: string; price: string; }[]; // Renamed to clearly indicate all sizes are here
       categoryIds: number[]; // Store category IDs for easy filtering
+      image?: string;
     }>();    
 
     drinks.forEach((drink) => {
@@ -70,24 +71,21 @@ export async function GET() {
           price: ds.price_eur.toFixed(2),
         })),
         categoryIds: drink.categories_drinks.map(cd => cd.category_id),
+        image: drink.image || undefined,
       });
     });
 
-      // Map drinks for the current category
-      /*const drinks = categories.categories_drinks.map((cd) => ({
-        id: `drink-${cd.drinks.drink_id}`, // Prefix with 'drink-' for unique frontend IDs
-        name: cd.drinks.name,
-        type: 'drink',
-        description: cd.drinks.description || '', // Ensure description is a string
-        sizes: cd.drinks.drink_sizes.map((ds) => ({
-          size: ds.size,
-          // Convert Decimal price to string, ensuring 2 decimal places
-          price: ds.price_eur.toFixed(2),
-        })),
-        // Add any other drink-specific fields needed by the frontend
-      }));*/
+    // Format dishes for frontend
+    const formattedDishes = dishes.map((dish) => ({
+      id: `dish-${dish.dish_id}`,
+      name: dish.name,
+      type: 'dish',
+      price: dish.price_eur.toFixed(2),
+      categoryIds: dish.categories_dishes.map((cd) => cd.category_id),
+      image: dish.image || undefined,
+    }));
 
-    return NextResponse.json({ categories, dishes, drinks }, {
+    return NextResponse.json({ categories, dishes: formattedDishes, drinks: Array.from(formattedDrinks.values()) }, {
       headers: {
         'Access-Control-Allow-Origin': 'http://localhost:3030',
         'Access-Control-Allow-Methods': 'GET',

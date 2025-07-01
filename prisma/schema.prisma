@@ -7,15 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model restaurants {
-  id                             Int                              @id @default(autoincrement())
-  name                           String                           @unique @db.VarChar(100)
-  display_name                   String                           @db.VarChar(255)
-  description                    String?
-  created_at                     DateTime?                        @default(now()) @db.Timestamp(6)
-  user_restaurant_authorizations user_restaurant_authorizations[]
-}
-
 model transfers {
   id           BigInt    @id
   from_account String
@@ -26,28 +17,6 @@ model transfers {
   fulfilled    Boolean?  @default(false)
   received_at  DateTime? @default(now()) @db.Timestamptz(6)
   fulfilled_at DateTime? @db.Timestamptz(6)
-}
-
-model user_restaurant_authorizations {
-  id            Int         @id @default(autoincrement())
-  user_id       Int
-  restaurant_id Int
-  role          String      @default("admin") @db.VarChar(50)
-  created_at    DateTime?   @default(now()) @db.Timestamp(6)
-  restaurants   restaurants @relation(fields: [restaurant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users         users       @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([user_id, restaurant_id])
-}
-
-model users {
-  id                             Int                              @id @default(autoincrement())
-  hive_username                  String                           @unique @db.VarChar(100)
-  display_name                   String?                          @db.VarChar(255)
-  email                          String?                          @db.VarChar(255)
-  is_active                      Boolean?                         @default(true)
-  created_at                     DateTime?                        @default(now()) @db.Timestamp(6)
-  user_restaurant_authorizations user_restaurant_authorizations[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -90,12 +59,14 @@ model currency_conversion {
 }
 
 model dishes {
-  dish_id           Int                 @id @default(autoincrement())
-  name              String              @db.VarChar(200)
-  price_eur         Decimal             @db.Decimal(10, 2)
-  record_date       DateTime            @default(dbgenerated("'2025-05-29'::date")) @db.Date
-  categories_dishes categories_dishes[]
-  dishes_cuisson    dishes_cuisson[]
+  dish_id            Int                  @id @default(autoincrement())
+  name               String               @db.VarChar(200)
+  price_eur          Decimal              @db.Decimal(10, 2)
+  record_date        DateTime             @default(dbgenerated("'2025-05-29'::date")) @db.Date
+  image              String?              @db.VarChar(255)
+  categories_dishes  categories_dishes[]
+  dishes_cuisson     dishes_cuisson[]
+  dishes_ingredients dishes_ingredients[]
 }
 
 model dishes_cuisson {
@@ -121,6 +92,7 @@ model drinks {
   drink_id           Int                  @id @default(autoincrement())
   name               String               @db.VarChar(200)
   record_date        DateTime             @default(dbgenerated("'2025-06-01'::date")) @db.Date
+  image              String?              @db.VarChar(255)
   categories_drinks  categories_drinks[]
   drink_sizes        drink_sizes[]
   drinks_ingredients drinks_ingredients[]
@@ -138,6 +110,7 @@ model drinks_ingredients {
 model ingredients {
   ingredient_id      Int                  @id @default(autoincrement())
   name               String               @unique @db.VarChar(100)
+  dishes_ingredients dishes_ingredients[]
   drinks_ingredients drinks_ingredients[]
 }
 
@@ -152,4 +125,13 @@ model orders {
 model restaurant_tables {
   table_number String @id @db.VarChar(10)
   location     String @db.VarChar(50)
+}
+
+model dishes_ingredients {
+  dish_id       Int
+  ingredient_id Int
+  dishes        dishes      @relation(fields: [dish_id], references: [dish_id], onDelete: NoAction, onUpdate: NoAction)
+  ingredients   ingredients @relation(fields: [ingredient_id], references: [ingredient_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([dish_id, ingredient_id])
 }
