@@ -22,7 +22,7 @@ model transfers {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model categories {
   category_id       Int                 @id @default(autoincrement())
-  name              String              @db.VarChar(100)
+  name              String              @unique @db.VarChar(100)
   type              String?             @db.VarChar(10)
   categories_dishes categories_dishes[]
   categories_drinks categories_drinks[]
@@ -90,12 +90,12 @@ model drink_sizes {
 
 model drinks {
   drink_id           Int                  @id @default(autoincrement())
-  name               String               @db.VarChar(200)
+  name               String               @unique @db.VarChar(200)
   record_date        DateTime             @default(dbgenerated("'2025-06-01'::date")) @db.Date
   image              String?              @db.VarChar(255)
   categories_drinks  categories_drinks[]
   drink_sizes        drink_sizes[]
-  drinks_ingredients drinks_ingredients[]
+  drinks_ingredients drinks_ingredients[] 
 }
 
 model drinks_ingredients {
