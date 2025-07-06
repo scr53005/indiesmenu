@@ -25,6 +25,6 @@
     "rootDir": "./",
     
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "./**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "./**/*.ts", "node_modules/@prisma/client/"],
+  "exclude": ["node_modules", "dist"]
 }

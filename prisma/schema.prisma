@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL") // Add this line
 }
 
 model transfers {
@@ -95,7 +96,7 @@ model drinks {
   image              String?              @db.VarChar(255)
   categories_drinks  categories_drinks[]
   drink_sizes        drink_sizes[]
-  drinks_ingredients drinks_ingredients[] 
+  drinks_ingredients drinks_ingredients[]
 }
 
 model drinks_ingredients {
