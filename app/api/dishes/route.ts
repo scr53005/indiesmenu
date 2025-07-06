@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json(dishes, {
       headers: {
-        'Access-Control-Allow-Origin': 'http://localhost:3030', // Front-end origin
+        'Access-Control-Allow-Origin': '*', // Front-end origin
         'Access-Control-Allow-Methods': 'GET', // Adjust as needed
         'Access-Control-Allow-Headers': 'Content-Type',
       },
@@ -29,7 +29,7 @@ export async function OPTIONS() {
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': 'http://localhost:3030',
+      'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET',
       'Access-Control-Allow-Headers': 'Content-Type',
     },
