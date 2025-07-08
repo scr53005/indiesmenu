@@ -2,7 +2,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useCart } from '@/context/CartContext';
+import { useCart } from '@/app/context/CartContext';
 
 interface Dish {
   id: string;
@@ -54,7 +54,7 @@ export default function MenuPage() {
   const [selectedSizes, setSelectedSizes] = useState<{ [key: string]: string }>({}); // Track selected drink sizes
   const searchParams = useSearchParams();
   const table = searchParams.get('table') || 'Unknown';
-  const recipient = process.env.HIVE_ACCOUNT || 'indies.cafe';
+  const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
 
   useEffect(() => {
 
@@ -65,7 +65,7 @@ export default function MenuPage() {
     async function fetchMenu() {
       try {
         setLoading(true);
-        const response = await fetch('http://192.168.178.55:3000/api/menu', {
+        const response = await fetch('/api/menu', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -155,6 +155,33 @@ export default function MenuPage() {
     }
   };
 
+  const handleOrderNow = () => {
+    try {
+      const hiveUrl = orderNow(); // Pass table explicitly or rely on cart.table
+      const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.hivekeychain'; // Android
+      const iosFallbackUrl = 'https://apps.apple.com/us/app/hive-keychain/id1550923076'; // iOS
+
+      // Attempt to open Hive Keychain
+      window.location.href = hiveUrl;
+
+      // Fallback if app is not installed
+      setTimeout(() => {
+        if (document.hasFocus()) {
+          if (navigator.userAgent.includes('Android')) {
+            window.location.href = fallbackUrl;
+          } else if (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')) {
+            window.location.href = iosFallbackUrl;
+          } else {
+            alert(navigator.userAgent + ' - Please install the Hive Keychain app / extension to proceed.');
+          }
+        }
+      }, 1000);
+    } catch (error) {
+      console.error('Error in handleOrderNow:', error);
+      alert('Failed to process the request. Please try again.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100">
       <section className="bg-cover bg-center h-64 flex items-center justify-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1414235077428-338989a2e8c0)' }}>
@@ -164,9 +191,9 @@ export default function MenuPage() {
         </div>
       </section>
     <section className="max-w-6xl mx-auto p-6">
-        <h2 className="text-3xl font-semibold text-center mb-8">Our Menu</h2>
+        
         <div className="text-center mb-4">
-          <p>Cart Items: {getTotalItems()}</p>
+          <p>Order in preparation: {getTotalItems()} Items</p>
           <p>Total Price: €{getTotalPrice()}</p>
           <button
               onClick={handleCallWaiter}
@@ -174,6 +201,8 @@ export default function MenuPage() {
             >
               Call a Waiter
           </button>
+          <br/><br/>
+          <h2 className="text-3xl font-semibold text-center mb-8">Our Menu</h2>          
           <ul>
             {cart.map((item) => (
               <li key={item.id}>
@@ -209,7 +238,7 @@ export default function MenuPage() {
           )}
           {cart.length > 0 && (
              <button
-              onClick={() => orderNow()}
+              onClick={handleOrderNow}
               className="mt-2 bg-blue-600 text-white px-4 py-2 rounded"
             >
               Order Now
@@ -234,7 +263,7 @@ export default function MenuPage() {
                     >
                       {dish.image && (
                         <img
-                          src={`http://localhost:3000${dish.image}`}
+                          src={dish.image}
                           alt={dish.name}
                           className="w-full h-40 object-cover rounded-t-lg"
                         />
@@ -280,7 +309,7 @@ export default function MenuPage() {
                     >
                       {drink.image && (
                         <img
-                          src={`http://localhost:3000${drink.image}`}
+                          src={drink.image}
                           alt={drink.name}
                           className="w-full h-40 object-cover rounded-t-lg"
                         />

@@ -1,7 +1,9 @@
 // app/context/CartContext.tsx
 'use client';
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation'; // Import useSearchParams
+import { useSearchParams } from 'next/navigation';
+import { Buffer } from 'buffer'; // [CHANGE 1]: Import Buffer for client-side usage
+import { distriate } from '@/lib/utils';
 
 interface CartItem {
   id: string;
@@ -11,48 +13,41 @@ interface CartItem {
   options: { [key: string]: string }; // e.g., { size: 'large', cuisson: 'medium' }
 };
 
-// Define the shape of the cart context state and actions
 interface CartContextType {
   cart: CartItem[];
-  hiveOp?: string; // Optional, if you want to pass a hive operation
-  table: string | ' 203 '; // Table ID, can be set later or passed as a prop
-  // Actions
+  hiveOp?: string;
+  table: string | ' 203 ';
   addItem: (item: CartItem) => void;
-  removeItem: (id: string) => void; // Updated for unique item identification
-  updateQuantity: (id: string, newQuantity: number, options?: { [key: string]: string }, table?: string) => void; // Updated
+  removeItem: (id: string) => void;
+  updateQuantity: (id: string, newQuantity: number) => void; // Simplified signature
   clearCart: () => void;
-  orderNow: () => string; // Added for orderNow functionality
+  orderNow: () => string;
   getTotalItems: () => number;
   getTotalPrice: () => string;
   setTable: (tableId: string) => void;
 }
 
-// Create the context with a default undefined value (it will be provided by CartProvider)
 const CartContext = createContext<CartContextType>({
   cart: [],
-  hiveOp: '', // Optional, can be set later
-  table: ' 305 ', // Default table ID, can be set later or passed as a prop
-  // Default implementations for actions
+  hiveOp: '',
+  table: ' 305 ',
   addItem: () => {},
   removeItem: () => {},
   updateQuantity: () => {},
   clearCart: () => {},
-  orderNow: () => 'default', // Default implementation for orderNow
+  orderNow: () => 'default',
   getTotalItems: () => 0,
   getTotalPrice: () => '0.00',
   setTable: () => {},
 });
 
-// CartProvider component to provide the cart context to its children
-// This component will manage the cart state and provide functions to manipulate it
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const searchParams = useSearchParams(); // Initialize useSearchParams here
+  const searchParams = useSearchParams();
   const [cart, setCart] = useState<CartItem[]>([]);
 
- const [table, setTable] = useState<string | null>(() => {
+  const [table, setTableState] = useState<string | null>(() => { // Renamed setTable to setTableState to avoid conflict
     if (typeof window !== 'undefined') {
       const savedTable = localStorage.getItem('cartTable');
-      // Prioritize URL parameter if available when initializing
       const urlTable = searchParams.get('table');
       if (urlTable) {
         return urlTable;
@@ -62,32 +57,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return null;
   });
 
-  // Optional: Load cart from localStorage on initial render
   useEffect(() => {
     try {
       const storedCart = localStorage.getItem('cart');
-      // const storedHiveOp = localStorage.getItem('hiveOp');
       if (storedCart) {
         setCart(JSON.parse(storedCart));
       }
     } catch (error) {
       console.error("Failed to load cart from localStorage:", error);
-      // Fallback to empty cart if there's an issue with localStorage
       setCart([]);
     }
   }, []);
 
-  // Optional: Save cart to localStorage whenever it changes
   useEffect(() => {
     try {
-      localStorage.setItem('cart', JSON.stringify(cart));// Save cart to localStorage
-      //localStorage.setItem('cartTable', table || 'no table value'); // Save table to localStorage
-      //localStorage.setItem('hiveOp', ''); // Save hiveOp to localStorage if needed
-      console.log('Cart saved to localStorage:', { cart, table }); // Debug log
+      localStorage.setItem('cart', JSON.stringify(cart));
+      console.log('Cart saved to localStorage:', { cart, table });
     } catch (error) {
       console.error("Failed to save cart to localStorage:", error);
     }
-  }, [cart]);
+  }, [cart, table]); // [CHANGE 2]: Added 'table' to dependency array for useEffect for localStorage save
 
   // Helper function for deep comparison of options (important for unique items)
   const areOptionsEqual = (opts1: { [key: string]: string }, opts2: { [key: string]: string }) => {
@@ -105,33 +94,35 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addItem = (item: CartItem) => {
-    console.log('Adding item to cart:', item); // Debug log
-    // Default options and table if not provided
-    const defaultOptions = item.options || {};
-    // const defaultTable = item.table || '203'; // Or some other default table ID
-
+    console.log('CartContext - Adding item to cart:', item);
     setCart((prev) => {
-      const existingItem = prev.find((i) => i.id === item.id && i.options.size === item.options.size);
+      console.log('CartContext - Previous cart state:', prev);
+      // [CHANGE 3]: Use areOptionsEqual for robust comparison
+      const existingItem = prev.find((i) => i.id === item.id && areOptionsEqual(i.options, item.options));
+
       if (existingItem) {
-        return prev.map((i) =>
-          i.id === item.id && i.options.size === item.options.size
+        const updatedCart = prev.map((i) =>
+          (i.id === item.id && areOptionsEqual(i.options, item.options))
             ? { ...i, quantity: i.quantity + item.quantity }
             : i
         );
+        console.log('CartContext - Item exists, updated cart:', updatedCart);
+        return updatedCart;
+      } else {
+        const newCart = [...prev, { ...item, quantity: item.quantity || 1 }]; // Ensure quantity is set for new items
+        console.log('CartContext - New item added, new cart:', newCart);
+        return newCart;
       }
-      return [...prev, item];
     });
-
   };
 
-  // Update removeItem to consider options for uniqueness
   const removeItem = (id: string) => {
-    console.log('Removing item:', id); // Debug log
+    console.log('CartContext - Removing item:', id);
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
   const updateQuantity = (id: string, newQuantity: number) => {
-    console.log('Updating quantity:', id, newQuantity); // Debug log
+    console.log('CartContext - Updating quantity:', id, newQuantity);
     if (newQuantity <= 0) {
       setCart((prev) => prev.filter((item) => item.id !== id));
     } else {
@@ -144,23 +135,94 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const clearCart = () => {
-    console.log('Clearing cart'); // Debug log
+    console.log('CartContext - Clearing cart');
     setCart([]);
-    localStorage.removeItem('cart'); // Clear localStorage as well
+    localStorage.removeItem('cart');
   };
 
+   // Helper for option short codes for memo
+  const optionShortCodes: { [key: string]: string } = {
+    size: 's',
+    cuisson: 'c', // Assuming 'cuisson' can be an option key from your dishes
+    // Add other short codes as needed based on your item options
+  };
+  
   const orderNow = (hiveOp?: string) => {
-    const recipient = process.env.HIVE_ACCOUNT || 'indies.cafe';
-    const amountHbd = '0.01';
-    const memo = hiveOp || 'Un serveur est appelé pour la TABLE ';
-    const finalMemo = `${memo} ${table}` ; // Handle empty original memo
+    // [CHANGE 4]: Use NEXT_PUBLIC_ prefix for client-side environment variable
+    const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
+
+    // 1. Calculate amountHbd from cart total
+    const amountHbd = getTotalPrice(); // Returns a string like "12.50"
+
+    /*const memo = hiveOp || 'Un serveur est appelé pour la TABLE ';
+    const finalMemo = `${memo} ${table}` ;*/
     const amountNum = parseFloat(amountHbd);
 
     if (isNaN(amountNum)) {
-      // Consider how to handle errors, perhaps throw or return an error string
-      // For now, let's adapt the throw from the original function
       throw new Error(`Invalid amount_hbd: ${amountHbd}`);
     }
+
+   // 2. Generate memo content
+    const cartMemoParts: string[] = [];
+    cart.forEach(item => {
+      let itemMemo = '';
+      let baseId = '';
+      let itemTypePrefix = '';
+
+      if (item.id.startsWith('dish-')) {
+        itemTypePrefix = 'd';
+        baseId = item.id.replace('dish-', '');
+      } else if (item.id.startsWith('drink-')) {
+        // Assuming drink ID format is 'drink-<numeric_id>-<size_string>'
+        const parts = item.id.split('-');
+        if (parts.length >= 2) {
+            itemTypePrefix = 'b';
+            baseId = parts[1]; // Get the numeric ID part
+        } else {
+            console.warn('Malformed drink ID in cart:', item.id);
+            return; // Skip this item for memo generation
+        }
+      } else {
+        console.warn('Unknown item ID format in cart:', item.id);
+        return; // Skip this item for memo generation
+      }
+
+      itemMemo = `${itemTypePrefix}:${baseId}`;
+
+      // Add options to memo string
+      Object.keys(item.options).forEach(optionKey => {
+        const shortCode = optionShortCodes[optionKey];
+        if (shortCode && item.options[optionKey]) { // Only add if short code exists and option value is not empty
+          itemMemo += `,${shortCode}:${item.options[optionKey]}`;
+        }
+      });
+
+      // Add quantity if greater than 1
+      if (item.quantity > 1) {
+        itemMemo += `,q:${item.quantity}`;
+      }
+      cartMemoParts.push(itemMemo);
+    });
+
+    const cartContentMemo = cartMemoParts.join(';');
+    const tableNumber = table || '203'; // Use default if table is null
+    const distriateString = distriate(); // Call the distriate function
+
+    // Concatenate all memo parts for the raw memo
+    const rawMemo = `${cartContentMemo}; TABLE ${tableNumber} ${distriateString}`;
+
+    // 3. Check memo length (255 characters limit)
+    const memoLimit = 255;
+    let finalMemo = rawMemo;
+
+    if (rawMemo.length > memoLimit) {
+      console.warn(`Memo exceeds ${memoLimit} characters (${rawMemo.length}). Truncating...`);
+      // A simple truncation strategy: just cut off the end
+      finalMemo = rawMemo.substring(0, memoLimit);
+      // You could implement a more sophisticated strategy here,
+      // e.g., truncating the cartContentMemo first while keeping table and distriate info.
+    }
+
 
     const operation = [
       'transfer',
@@ -171,13 +233,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       },
     ];
 
-    // Node.js Buffer for Base64 encoding
+    console.log('CartContext - Final Memo:', finalMemo); // Log the actual memo being sent
     const encodedOperation = 'hive://sign/op/'+Buffer.from(JSON.stringify(operation)).toString('base64');
-    console.log('Ordering now with hiveOp: \'', encodedOperation, '\''); // Debug log
-    // Here you would typically send the cart to your backend or Hive operation
-    // For now, just clear the cart after ordering
+    console.log('CartContext - Ordering now with hiveOp: \'', encodedOperation, '\'');
     clearCart();
-    return encodedOperation; // Return the hive operation URL
+    return encodedOperation;
   };
 
   const getTotalItems = () => {
@@ -197,9 +257,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     <CartContext.Provider
       value={{
         cart,
-        hiveOp: '', // Optional, can be set later
-        table: table || ' 203 ', // Default table ID, can be set later or passed as a prop
-
+        hiveOp: '',
+        table: table || ' 203 ',
         addItem,
         removeItem,
         updateQuantity,
@@ -208,9 +267,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         getTotalItems,
         getTotalPrice,
         setTable: (tableId: string) => {
-          console.log('Setting table:', tableId); // Debug log
-          setTable(tableId);
-          localStorage.setItem('cartTable', tableId); // Save to localStorage
+          console.log('CartContext - Setting table:', tableId);
+          setTableState(tableId); // Use setTableState for consistency
+          localStorage.setItem('cartTable', tableId);
         }
       }}
     >
@@ -219,7 +278,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Custom hook to consume the cart context
 export function useCart() {
   const context = useContext(CartContext);
   if (context === undefined) {

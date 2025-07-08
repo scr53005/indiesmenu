@@ -9,7 +9,8 @@ export function getTable(memo: string, returnBoolean: boolean=false): string | b
     }
 
     const sub = memo.substring(tableIndex + 'TABLE '.length); // Get the part after 'TABLE '
-    const match = sub.match(/^(\d+)(?:\s|$)/); // Match digits followed by a space
+    console.log(`getTable - sub:\'${sub}\'`); // Debug log to check the substring
+    const match = sub.match(/^\s?(\d+)(?:\s+|$)/); // Match digits followed by a space
 
     if (match && match[1]) {
         return match[1]; // Return the captured digits
