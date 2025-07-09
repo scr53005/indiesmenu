@@ -5,12 +5,12 @@
   --foreground: #171717;
 }
 
-@theme inline {
+/* @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
+} */
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -33,4 +33,305 @@ body {
 @keyframes flash {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* app/menu/page.module.css or globals.css */
+/* --- General Layout --- */
+.fixed-cart-container,
+.fixed-menu-selector {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 1000; /* Ensure it stays on top */
+  background-color: white; /* Or a color that matches your theme */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 10px;
+}
+
+.fixed-cart-container {
+  top: 0;
+  padding-bottom: 5px; /* Adjust as needed */
+  border-bottom: 1px solid #eee;
+}
+
+.fixed-menu-selector {
+  /* top property will be set dynamically via inline style in JSX */
+  display: flex;
+  justify-content: space-around;
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  z-index: 900; /* Below cart */
+}
+
+.main-content-area {
+  /* Padding top will be calculated by JS to avoid content being hidden */
+  padding-bottom: 20px; /* Some padding at the bottom */
+}
+
+/* --- Cart Styling --- */
+.cart-header {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.cart-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* Space between cart items */
+}
+
+.cart-item-grid {
+  display: grid;
+  /* Columns: Name (60%), Price, Quantity, Minus, Plus, Drop */
+  /* Using fr units for flexible sizing. Adjust minmax if content overflows */
+  grid-template-columns: 3fr 0.8fr 0.8fr 0.5fr 0.5fr 1fr; /* Adjusted proportions */
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #eee;
+  padding: 5px;
+  border-radius: 5px;
+  background-color: #f9f9f9;
+}
+
+.cart-item-name {
+  white-space: nowrap; /* Prevent wrapping */
+  overflow: hidden; /* Hide overflow */
+  text-overflow: ellipsis; /* Add ellipsis for overflow */
+  font-weight: bold;
+  grid-column: 1 / 2; /* Spans the first column */
+}
+
+.cart-item-price,
+.cart-item-quantity {
+  text-align: center;
+  font-size: 0.9em;
+}
+
+.cart-button {
+  border: none;
+  border-radius: 4px;
+  padding: 4px 0; /* Reduced vertical padding */
+  cursor: pointer;
+  font-size: 0.9em;
+  min-width: 25px; /* Smaller minimum width for +/- */
+  height: 25px; /* Fixed height for +/- */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
+}
+
+/* Specific button colors and sizes */
+.minus-button {
+  background-color: #dc3545; /* Red */
+  color: white;
+  font-size: 1.1em; /* Make text slightly larger for visibility */
+}
+.minus-button:hover {
+  background-color: #c82333;
+}
+
+.plus-button {
+  background-color: #28a745; /* Green */
+  color: white;
+  font-size: 1.1em; /* Make text slightly larger for visibility */
+}
+.plus-button:hover {
+  background-color: #218838;
+}
+
+.drop-button {
+  background-color: #6c757d; /* Grey */
+  color: white;
+  padding: 4px 8px; /* More padding for drop button */
+  font-size: 0.85em; /* Slightly smaller font than +/- */
+  min-width: 40px; /* Adjust as needed for "Drop" text */
+  height: 25px; /* Keep height consistent with +/- */
+}
+.drop-button:hover {
+  background-color: #5a6268;
+}
+
+
+.cart-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.cart-total-text {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.order-now-button {
+  background-color: #007bff; /* Changed to blue for consistency */
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.order-now-button:hover {
+  background-color: #0056b3;
+}
+
+.call-waiter-button {
+  background-color: #28a745; /* Changed to green for consistency */
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.call-waiter-button:hover {
+  background-color: #00ff7b;
+}
+
+/* --- Menu Selector Styling --- */
+.menu-section-button {
+  flex: 1;
+  padding: 10px 0;
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #555;
+  transition: all 0.2s ease-in-out;
+  border-bottom: 3px solid transparent;
+}
+
+.menu-section-button.active {
+  color: #007bff;
+  border-bottom-color: #007bff;
+}
+
+.menu-section-button:hover:not(.active) {
+  color: #0056b3;
+}
+
+/* --- Category Folder Styling --- */
+.category-folder-container {
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.category-folder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background-color: #e9ecef;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #333;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.category-folder-header:hover {
+  background-color: #e2e6ea;
+}
+
+.toggle-icon {
+  font-size: 0.8em;
+  margin-left: 10px;
+}
+
+.category-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); /* Responsive grid */
+  gap: 15px;
+  padding: 15px;
+}
+
+/* --- Menu Item Styling (Dish/Drink) --- */
+.menu-item {
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.menu-item-image {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.menu-item-details {
+  flex-grow: 1;
+  width: 100%; /* Ensure details take full width */
+}
+
+.menu-item-details h4 {
+  margin-bottom: 5px;
+  font-size: 1.1rem;
+}
+
+.menu-item-details p {
+  font-size: 0.95rem;
+  color: #666;
+}
+
+.menu-item-details select {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.add-to-cart-button {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-top: 10px;
+  width: 100%; /* Full width button */
+}
+
+.add-to-cart-button:hover {
+  background-color: #0056b3;
+}
+
+/* --- Loading/Error States --- */
+.loading-spinner,
+.error-message {
+  text-align: center;
+  padding: 50px;
+  font-size: 1.2rem;
+  color: #555;
+}
+
+.error-message {
+  color: #dc3545;
+}
+
+/* --- Responsive Adjustments (Optional, for tablets/larger mobiles) --- */
+@media (min-width: 600px) {
+  .cart-item-grid {
+    /* You might adjust these for larger screens if needed */
+    grid-template-columns: 3fr 0.8fr 0.8fr 0.5fr 0.5fr 1fr;
+  }
 }

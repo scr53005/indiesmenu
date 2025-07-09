@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 // import { Buffer } from 'buffer'; // [CHANGE 1]: Import Buffer for client-side usage
-import { distriate, generateHiveTransferUrl, generateDistriatedHiveOp } from '@/lib/utils';
+import { generateHiveTransferUrl, generateDistriatedHiveOp, dehydrateMemo } from '@/lib/utils';
 
 interface CartItem {
   id: string;
@@ -157,70 +157,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('cart');
   };
 
-   // Helper for option short codes for memo
-  const optionShortCodes: { [key: string]: string } = {
-    size: 's',
-    cuisson: 'c', // Assuming 'cuisson' can be an option key from your dishes
-    // Add other short codes as needed based on your item options
-  };
-  
   const orderNow = () => {
     const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
 
     // 1. Calculate amountHbd from cart total
     const amountHbd = getTotalPrice(); // Returns a string like "12.50"
-
-    /*const memo = hiveOp || 'Un serveur est appelé';
-    const finalMemo = `${memo} ${table}` ;*/
-    /*const amountNum = parseFloat(amountHbd);
-
-    if (isNaN(amountNum)) {
-      throw new Error(`Invalid amount_hbd: ${amountHbd}`);
-    } */
-
-   // 2. Generate memo content
-    const cartMemoParts: string[] = [];
-    cart.forEach(item => {
-      let itemMemo = '';
-      let baseId = '';
-      let itemTypePrefix = '';
-
-      if (item.id.startsWith('dish-')) {
-        itemTypePrefix = 'd';
-        baseId = item.id.replace('dish-', '');
-      } else if (item.id.startsWith('drink-')) {
-        // Assuming drink ID format is 'drink-<numeric_id>-<size_string>'
-        const parts = item.id.split('-');
-        if (parts.length >= 2) {
-            itemTypePrefix = 'b';
-            baseId = parts[1]; // Get the numeric ID part
-        } else {
-            console.warn('Malformed drink ID in cart:', item.id);
-            return; // Skip this item for memo generation
-        }
-      } else {
-        console.warn('Unknown item ID format in cart:', item.id);
-        return; // Skip this item for memo generation
-      }
-
-      itemMemo = `${itemTypePrefix}:${baseId}`;
-
-      // Add options to memo string
-      Object.keys(item.options).forEach(optionKey => {
-        const shortCode = optionShortCodes[optionKey];
-        if (shortCode && item.options[optionKey]) { // Only add if short code exists and option value is not empty
-          itemMemo += `,${shortCode}:${item.options[optionKey]}`;
-        }
-      });
-
-      // Add quantity if greater than 1
-      if (item.quantity > 1) {
-        itemMemo += `,q:${item.quantity}`;
-      }
-      cartMemoParts.push(itemMemo);
-    });
-
-    const cartContentMemo = cartMemoParts.join(';');
+    // 2. Generate memo content
+    const cartContentMemo = dehydrateMemo(cart);
+    console.log('CartContext - Cart content memo:', cartContentMemo); // Log the memo content
+    
     const tableNumber = table || '203'; // Use default if table is null
     //const distriateString = distriate(); // Call the distriate function
 
@@ -238,8 +183,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       // You could implement a more sophisticated strategy here,
       // e.g., truncating the cartContentMemo first while keeping table and distriate info.
     }
-
-
+    // 4. Generate the Hive operation
     const operation = generateDistriatedHiveOp({
       recipient: recipient,
       amountHbd: amountHbd,
@@ -258,7 +202,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
     const amountHbd = '0.010'; // Fixed amount for "Call a Waiter"
     const tableNumber = table || '203';
-    const memo = `Un serveur est appelé ${tableNumber}`;
+    const memo = `Un serveur est appelé TABLE ${tableNumber}`;
 
     const encodedOperation = generateHiveTransferUrl({
       recipient,
