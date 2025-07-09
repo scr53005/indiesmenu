@@ -72,6 +72,6 @@ export function generateDistriatedHiveOp(params: HiveTransferParams): string {
   const distriateSuffix = distriate(); // Call without args to use 'kcs' default
   const finalMemo = params.memo ? `${params.memo} ${distriateSuffix}` : distriateSuffix; // Handle empty original memo
   params.memo = finalMemo; // Update params with the final memo
-  params.recipient = params.recipient.toLowerCase(); // Ensure recipient is lowercase 
+  // params.recipient = params.recipient.toLowerCase(); // Ensure recipient is lowercase 
   return generateHiveTransferUrl(params); // Use the existing function to generate the URL
 }

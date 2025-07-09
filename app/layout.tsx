@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from './context/CartContext'; // Import your CartProvider
+import { Suspense } from 'react'; // <--- NEW: Import Suspense from React
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,12 +31,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <Suspense fallback={<div>Loading application...</div>}>
         <CartProvider>
           {children}
         </CartProvider>
+       </Suspense> 
       </body>
     </html>
   );
