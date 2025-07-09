@@ -45,20 +45,10 @@ const CartContext = createContext<CartContextType>({
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
+  const [table, setTableState] = useState<string | null>(null); // Use a state variable for table  
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  const [table, setTableState] = useState<string | null>(() => { // Renamed setTable to setTableState to avoid conflict
-    if (typeof window !== 'undefined') {
-      const savedTable = localStorage.getItem('cartTable');
-      const urlTable = searchParams.get('table');
-      if (urlTable) {
-        return urlTable;
-      }
-      return savedTable || null;
-    }
-    return null;
-  });
-
+ // Effect to load cart from localStorage (existing)
   useEffect(() => {
     try {
       const storedCart = localStorage.getItem('cart');
@@ -70,10 +60,36 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setCart([]);
     }
   }, []);
+  
+  
+  useEffect(() => { // Renamed setTable to setTableState to avoid conflict
+    if (typeof window !== 'undefined') {
+      const savedTable = localStorage.getItem('cartTable');
+      const urlTable = searchParams.get('table');
+      let validatedTable: string | null = null;      
 
+      if (urlTable) {
+        const parsedTable = parseInt(urlTable, 10);
+        if (!isNaN(parsedTable) && parsedTable > 0 && parsedTable <= 9999) {
+          validatedTable = parsedTable.toString();
+        } else {
+          console.warn(`Invalid or out-of-range table parameter from URL: "${urlTable}". Using default or saved.`);
+        }
+      }
+      // Prioritize validated URL table, then saved, then a hardcoded default if nothing else
+      const initialTable = validatedTable || savedTable || '203';
+        setTableState(initialTable); // Set the table state here
+      }
+    }, [searchParams]); // Run this effect when searchParams change
+
+  // Effect to save cart and table to localStorage whenever they change
+  // This ensures that the cart and table state are saved after initial hydration
   useEffect(() => {
     try {
       localStorage.setItem('cart', JSON.stringify(cart));
+      if (table !== null) { // Only attempt to save table if it has been set from initial hydration
+        localStorage.setItem('cartTable', table);
+      }      
       console.log('Cart saved to localStorage:', { cart, table });
     } catch (error) {
       console.error("Failed to save cart to localStorage:", error);
@@ -231,7 +247,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
 
     console.log('CartContext - Final Memo:', finalMemo); // Log the actual memo being sent
-    
+
     // const encodedOperation = 'hive://sign/op/'+Buffer.from(JSON.stringify(operation)).toString('base64');
     // console.log('CartContext - Ordering now with hiveOp: \'', encodedOperation, '\'');
     clearCart();
