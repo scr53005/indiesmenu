@@ -2,8 +2,8 @@
 'use client';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Buffer } from 'buffer'; // [CHANGE 1]: Import Buffer for client-side usage
-import { distriate } from '@/lib/utils';
+// import { Buffer } from 'buffer'; // [CHANGE 1]: Import Buffer for client-side usage
+import { distriate, generateHiveTransferUrl, generateDistriatedHiveOp } from '@/lib/utils';
 
 interface CartItem {
   id: string;
@@ -22,6 +22,7 @@ interface CartContextType {
   updateQuantity: (id: string, newQuantity: number) => void; // Simplified signature
   clearCart: () => void;
   orderNow: () => string;
+  callWaiter: () => string; // Assuming you want to keep this for waiter calls
   getTotalItems: () => number;
   getTotalPrice: () => string;
   setTable: (tableId: string) => void;
@@ -36,6 +37,7 @@ const CartContext = createContext<CartContextType>({
   updateQuantity: () => {},
   clearCart: () => {},
   orderNow: () => 'default',
+  callWaiter: () => 'default',
   getTotalItems: () => 0,
   getTotalPrice: () => '0.00',
   setTable: () => {},
@@ -76,7 +78,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Failed to save cart to localStorage:", error);
     }
-  }, [cart, table]); // [CHANGE 2]: Added 'table' to dependency array for useEffect for localStorage save
+  }, [cart, table]); // Save cart and table state to localStorage whenever they change
 
   // Helper function for deep comparison of options (important for unique items)
   const areOptionsEqual = (opts1: { [key: string]: string }, opts2: { [key: string]: string }) => {
@@ -97,7 +99,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     console.log('CartContext - Adding item to cart:', item);
     setCart((prev) => {
       console.log('CartContext - Previous cart state:', prev);
-      // [CHANGE 3]: Use areOptionsEqual for robust comparison
       const existingItem = prev.find((i) => i.id === item.id && areOptionsEqual(i.options, item.options));
 
       if (existingItem) {
@@ -147,20 +148,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     // Add other short codes as needed based on your item options
   };
   
-  const orderNow = (hiveOp?: string) => {
-    // [CHANGE 4]: Use NEXT_PUBLIC_ prefix for client-side environment variable
+  const orderNow = () => {
     const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
 
     // 1. Calculate amountHbd from cart total
     const amountHbd = getTotalPrice(); // Returns a string like "12.50"
 
-    /*const memo = hiveOp || 'Un serveur est appelé pour la TABLE ';
+    /*const memo = hiveOp || 'Un serveur est appelé';
     const finalMemo = `${memo} ${table}` ;*/
-    const amountNum = parseFloat(amountHbd);
+    /*const amountNum = parseFloat(amountHbd);
 
     if (isNaN(amountNum)) {
       throw new Error(`Invalid amount_hbd: ${amountHbd}`);
-    }
+    } */
 
    // 2. Generate memo content
     const cartMemoParts: string[] = [];
@@ -206,10 +206,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     const cartContentMemo = cartMemoParts.join(';');
     const tableNumber = table || '203'; // Use default if table is null
-    const distriateString = distriate(); // Call the distriate function
+    //const distriateString = distriate(); // Call the distriate function
 
     // Concatenate all memo parts for the raw memo
-    const rawMemo = `${cartContentMemo}; TABLE ${tableNumber} ${distriateString}`;
+    const rawMemo = `${cartContentMemo}; TABLE ${tableNumber}`;
 
     // 3. Check memo length (255 characters limit)
     const memoLimit = 255;
@@ -224,19 +224,36 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
 
 
-    const operation = [
-      'transfer',
-      {
-        to: recipient,
-        amount: `${amountNum.toFixed(3)} HBD`,
-        memo: finalMemo,
-      },
-    ];
+    const operation = generateDistriatedHiveOp({
+      recipient: recipient,
+      amountHbd: amountHbd,
+      memo: finalMemo,
+    });
 
     console.log('CartContext - Final Memo:', finalMemo); // Log the actual memo being sent
-    const encodedOperation = 'hive://sign/op/'+Buffer.from(JSON.stringify(operation)).toString('base64');
-    console.log('CartContext - Ordering now with hiveOp: \'', encodedOperation, '\'');
+    
+    // const encodedOperation = 'hive://sign/op/'+Buffer.from(JSON.stringify(operation)).toString('base64');
+    // console.log('CartContext - Ordering now with hiveOp: \'', encodedOperation, '\'');
     clearCart();
+    return operation;
+  };
+
+  const callWaiter = () => {
+    const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
+    const amountHbd = '0.010'; // Fixed amount for "Call a Waiter"
+    const tableNumber = table || '203';
+    const memo = `Un serveur est appelé ${tableNumber}`;
+
+    const encodedOperation = generateHiveTransferUrl({
+      recipient,
+      amountHbd,
+      memo,
+    });
+
+    console.log('CartContext - Generated Hive Call Waiter URL:', encodedOperation);
+    console.log('CartContext - Final Call Waiter Memo:', memo);
+
+    // DO NOT clear the cart for "Call a Waiter"
     return encodedOperation;
   };
 
@@ -264,6 +281,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         updateQuantity,
         clearCart,
         orderNow,
+        callWaiter,
         getTotalItems,
         getTotalPrice,
         setTable: (tableId: string) => {

@@ -45,7 +45,7 @@ interface MenuData {
 }
 
 export default function MenuPage() {
-  const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, getTotalItems, getTotalPrice, setTable } = useCart();
+  const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, setTable } = useCart();
   const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [] });
   const [groupedDishes, setGroupedDishes] = useState<GroupedDishes>({});
   const [groupedDrinks, setGroupedDrinks] = useState<GroupedDrinks>({});
@@ -53,7 +53,9 @@ export default function MenuPage() {
   const [loading, setLoading] = useState(true);
   const [selectedSizes, setSelectedSizes] = useState<{ [key: string]: string }>({}); // Track selected drink sizes
   const searchParams = useSearchParams();
-  const table = searchParams.get('table') || 'Unknown';
+  const urlTable = searchParams.get('table') || '218';
+  const validatedTable = parseInt(urlTable, 10);
+  const table = isNaN(validatedTable) ? '218' : validatedTable.toString(); // Default to '218' if parsing fails
   const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
 
   useEffect(() => {
@@ -130,7 +132,7 @@ export default function MenuPage() {
 
   const handleCallWaiter = () => {
     try {
-      const hiveUrl = orderNow(); // Pass table explicitly or rely on cart.table
+      const hiveUrl = callWaiter(); // Pass table explicitly or rely on cart.table
       const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.hivekeychain'; // Android
       const iosFallbackUrl = 'https://apps.apple.com/us/app/hive-keychain/id1550923076'; // iOS
 
@@ -241,7 +243,7 @@ export default function MenuPage() {
               onClick={handleOrderNow}
               className="mt-2 bg-blue-600 text-white px-4 py-2 rounded"
             >
-              Order Now
+              Order Now (€{getTotalPrice()})
             </button> 
           )}
         </div>

@@ -1,3 +1,38 @@
+import { Buffer } from 'buffer'; // Needed for client-side base64 encoding
+
+interface HiveTransferParams {
+  recipient: string;
+  amountHbd: string; // e.g., "0.010"
+  memo: string;
+}
+
+export function generateHiveTransferUrl(params: HiveTransferParams): string {
+  const { recipient, amountHbd, memo } = params;
+
+  // Validate amountHbd
+  const checkHbd = parseFloat(amountHbd);
+    if (isNaN(checkHbd)) {
+    // Consider how to handle errors, perhaps throw or return an error string
+    // For now, let's adapt the throw from the original function
+    throw new Error(`Invalid amount HBD: ${amountHbd}`);
+  }
+  const checkedHbd = checkHbd.toFixed(3); // Ensure 3 decimal places for HBD
+
+  const operation = [
+    'transfer',
+    {
+      to: recipient,
+      amount: `${checkedHbd} HBD`, // Ensure 3 decimal places for HBD
+      memo: memo,
+    },
+  ];
+
+  // Encode the operation to base64
+  const encodedOperation = 'hive://sign/op/' + Buffer.from(JSON.stringify(operation)).toString('base64');
+
+  return encodedOperation;
+}
+
 export function getTable(memo: string, returnBoolean: boolean=false): string | boolean{
     const tableIndex = memo.lastIndexOf('TABLE ');
     if (tableIndex === -1) {
@@ -33,27 +68,10 @@ export function distriate(tag?: string): string {
     return `${effectiveTag}-inno-${randomPart1}-${randomPart2}`;
 }
 
-export function generateDistriatedHiveOp(recipient: string, amountHbd: string, memo: string): string {
+export function generateDistriatedHiveOp(params: HiveTransferParams): string {
   const distriateSuffix = distriate(); // Call without args to use 'kcs' default
-  const finalMemo = memo ? `${memo} ${distriateSuffix}` : distriateSuffix; // Handle empty original memo
-  const amountNum = parseFloat(amountHbd);
-
-  if (isNaN(amountNum)) {
-    // Consider how to handle errors, perhaps throw or return an error string
-    // For now, let's adapt the throw from the original function
-    throw new Error(`Invalid amount_hbd: ${amountHbd}`);
-  }
-
-  const operation = [
-    'transfer',
-    {
-      to: recipient,
-      amount: `${amountNum.toFixed(3)} HBD`,
-      memo: finalMemo,
-    },
-  ];
-
-  // Node.js Buffer for Base64 encoding
-  const encodedOperation = Buffer.from(JSON.stringify(operation)).toString('base64');
-  return `hive://sign/op/${encodedOperation}`;
+  const finalMemo = params.memo ? `${params.memo} ${distriateSuffix}` : distriateSuffix; // Handle empty original memo
+  params.memo = finalMemo; // Update params with the final memo
+  params.recipient = params.recipient.toLowerCase(); // Ensure recipient is lowercase 
+  return generateHiveTransferUrl(params); // Use the existing function to generate the URL
 }
