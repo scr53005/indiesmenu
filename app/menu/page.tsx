@@ -3,7 +3,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useCart } from '@/app/context/CartContext';
+import MenuItem from '@/components/MenuItem'; // Import the new MenuItem component
+import CartItemDisplay from '@/components/CartItemDisplay'; // Import the new CartItemDisplay component
+import '@/app/globals.css'; // Import global styles
 
+// Define interfaces for menu items and categories
 interface Dish {
   id: string;
   name: string;
@@ -30,13 +34,13 @@ interface Category {
   categories_drinks: { drinks: { drink_id: number } }[];
 }
 
-interface GroupedDishes {
+/* interface GroupedDishes {
   [category: string]: Dish[];
 }
 
 interface GroupedDrinks {
   [category: string]: Drink[];
-}
+} */
 
 interface MenuData {
   categories: Category[];
@@ -85,16 +89,16 @@ export default function MenuPage() {
   useEffect(() => {
     // Set the table number in the cart context
     setTable(table);
-    console.log('Table in cart set to: ', table);
+    // console.log('Table in cart set to: ', table);
 
     const fetchMenu = async () => {
-      try {
+      /* try {
         setLoading(true);
         setError(null); // Reset error state before fetching
         console.log('Fetching menu for table:', table);
       } catch (e: any) {
         setError(e.message);  
-      }
+      } */
 
       try {
         const response = await fetch('/api/menu'); // Fetch from your Next.js API route
@@ -104,7 +108,7 @@ export default function MenuPage() {
         const data: MenuData = await response.json();
         setMenu(data);
         setLoading(false);
-        setActiveMenuSection('dishes'); // Default to showing dishes after loading
+        setActiveMenuSection('drinks'); // Default to showing drinks after loading
       } catch (e: any) {
         setError(e.message);
         setLoading(false);
@@ -159,15 +163,18 @@ export default function MenuPage() {
     }
   }, [menu]);
 
-  // Effect to calculate dynamic padding for main content
+  // Effect to calculate dynamic heights for fixed elements
   useEffect(() => {
     const calculateHeights = () => {
-      if (cartRef.current) {
-        setCartHeight(cart.length > 0 ? cartRef.current.offsetHeight : 0); // Only set height if cart is visible
-      }
-      if (menuSelectorRef.current) {
-        setMenuSelectorHeight(menuSelectorRef.current.offsetHeight);
-      }
+      // Use setTimeout to allow DOM to update after state changes before reading offsetHeight
+      setTimeout(() => {
+        if (cartRef.current) {
+          setCartHeight(cart.length > 0 ? cartRef.current.offsetHeight : 0);
+        }
+        if (menuSelectorRef.current) {
+          setMenuSelectorHeight(menuSelectorRef.current.offsetHeight);
+        }
+      }, 0); // Short delay to ensure DOM update
     };
 
     calculateHeights(); // Calculate on mount
@@ -175,11 +182,23 @@ export default function MenuPage() {
     window.addEventListener('resize', calculateHeights);
 
     // Observe cart content changes to recalculate cart height
-    const cartObserver = new MutationObserver(() => setTimeout(calculateHeights, 50));
+    // Using a more specific observer configuration to limit triggers
+    const cartObserver = new MutationObserver((mutationsList) => { // Removed 'observer' param as it's not used
+        for(const mutation of mutationsList) {
+            if (mutation.type === 'childList' || (mutation.type === 'attributes' && mutation.attributeName === 'style')) {
+                calculateHeights();
+                break; // Recalculate once per relevant mutation
+            }
+        }
+    });
+
     if (cartRef.current) {
-      cartObserver.observe(cartRef.current, { childList: true, subtree: true, attributes: true });
+      // Observe only direct child additions/removals and attribute changes (like height/style)
+      cartObserver.observe(cartRef.current, { childList: true, attributes: true, subtree: false });
     }
 
+    // Cleanup function to remove event listeners and observer
+    // This prevents memory leaks and ensures the observer is disconnected when the component unmounts
     return () => {
       window.removeEventListener('resize', calculateHeights);
       if (cartRef.current) { // Disconnect observer only if ref exists
@@ -188,11 +207,12 @@ export default function MenuPage() {
     };
   }, [cart.length, cart]); // Dependency on cart.length for cart visibility, and cart for content changes
 
-  const handleSizeChange = (drinkId: string, size: string) => {
+ // Memoized callbacks
+  const handleSizeChange = useCallback((drinkId: string, size: string) => {
     setSelectedSizes(prev => ({ ...prev, [drinkId]: size }));
-  };
+  }, []); // Empty dependency array as setSelectedSizes is stable
 
-  const handleAddItem = (item: Dish | Drink) => {
+  const handleAddItem = useCallback((item: Dish | Drink) => {
     if (item.type === 'dish') {
       addItem({
         id: item.id,
@@ -212,7 +232,7 @@ export default function MenuPage() {
         options: { size: selectedSize },
       });
     }
-  };
+  }, [addItem, selectedSizes]); // Depends on addItem (from CartContext, stable) and selectedSizes state
 
   const fallBackNoKeychain = () => {
       const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.hivekeychain'; // Android
@@ -244,15 +264,14 @@ export default function MenuPage() {
     }
   };
 
-  const handleOrder = () => {
+  const handleOrder = useCallback(() => {
     if (cart.length === 0) {
-      alert('Your cart is empty!');
+      alert('Rien a commander !');
       return;
     }
     const hiveOpUrl = orderNow();
-    fallBackNoKeychain();
     window.location.href = hiveOpUrl;
-  };
+  }, [cart.length, orderNow]); // Depends on cart.length and orderNow (from CartContext, stable)
 
   const toggleCategory = useCallback((categoryId: number) => {
     setOpenCategories(prev => {
@@ -274,7 +293,9 @@ export default function MenuPage() {
     return <div className="error-message">Error: {error}</div>;
   }
 
-  const renderMenuItem = (item: Dish | Drink) => (
+  const totalFixedHeaderHeight = cartHeight + menuSelectorHeight;
+
+ /* const renderMenuItem = (item: Dish | Drink) => (
     <div key={item.id} className="menu-item">
       {item.image && (
         <img src={item.image} alt={item.name} className="menu-item-image" />
@@ -306,9 +327,9 @@ export default function MenuPage() {
         Ajoutez
       </button>
     </div>
-  );
+  ); */
 
-  const totalFixedHeaderHeight = cartHeight + menuSelectorHeight; // Calculate total height for padding
+  // const totalFixedHeaderHeight = cartHeight + menuSelectorHeight; // Calculate total height for padding
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
@@ -316,17 +337,17 @@ export default function MenuPage() {
       {/* Fixed Cart Section */}
       {cart.length > 0 && (
         <div ref={cartRef} className="fixed-cart-container">
-          <div className="cart-header">Your Cart ({getTotalItems()} items)</div>
+          <div className="cart-header">Votre Ordre ({getTotalItems()} items)</div>
           <div className="cart-items-list">
             {cart.map(item => (
-              <div key={item.id} className="cart-item-grid">
-                <div className="cart-item-name">{item.name}</div>
-                <div className="cart-item-price">€{item.price}</div>
-                <div className="cart-item-quantity">{item.quantity}</div>
-                <button onClick={() => updateQuantity(item.id, item.quantity - 1) } className="cart-button minus-button">-</button>
-                <button onClick={() => updateQuantity(item.id, item.quantity + 1) } className="cart-button plus-button">+</button>
-                <button onClick={() => removeItem(item.id)} className="cart-button drop-button">Drop</button>
-              </div>
+              // Use the memoized CartItemDisplay component
+              <CartItemDisplay
+                key={item.id}
+                item={item}
+                tableParam={table}
+                updateQuantity={updateQuantity}
+                removeItem={removeItem}
+              />
             ))}
           </div>
           <div className="cart-summary-row">
@@ -351,13 +372,13 @@ export default function MenuPage() {
           onClick={() => setActiveMenuSection('dishes')}
           className={`menu-section-button ${activeMenuSection === 'dishes' ? 'active' : ''}`}
         >
-          Dishes
+          Les plats
         </button>
         <button
           onClick={() => setActiveMenuSection('drinks')}
           className={`menu-section-button ${activeMenuSection === 'drinks' ? 'active' : ''}`}
         >
-          Drinks
+          Les boissons
         </button>
       </div>
 
@@ -386,7 +407,16 @@ export default function MenuPage() {
                 </h3>
                 {openCategories.has(parseInt(id)) && (
                   <div className="category-items-grid">
-                    {category.items.map((item: Dish) => renderMenuItem(item))}
+                    {category.items.map((item: Dish) => (
+                      // Use the memoized MenuItem component
+                      <MenuItem
+                        key={item.id}
+                        item={item}
+                        selectedSizes={selectedSizes}
+                        handleSizeChange={handleSizeChange}
+                        handleAddItem={handleAddItem}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
@@ -406,7 +436,16 @@ export default function MenuPage() {
                 </h3>
                 {openCategories.has(parseInt(id)) && (
                   <div className="category-items-grid">
-                    {category.items.map((item: Drink) => renderMenuItem(item))}
+                    {category.items.map((item: Drink) => (
+                      // Use the memoized MenuItem component
+                      <MenuItem
+                        key={item.id}
+                        item={item}
+                        selectedSizes={selectedSizes}
+                        handleSizeChange={handleSizeChange}
+                        handleAddItem={handleAddItem}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
