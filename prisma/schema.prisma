@@ -61,7 +61,7 @@ model currency_conversion {
 
 model dishes {
   dish_id            Int                  @id @default(autoincrement())
-  name               String               @db.VarChar(200)
+  name               String               @unique @db.VarChar(200)
   price_eur          Decimal              @db.Decimal(10, 2)
   record_date        DateTime             @default(dbgenerated("'2025-05-29'::date")) @db.Date
   image              String?              @db.VarChar(255)

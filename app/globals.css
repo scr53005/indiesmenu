@@ -37,13 +37,21 @@ body {
 
 /* app/menu/page.module.css or globals.css */
 /* --- General Layout --- */
-.fixed-cart-container,
+.fixed-cart-container {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 1000; /* Ensure it stays on top */
+  background-color: rgb(255, 215, 35); /* Or a color that matches your theme */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 10px;
+}
 .fixed-menu-selector {
   position: fixed;
   left: 0;
   right: 0;
   z-index: 1000; /* Ensure it stays on top */
-  background-color: white; /* Or a color that matches your theme */
+  background-color: rgb(220, 220, 200); /* Or a color that matches your theme */
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   padding: 10px;
 }
@@ -82,20 +90,39 @@ body {
   gap: 8px; /* Space between cart items */
 }
 
-.cart-item-grid {
+/*.cart-item-grid {
   display: grid;
   /* Columns: Name (60%), Price, Quantity, Minus, Plus, Drop */
   /* Using fr units for flexible sizing. Adjust minmax if content overflows */
-  grid-template-columns: 3fr 0.8fr 0.8fr 0.5fr 0.5fr 1fr; /* Adjusted proportions */
-  align-items: center;
+  /* grid-template-columns: 3fr 0.8fr 0.8fr 0.5fr 0.5fr 1fr; /* Adjusted proportions */
+  /* align-items: center;
   gap: 5px;
   border: 1px solid #eee;
   padding: 5px;
   border-radius: 5px;
   background-color: #f9f9f9;
+} */
+
+/* Default layout for mobile (small screens) */
+.cart-item-grid {
+    display: grid;
+    /* Define grid areas to arrange elements for mobile */
+    grid-template-areas:
+        "name price quantity plus minus drop"
+        "options options options options options options";
+    /* grid-template-columns: 1fr auto auto auto;  Defines columns for the grid areas */
+    grid-template-columns: 4.6fr 0.8fr 0.5fr 0.5fr 0.5fr 0.8fr; /* Adjusted proportions */
+    gap: 4px; /* Reduced gap for mobile */
+    align-items: center; /* Vertically align items in their rows */
+    padding: 4px; /* Reduced padding for mobile */
+    border-bottom: 1px solid #eee;
+    border-radius: 4px;
+    background-color: #f9f9f9; /*white;*/
 }
 
 .cart-item-name {
+  grid-area: name; /* Assign to the name area */
+  text-align: left;
   white-space: nowrap; /* Prevent wrapping */
   overflow: hidden; /* Hide overflow */
   text-overflow: ellipsis; /* Add ellipsis for overflow */
@@ -103,10 +130,20 @@ body {
   grid-column: 1 / 2; /* Spans the first column */
 }
 
-.cart-item-price,
-.cart-item-quantity {
+.cart-item-price {
+  grid-area: price; /* Assign to the price area */
   text-align: center;
-  font-size: 0.9em;
+  color: #666;
+  /*font-weight: bold;*/
+  font-size: 0.95em; /* Slightly larger for emphasis */
+  white-space: nowrap; /* Prevents price from wrapping */
+}
+
+.cart-item-quantity {
+  grid-area: quantity; /* Assign to the quantity area */
+  text-align: center;
+  /* font-weight: bold;*/
+  font-size: 0.95em;
 }
 
 .cart-button {
@@ -123,30 +160,37 @@ body {
   font-weight: bold;
 }
 
-/* Specific button colors and sizes */
-.minus-button {
-  background-color: #dc3545; /* Red */
-  color: white;
-  font-size: 1.1em; /* Make text slightly larger for visibility */
-}
-.minus-button:hover {
-  background-color: #c82333;
-}
-
 .plus-button {
+  grid-area: plus; /* Places the plus button in the 'plus' area */
   background-color: #28a745; /* Green */
   color: white;
-  font-size: 1.1em; /* Make text slightly larger for visibility */
+  white-space: nowrap;
+  font-size: 0.9em;
 }
 .plus-button:hover {
   background-color: #218838;
 }
 
+/* Specific button colors and sizes */
+.minus-button {
+  grid-area: minus; /* Places the minus button in the 'minus' area */
+  background-color: #dc3545; /* Red */
+  color: white;
+  white-space: nowrap;
+  font-size: 1em;
+  font-weight: bold;
+}
+.minus-button:hover {
+  background-color: #c82333;
+}
+
 .drop-button {
+  grid-area: drop; /* Places the minus button in the 'minus' area */
   background-color: #6c757d; /* Grey */
   color: white;
+  white-space: nowrap;
   padding: 4px 8px; /* More padding for drop button */
-  font-size: 0.85em; /* Slightly smaller font than +/- */
+  font-size: 0.8em; /* Slightly smaller font than +/- */
   min-width: 40px; /* Adjust as needed for "Drop" text */
   height: 25px; /* Keep height consistent with +/- */
 }
@@ -154,6 +198,26 @@ body {
   background-color: #5a6268;
 }
 
+/* Options area - naturally positioned on the third row by 'grid-area: options' */
+.cart-item-options {
+    grid-area: options;
+    font-size: 0.85em;
+    color: #555;
+    margin-top: 10px; /* Space from buttons above */
+    padding-top: 10px;
+    border-top: 1px dashed #eee; /* Visual separation for options on a new row */
+    display: flex; /* Uses flexbox to lay out option tags */
+    flex-wrap: wrap; /* Allows option tags to wrap to the next line if needed */
+    gap: 8px; /* Space between individual option tags */
+    padding-left: 5px; /* Slight indent for visual alignment */
+}
+
+.option-tag {
+    background-color: #e9e9e9;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap; /* Prevents text within an option tag from wrapping */
+}
 
 .cart-summary-row {
   display: flex;
@@ -206,7 +270,7 @@ body {
   cursor: pointer;
   font-size: 1.1rem;
   font-weight: bold;
-  color: #555;
+  color: #f85e05e7;
   transition: all 0.2s ease-in-out;
   border-bottom: 3px solid transparent;
 }

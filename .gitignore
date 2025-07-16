@@ -25,6 +25,9 @@
 *.pem
 schema.sql
 menu/menu.sql
+output_qrs
+output_qrs/*
+*.bak
 
 # debug
 npm-debug.log*

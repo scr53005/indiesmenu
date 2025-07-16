@@ -47,11 +47,11 @@ function getOrderDisplayContent(memoLines: HydratedOrderLine[]): string {
 }*/
 
 export default function Home() {
+  const [canPlayAudio, setCanPlayAudio] = useState(false);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [lastId, setLastId] = useState('0');
   const [loading, setLoading] = useState(true);
   const [seenTransferIds, setSeenTransferIds] = useState<Set<string>>(new Set()); // Track seen IDs
-  const [canPlayAudio, setCanPlayAudio] = useState(false);
   const bell1Ref = useRef<HTMLAudioElement | null>(null);
   const bell2Ref = useRef<HTMLAudioElement | null>(null);
   const [menuData, setMenuData] = useState<MenuData | null>(null);
@@ -70,38 +70,71 @@ export default function Home() {
   // Initialize audio elements once
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      bell1Ref.current = new Audio('/sounds/doorbell.mp3');
-      bell2Ref.current = new Audio('/sounds/chime-2.mp3');
-      bell1Ref.current.load();
-      bell2Ref.current.load();
-      console.log('Audio files preloaded');
+      if (!bell1Ref.current) {
+        bell1Ref.current = new Audio('/sounds/doorbell.mp3');
+        bell1Ref.current.load();
+        console.log('Doorbell file preloaded');
+      }
+      if (!bell2Ref.current) {
+        bell2Ref.current = new Audio('/sounds/chime-2.mp3');
+        bell2Ref.current.load();
+        console.log('Chime file preloaded');
+      }
     }
-    return () => {
-      if (bell1Ref.current) {
-        bell1Ref.current.pause();
-        bell1Ref.current = null;
-      }
-      if (bell2Ref.current) {
-        bell2Ref.current.pause();
-        bell2Ref.current = null;
-      }
-    };
-  }, []);
+  }, []);  // Empty dependency array ensures this runs only once on mount
 
   // Make playBellSounds a stable function using useCallback
   const playBellSounds = useCallback(() => {
-    if (canPlayAudio && bell1Ref.current && bell2Ref.current) {
-      console.log('Playing bell sounds');
-      bell1Ref.current.currentTime = 0;
-      bell1Ref.current.play().catch(error => console.error('Doorbell playback error:', error));
-      setTimeout(() => {
-        bell2Ref.current!.currentTime = 0;
-        bell2Ref.current!.play().catch(error => console.error('Chime-2 playback error:', error));
-      }, 2000);
-    } else {
-      console.log('Audio not unlocked or not initialized; skipping bell sounds');
+    if (!canPlayAudio) { // Only attempt to unlock if not already unlocked
+      if (bell1Ref.current) {
+        // Playing and immediately pausing/resetting is a common trick to unlock browser audio context
+        bell1Ref.current.play()
+          .then(() => {
+            bell1Ref.current!.pause();
+            bell1Ref.current!.currentTime = 0;
+            setCanPlayAudio(true); // Update state to reflect unlocked status
+            console.log('page.tsx: Audio unlocked via button'); // Corresponds to your line 268
+          })
+          .catch(error => {
+            console.error('Failed to unlock audio with bell sound, trying chime:', error);
+            // Fallback: Try unlocking with the chime sound if bell failed
+            if (bell2Ref.current) {
+                bell2Ref.current.play()
+                    .then(() => {
+                        bell2Ref.current!.pause();
+                        bell2Ref.current!.currentTime = 0;
+                        setCanPlayAudio(true);
+                        console.log('page.tsx: Audio unlocked via button (chime fallback)');
+                    })
+                    .catch(e => console.error("Failed to unlock audio with chime sound:", e));
+            }
+          });
+      } else {
+        console.warn('Audio references not yet available for unlock. Please wait for preload.');
+      }
     }
-  }, [canPlayAudio]); // Dependency: canPlayAudio
+  }, [canPlayAudio]); // Dependency: canPlayAudio to prevent unnecessary re-creations of this callback
+
+  // --- Functions to Play Specific Sounds ---
+  const playBell1Sound = useCallback(() => {
+    // This is the check that was logging "Audio not unlocked or not initialized..." (line 102)
+    if (canPlayAudio && bell1Ref.current) {
+      bell1Ref.current.currentTime = 0; // Reset to start for immediate playback
+      bell1Ref.current.play().catch(e => console.error("Error playing bell sound:", e));
+    } else {
+      console.log('page.tsx: Audio not unlocked or not initialized; skipping doorbell sounds (canPlayAudio:', canPlayAudio, ', bellSoundRef.current:', bell1Ref.current, ')');
+    }
+  }, [canPlayAudio, bell1Ref]); // Depend on isAudioUnlocked to get its latest value
+
+  const playChimeSound = useCallback(() => {
+    if (canPlayAudio && bell2Ref.current) {
+      bell2Ref.current.currentTime = 0;
+      bell2Ref.current.play().catch(e => console.error("Error playing chime sound:", e));
+    } else {
+      console.log('page.tsx: Audio not unlocked or not initialized; skipping chime sounds (canPlayAudio:', canPlayAudio, ', chimeSoundRef.current:', bell2Ref.current, ')');
+    }
+  }, [canPlayAudio, bell2Ref]); // Depend on isAudioUnlocked to get its latest value
+
 
   // Make pollHbd a stable function using useCallback
   const pollHbd = useCallback(async () => {
@@ -161,7 +194,7 @@ export default function Home() {
           setLastId(data.latestId);
 
           if (newTransfersToDisplay.length > 0) {
-            playBellSounds();
+            if (canPlayAudio) { playBellSounds(); }
             // Iterate over the correctly processed and new transfers for toasts
             newTransfersToDisplay.forEach(tx => {
               const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
@@ -226,28 +259,6 @@ export default function Home() {
     fetchMenu();
   }, []); // Empty dependency array means it runs once on mount
 
-  useEffect(() => {
-    // Initialize audio in browser only
-    if (typeof window !== 'undefined') {
-      bell1Ref.current = new Audio('/sounds/doorbell.mp3');
-      bell2Ref.current = new Audio('/sounds/chime-2.mp3');
-      bell1Ref.current.load();
-      bell2Ref.current.load();
-      console.log('Audio files preloaded');
-    }
-    return () => {
-      // Cleanup
-      if (bell1Ref.current) {
-        bell1Ref.current.pause();
-        bell1Ref.current = null;
-      }
-      if (bell2Ref.current) {
-        bell2Ref.current.pause();
-        bell2Ref.current = null;
-      }
-    };
-  }, []);    
-
   // Effect to set up the polling interval (runs once on mount)
   useEffect(() => {
     // Initial poll immediately when the component mounts
@@ -265,8 +276,18 @@ export default function Home() {
   const unlockAudio = () => {
     if (!canPlayAudio) {
       setCanPlayAudio(true);
-      console.log('Audio unlocked via button');
+      // Show a toast to indicate audio is unlocked
+      setTimeout(() => {
+        toast.info('Audio unlocked! You can now hear the doorbell and chime sounds.', {
+          autoClose: 5000,  
+          toastId: 'audio-unlocked',
+          className: 'flash-toast', 
+        });
+      }, 5000); // Delay to ensure the button click is registered before playing sounds
+      console.log('Audio unlocked via button: ' + canPlayAudio);
       playBellSounds();
+      playBell1Sound();
+      playChimeSound();
     }
   };
   
@@ -317,10 +338,22 @@ export default function Home() {
       <h1>Commandes pour @{ process.env.NEXT_PUBLIC_HIVE_ACCOUNT }</h1>
       <br/>
       {!canPlayAudio && (
-        <button onClick={unlockAudio} className="unlock-audio-button">
-          Unlock Audio
-        </button>
+          <button onClick={unlockAudio} className="unlock-audio-button">
+            Unlock Audio
+          </button>
       )} 
+      {canPlayAudio && (
+        <> {/* Use React.Fragment shorthand here */}
+          &nbsp; {/* You can keep &nbsp; for spacing, but inside the fragment */}
+          <button onClick={playBell1Sound} className="unlock-audio-button">
+            Play Bell Sound
+          </button>
+          &nbsp; {/* Another &nbsp; */}
+          <button onClick={playChimeSound} className="unlock-audio-button">
+            Play Chime Sound
+          </button>
+        </> /* Close the Fragment */
+      )}
       <br/><br/> 
       {loading ? (
         <p>Chargement...</p>

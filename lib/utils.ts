@@ -169,7 +169,7 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
 
   itemStrings.forEach(itemString => {
     const parts = itemString.split(',');
-    const idPart = parts[0];
+    const idPart = parts[0]; // e.g., "d:25-rare" or "b:2-large"
     const options: { [key: string]: string } = {};
     let quantity = 1;
 
@@ -179,23 +179,42 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
         quantity = parseInt(value, 10);
       } else if (key === 's') {
         options.size = value;
-      }
+      } else if (key === 'c') {
+        options.cuisson = value; // Assuming 'cuisson' is a valid option for dishes
+      } 
     }
 
-    const [typePrefix, baseId] = idPart.split(':');
-    const fullId = `${typePrefix === 'd' ? 'dish' : 'drink'}-${baseId}`;
+    const [typePrefix, dehydratedBaseId] = idPart.split(':'); // dehydratedBaseId is like "25-rare" or "2-large"
+   // --- Key Change Here: Strip the suffix for database lookup ---
+    const strippedLookupId = dehydratedBaseId.split('-')[0]; // This gets "25" from "25-rare" or "2" from "2-large"    
+    let actualItemIdForLookup: string; // This will be "dish-25" or "drink-2"    
+    if (typePrefix === 'd') {
+        actualItemIdForLookup = `dish-${strippedLookupId}`; // Construct "dish-25" for lookup
+    } else if (typePrefix === 'b') {
+        actualItemIdForLookup = `drink-${strippedLookupId}`; // Construct "drink-2" for lookup
+    } else {
+        console.warn(`Unknown item type prefix in memo: ${typePrefix}. Skipping item.`);
+        return; // Skip processing this malformed item string
+    }  
+    // const fullId = `${typePrefix === 'd' ? 'dish' : 'drink'}-${baseId}`;
 
     if (typePrefix === 'd') {
-      const dish = dishMap.get(fullId);
+      const dish = dishMap.get(actualItemIdForLookup);
       if (dish) {
-        hydratedParts.push({ type: 'item', categoryType: 'dish', quantity, description: dish.name });
+        let description = dish.name;
+        // Append cuisson option to description if present for display
+        if (options.cuisson) {
+          // Capitalize first letter of cuisson for display (e.g., "Rare", "Medium")
+          description = `${description} (${options.cuisson.charAt(0).toUpperCase() + options.cuisson.slice(1)})`;
+        }        
+        hydratedParts.push({ type: 'item', categoryType: 'dish', quantity, description: dish.name + (options.cuisson ? ` (${options.cuisson})` : '')  });
         hasDishes = true;
       } else {
-        hydratedParts.push({ type: 'item', categoryType: 'dish', quantity, description: `Unknown Dish ID: ${baseId}` });
+        hydratedParts.push({ type: 'item', categoryType: 'dish', quantity, description: `Unknown Dish ID: ${dehydratedBaseId}` });
         hasDishes = true;
       }
     } else if (typePrefix === 'b') {
-      const drink = drinkMap.get(fullId);
+      const drink = drinkMap.get(actualItemIdForLookup);
       if (drink) {
         let description = drink.name;
         if (options.size) {
@@ -209,7 +228,7 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
         hydratedParts.push({ type: 'item', categoryType: 'drink', quantity, description });
         hasDrinks = true;
       } else {
-        hydratedParts.push({ type: 'item', categoryType: 'drink', quantity, description: `Unknown Drink ID: ${baseId}` });
+        hydratedParts.push({ type: 'item', categoryType: 'drink', quantity, description: `Unknown Drink ID: ${dehydratedBaseId}` });
         hasDrinks = true;
       }
     }

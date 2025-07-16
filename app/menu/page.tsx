@@ -7,46 +7,8 @@ import MenuItem from '@/components/MenuItem'; // Import the new MenuItem compone
 import CartItemDisplay from '@/components/CartItemDisplay'; // Import the new CartItemDisplay component
 import '@/app/globals.css'; // Import global styles
 
-// Define interfaces for menu items and categories
-interface Dish {
-  id: string;
-  name: string;
-  type: 'dish';
-  price: string;
-  categoryIds: number[];
-  image?: string;
-}
-
-interface Drink {
-  id: string;
-  name: string;
-  type: 'drink';
-  availableSizes: { size: string; price: string }[];
-  categoryIds: number[];
-  image?: string;
-}
-
-interface Category {
-  category_id: number;
-  name: string;
-  type?: string;
-  categories_dishes: { dishes: { dish_id: number } }[];
-  categories_drinks: { drinks: { drink_id: number } }[];
-}
-
-/* interface GroupedDishes {
-  [category: string]: Dish[];
-}
-
-interface GroupedDrinks {
-  [category: string]: Drink[];
-} */
-
-interface MenuData {
-  categories: Category[];
-  dishes: Dish[];
-  drinks: Drink[];
-}
+// Import the enriched types directly from your menu data file
+import { MenuData, FormattedDish, FormattedDrink, FormattedCuisson, FormattedIngredient } from '@/lib/data/menu';
 
 // New Interface for Grouped Items (more flexible)
 interface GroupedCategory<T> {
@@ -54,57 +16,52 @@ interface GroupedCategory<T> {
   items: T[];
 }
 
+// Use the imported FormattedDish and FormattedDrink for GroupedMenu
 interface GroupedMenu {
-  [categoryId: number]: GroupedCategory<Dish | Drink>;
+  [categoryId: number]: GroupedCategory<FormattedDish | FormattedDrink>;
 }
 
 export default function MenuPage() {
   const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, setTable } = useCart();
-  const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [] });
-  //const [groupedDishes, setGroupedDishes] = useState<GroupedDishes>({});
-  //const [groupedDrinks, setGroupedDrinks] = useState<GroupedDrinks>({});
+  // Use the imported MenuData type for the menu state
+  const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [] });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedSizes, setSelectedSizes] = useState<{ [key: string]: string }>({}); // Track selected drink sizes
+  const [selectedCuisson, setSelectedCuisson] = useState<{ [key: string]: string }>({}); // Track selected cuisson for dishes
   const searchParams = useSearchParams();
   const urlTable = searchParams.get('table') || '218';
   const validatedTable = parseInt(urlTable, 10);
   const table = isNaN(validatedTable) ? '218' : validatedTable.toString(); // Default to '218' if parsing fails
   const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
 
-// New state for menu navigation
-  const [activeMenuSection, setActiveMenuSection] = useState<'dishes' | 'drinks' | null>(null); // 'dishes', 'drinks', or null (initial)
-  const [openCategories, setOpenCategories] = useState<Set<number>>(new Set()); // Stores IDs of open categories
+  // State for menu navigation
+  const [activeMenuSection, setActiveMenuSection] = useState<'dishes' | 'drinks' | null>(null);
+  const [openCategories, setOpenCategories] = useState<Set<number>>(new Set());
 
-  // Grouped menu data for easier rendering
+  // Grouped menu data for easier rendering - ensure types are correct
   const [groupedDishes, setGroupedDishes] = useState<GroupedMenu>({});
   const [groupedDrinks, setGroupedDrinks] = useState<GroupedMenu>({});
 
   // Refs for dynamic height calculation
   const cartRef = useRef<HTMLDivElement>(null);
   const menuSelectorRef = useRef<HTMLDivElement>(null);
-  const [cartHeight, setCartHeight] = useState(0); // New state for cart height
-  const [menuSelectorHeight, setMenuSelectorHeight] = useState(0); // New state for menu selector height
+  const [cartHeight, setCartHeight] = useState(0);
+  const [menuSelectorHeight, setMenuSelectorHeight] = useState(0);
 
   useEffect(() => {
     // Set the table number in the cart context
     setTable(table);
-    // console.log('Table in cart set to: ', table);
 
     const fetchMenu = async () => {
-      /* try {
+      try {
         setLoading(true);
         setError(null); // Reset error state before fetching
-        console.log('Fetching menu for table:', table);
-      } catch (e: any) {
-        setError(e.message);  
-      } */
-
-      try {
         const response = await fetch('/api/menu'); // Fetch from your Next.js API route
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
+        // Cast data to the imported MenuData type
         const data: MenuData = await response.json();
         setMenu(data);
         setLoading(false);
@@ -133,7 +90,7 @@ export default function MenuPage() {
       menu.dishes.forEach(dish => {
         dish.categoryIds.forEach(catId => {
           if (dishesByCat[catId]) {
-            dishesByCat[catId].items.push(dish);
+            dishesByCat[catId].items.push(dish); // dish is now FormattedDish
           }
         });
       });
@@ -141,7 +98,7 @@ export default function MenuPage() {
       menu.drinks.forEach(drink => {
         drink.categoryIds.forEach(catId => {
           if (drinksByCat[catId]) {
-            drinksByCat[catId].items.push(drink);
+            drinksByCat[catId].items.push(drink); // drink is now FormattedDrink
           }
         });
       });
@@ -166,7 +123,6 @@ export default function MenuPage() {
   // Effect to calculate dynamic heights for fixed elements
   useEffect(() => {
     const calculateHeights = () => {
-      // Use setTimeout to allow DOM to update after state changes before reading offsetHeight
       setTimeout(() => {
         if (cartRef.current) {
           setCartHeight(cart.length > 0 ? cartRef.current.offsetHeight : 0);
@@ -174,89 +130,103 @@ export default function MenuPage() {
         if (menuSelectorRef.current) {
           setMenuSelectorHeight(menuSelectorRef.current.offsetHeight);
         }
-      }, 0); // Short delay to ensure DOM update
+      }, 0);
     };
 
     calculateHeights(); // Calculate on mount
 
     window.addEventListener('resize', calculateHeights);
 
-    // Observe cart content changes to recalculate cart height
-    // Using a more specific observer configuration to limit triggers
-    const cartObserver = new MutationObserver((mutationsList) => { // Removed 'observer' param as it's not used
+    const cartObserver = new MutationObserver((mutationsList) => {
         for(const mutation of mutationsList) {
             if (mutation.type === 'childList' || (mutation.type === 'attributes' && mutation.attributeName === 'style')) {
                 calculateHeights();
-                break; // Recalculate once per relevant mutation
+                break;
             }
         }
     });
 
     if (cartRef.current) {
-      // Observe only direct child additions/removals and attribute changes (like height/style)
       cartObserver.observe(cartRef.current, { childList: true, attributes: true, subtree: false });
     }
 
-    // Cleanup function to remove event listeners and observer
-    // This prevents memory leaks and ensures the observer is disconnected when the component unmounts
     return () => {
       window.removeEventListener('resize', calculateHeights);
-      if (cartRef.current) { // Disconnect observer only if ref exists
+      if (cartRef.current) {
         cartObserver.disconnect();
       }
     };
-  }, [cart.length, cart]); // Dependency on cart.length for cart visibility, and cart for content changes
+  }, [cart.length, cart]);
 
- // Memoized callbacks
+  // Memoized callbacks
   const handleSizeChange = useCallback((drinkId: string, size: string) => {
     setSelectedSizes(prev => ({ ...prev, [drinkId]: size }));
-  }, []); // Empty dependency array as setSelectedSizes is stable
+  }, []);
 
-  const handleAddItem = useCallback((item: Dish | Drink) => {
+  const handleCuissonChange = useCallback((dishId: string, cuisson: string) => {
+    setSelectedCuisson(prev => ({ ...prev, [dishId]: cuisson }));
+  }, []);
+
+  // Updated handleAddItem to correctly process options passed from MenuItem
+  const handleAddItem = useCallback((item: FormattedDish | FormattedDrink, options?: { [key: string]: string }) => {
+    let cartItemId = item.id;
+    let cartItemName = item.name;
+    let cartItemPrice: string = '0.00'; // = item.price; // Start with base price for dishes
+
+    const itemOptions = options || {}; // Use the options passed from MenuItem
+
     if (item.type === 'dish') {
-      addItem({
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: 1,
-        options: {},
-      });
-    } else {
-      const selectedSize = selectedSizes[item.id] || item.availableSizes[0]?.size || 'Default';
-      const selectedPrice = item.availableSizes.find((s) => s.size === selectedSize)?.price || '0.00';
-      addItem({
-        id: `${item.id}-${selectedSize}`,
-        name: `${item.name} (${selectedSize})`,
-        price: selectedPrice,
-        quantity: 1,
-        options: { size: selectedSize },
-      });
+      const dishItem = item as FormattedDish;
+      cartItemPrice = dishItem.price; // Use the base price for dishes
+      // If it's a dish and has a selected cuisson, append it to ID and name
+      if (itemOptions.cuisson) {
+        cartItemId = `${item.id}-${itemOptions.cuisson.toLowerCase().replace(/\s/g, '-')}`;
+        cartItemName = item.name; // `${item.name} (${itemOptions.cuisson})`;
+      }
+    } else { // It's a drink
+      const drinkItem = item as FormattedDrink;
+      // If it's a drink and has a selected size, append it to ID and name, and update price
+      if (itemOptions.size) {
+        cartItemId = `${item.id}-${itemOptions.size.toLowerCase().replace(/\s/g, '-')}`;
+        // cartItemName = `${item.name} (${itemOptions.size})`;
+        const selectedSizeOption = drinkItem.availableSizes.find(s => s.size === itemOptions.size);
+        if (selectedSizeOption) {
+          cartItemPrice = selectedSizeOption.price;
+        }
+      } else {
+        cartItemPrice = drinkItem.availableSizes[0]?.price || '0.00'; // Default to first size price if no size selected
+      }
     }
-  }, [addItem, selectedSizes]); // Depends on addItem (from CartContext, stable) and selectedSizes state
+
+    addItem({
+      id: cartItemId,
+      name: cartItemName,
+      price: cartItemPrice, // Use the potentially updated price for drinks
+      quantity: 1,
+      options: itemOptions, // Pass the options as received
+    });
+  }, [addItem]); // addItem is from context, selectedSizes and selectedCuisson are no longer direct dependencies here as options are passed
 
   const fallBackNoKeychain = () => {
-      const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.hivekeychain'; // Android
-      const iosFallbackUrl = 'https://apps.apple.com/us/app/hive-keychain/id1550923076'; // iOS
-      // Fallback if app is not installed
-      setTimeout(() => {
-        if (document.hasFocus()) {
-          if (navigator.userAgent.includes('Android')) {
-            window.location.href = fallbackUrl;
-          } else if (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')) {
-            window.location.href = iosFallbackUrl;
-          } else {
-            alert(navigator.userAgent + ' - Please install the Hive Keychain app / extension to proceed.');
-          }
+    const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.hivekeychain'; // Android
+    const iosFallbackUrl = 'https://apps.apple.com/us/app/hive-keychain/id1550923076'; // iOS
+    setTimeout(() => {
+      if (document.hasFocus()) {
+        if (navigator.userAgent.includes('Android')) {
+          window.location.href = fallbackUrl;
+        } else if (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')) {
+          window.location.href = iosFallbackUrl;
+        } else {
+          alert(navigator.userAgent + ' - Please install the Hive Keychain app / extension to proceed.');
         }
-      }, 1000);
+      }
+    }, 1000);
   };
 
   const handleCallWaiter = () => {
     try {
-      const hiveUrl = callWaiter(); // Pass table explicitly or rely on cart.table
+      const hiveUrl = callWaiter();
       fallBackNoKeychain();
-
-      // Attempt to open Hive Keychain
       window.location.href = hiveUrl;
     } catch (error) {
       console.error('Error in handleCallWaiter:', error);
@@ -271,7 +241,7 @@ export default function MenuPage() {
     }
     const hiveOpUrl = orderNow();
     window.location.href = hiveOpUrl;
-  }, [cart.length, orderNow]); // Depends on cart.length and orderNow (from CartContext, stable)
+  }, [cart.length, orderNow]);
 
   const toggleCategory = useCallback((categoryId: number) => {
     setOpenCategories(prev => {
@@ -295,45 +265,9 @@ export default function MenuPage() {
 
   const totalFixedHeaderHeight = cartHeight + menuSelectorHeight;
 
- /* const renderMenuItem = (item: Dish | Drink) => (
-    <div key={item.id} className="menu-item">
-      {item.image && (
-        <img src={item.image} alt={item.name} className="menu-item-image" />
-      )}
-      <div className="menu-item-details">
-        <h4 className="font-bold text-lg">{item.name}</h4>
-        {item.type === 'dish' ? (
-          <p>{item.price}€</p>
-        ) : (
-          <div>
-            <select
-              value={selectedSizes[item.id] || item.availableSizes[0]?.size || ''}
-              onChange={(e) => handleSizeChange(item.id, e.target.value)}
-              className="mt-2 p-1 border rounded"
-            >
-              {item.availableSizes.map((size) => (
-                <option key={size.size} value={size.size}>
-                  {size.size}: {size.price}€
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-      <button
-        onClick={() => handleAddItem(item)}
-        className="add-to-cart-button"
-      >
-        Ajoutez
-      </button>
-    </div>
-  ); */
-
-  // const totalFixedHeaderHeight = cartHeight + menuSelectorHeight; // Calculate total height for padding
-
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
-    
+
       {/* Fixed Cart Section */}
       {cart.length > 0 && (
         <div ref={cartRef} className="fixed-cart-container">
@@ -342,7 +276,7 @@ export default function MenuPage() {
             {cart.map(item => (
               // Use the memoized CartItemDisplay component
               <CartItemDisplay
-                key={item.id}
+                key={item.id} // Ensure key is unique based on ID + options
                 item={item}
                 tableParam={table}
                 updateQuantity={updateQuantity}
@@ -366,7 +300,7 @@ export default function MenuPage() {
       <div
         ref={menuSelectorRef}
         className="fixed-menu-selector"
-        style={{ top: `${cartHeight}px` }} // Dynamic top based on cart height
+        style={{ top: `${cartHeight}px` }}
       >
         <button
           onClick={() => setActiveMenuSection('dishes')}
@@ -389,12 +323,12 @@ export default function MenuPage() {
         {cart.length === 0 && (
           <section className="bg-cover bg-center h-64 flex items-center justify-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1414235077428-338989a2e8c0)' }}>
             <div className="text-center text-white">
-              <h1 className="text-4xl md:text-5xl font-bold">Bienvenue a Indies Cafe</h1>
+              <h1 className="text-4xl md:text-5xl font-bold">Bienvenue a Indie's Cafe</h1>
               <p className="mt-2 text-lg">Table {table} - Explorez notre menu</p>
             </div>
           </section>
-        )}        
-        
+        )}
+
         {activeMenuSection === 'dishes' && (
           <div className="menu-section">
             {Object.entries(groupedDishes).map(([id, category]) => (
@@ -407,14 +341,15 @@ export default function MenuPage() {
                 </h3>
                 {openCategories.has(parseInt(id)) && (
                   <div className="category-items-grid">
-                    {category.items.map((item: Dish) => (
-                      // Use the memoized MenuItem component
+                    {category.items.map((item: FormattedDish) => ( // Cast to FormattedDish
                       <MenuItem
                         key={item.id}
                         item={item}
-                        selectedSizes={selectedSizes}
-                        handleSizeChange={handleSizeChange}
+                        selectedCuisson={selectedCuisson} // Pass selectedCuisson
+                        handleCuissonChange={handleCuissonChange}
                         handleAddItem={handleAddItem}
+                        selectedSizes={{}} // Pass empty object as it's not applicable for dishes
+                        handleSizeChange={() => {}} // Pass no-op as it's not applicable for dishes
                       />
                     ))}
                   </div>
@@ -436,14 +371,15 @@ export default function MenuPage() {
                 </h3>
                 {openCategories.has(parseInt(id)) && (
                   <div className="category-items-grid">
-                    {category.items.map((item: Drink) => (
-                      // Use the memoized MenuItem component
+                    {category.items.map((item: FormattedDrink) => ( // Cast to FormattedDrink
                       <MenuItem
                         key={item.id}
                         item={item}
                         selectedSizes={selectedSizes}
                         handleSizeChange={handleSizeChange}
                         handleAddItem={handleAddItem}
+                        selectedCuisson={{}} // Pass empty object as it's not applicable for drinks
+                        handleCuissonChange={() => {}} // Pass no-op as it's not applicable for drinks
                       />
                     ))}
                   </div>
