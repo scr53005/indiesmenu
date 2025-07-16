@@ -54,14 +54,14 @@ export default function CartPage() {
               </div>
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={() => updateQuantity(item.id, item.quantity - 1,)}
+                  onClick={() => updateQuantity(item.id, item.quantity - 1, item.options, table)}
                   className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-1 px-3 rounded-full"
                 >
                   -
                 </button>
                 <span className="text-lg font-medium">{item.quantity}</span>
                 <button
-                  onClick={() => updateQuantity(item.id, item.quantity + 1,)}
+                  onClick={() => updateQuantity(item.id, item.quantity + 1, item.options, table)}
                   className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-1 px-3 rounded-full"
                 >
                   +
