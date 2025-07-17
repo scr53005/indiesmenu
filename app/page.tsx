@@ -272,7 +272,10 @@ export default function Home() {
     return () => clearInterval(intervalId);
   }, [pollHbd]); // Dependency: pollHbd is stable because of useCallback
 
-
+  useEffect(() => {
+    console.log('canPlayAudio state changed:', canPlayAudio);
+  }, [canPlayAudio]);
+  
   const unlockAudio = () => {
     if (!canPlayAudio) {
       setCanPlayAudio(true);
