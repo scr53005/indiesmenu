@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useCart } from '@/app/context/CartContext';
 import MenuItem from '@/components/MenuItem'; // Import the new MenuItem component
 import CartItemDisplay from '@/components/CartItemDisplay'; // Import the new CartItemDisplay component
+// import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
 // Import the enriched types directly from your menu data file
@@ -24,7 +25,7 @@ interface GroupedMenu {
 export default function MenuPage() {
   const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, setTable } = useCart();
   // Use the imported MenuData type for the menu state
-  const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [] });
+  const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [], conversion_rate: 1.0000 }); // Initialize with empty data
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedSizes, setSelectedSizes] = useState<{ [key: string]: string }>({}); // Track selected drink sizes
@@ -66,6 +67,7 @@ export default function MenuPage() {
         setMenu(data);
         setLoading(false);
         setActiveMenuSection('drinks'); // Default to showing drinks after loading
+        console.log("Fetched conversion rate:", data.conversion_rate);
       } catch (e: any) {
         setError(e.message);
         setLoading(false);
@@ -204,8 +206,9 @@ export default function MenuPage() {
       price: cartItemPrice, // Use the potentially updated price for drinks
       quantity: 1,
       options: itemOptions, // Pass the options as received
+      conversion_rate: menu?.conversion_rate, // Add conversion_rate from menu
     });
-  }, [addItem]); // addItem is from context, selectedSizes and selectedCuisson are no longer direct dependencies here as options are passed
+  }, [addItem, menu]); // addItem is from context, selectedSizes and selectedCuisson are no longer direct dependencies here as options are passed
 
   const fallBackNoKeychain = () => {
     const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.hivekeychain'; // Android
@@ -286,7 +289,7 @@ export default function MenuPage() {
             ))}
           </div>
           <div className="cart-summary-row">
-            <span className="cart-total-text">Total: {getTotalPrice()}€</span>
+            <span className="cart-total-text">Total: {getTotalPrice()} HBD</span>
             <button onClick={handleCallWaiter} className="call-waiter-button">
               Serveur !
             </button>

@@ -1,6 +1,7 @@
 // indiesmenu/lib/data/menu.ts
 
 import { PrismaClient } from '@prisma/client';
+// import { Decimal } from '@prisma/client/runtime/library';
 
 const prisma = new PrismaClient();
 
@@ -23,10 +24,8 @@ export type FormattedDish = {
   type: 'dish';
   price: string; // Formatted as string (e.g., "15.50")
   categoryIds: number[];
-  // hasCuisson?: boolean; // Optional, only for dishes that have cuisson options
-  // availableCuisson?: { en: string; fr: string; }[]; // Optional, only for dishes that have cuisson options
-  cuissons: FormattedCuisson[]; // NEW: Associated cuissons for the dish
-  ingredients: FormattedIngredient[]; // NEW: Associated ingredients for the dish
+  cuissons: FormattedCuisson[]; 
+  ingredients: FormattedIngredient[]; 
   image?: string;
 };
 
@@ -48,6 +47,7 @@ export type MenuData = {
   drinks: FormattedDrink[];
   cuissons: FormattedCuisson[]; // NEW: Global list of all cuissons
   ingredients: FormattedIngredient[]; // NEW: Global list of all ingredients 
+  conversion_rate: number; // Conversion rate for prices
 };
 
 export async function getMenuData(): Promise<MenuData> {
@@ -160,6 +160,16 @@ export async function getMenuData(): Promise<MenuData> {
       })),      
     }));
 
+    // let conversionRate = 1.0; // Set a default conversion rate, if applicable
+    const conversionRate = await prisma.currency_conversion.findFirst({
+      orderBy: {
+        date: 'desc', // Sort by date in descending order to get the most recent
+      },
+      select: {
+        conversion_rate: true, // Only select the conversion_rate field
+      },
+    });
+
     return {
       categories,
       dishes: formattedDishes,
@@ -172,7 +182,8 @@ export async function getMenuData(): Promise<MenuData> {
       ingredients: allIngredients.map(i => ({ // Format global ingredients list
         id: i.ingredient_id,
         name: i.name,
-      })),      
+      })),   
+      conversion_rate: conversionRate ? conversionRate.conversion_rate.toNumber(): 1.0000, // Include conversion rate if available   
     };
 
   } finally {

@@ -1,5 +1,6 @@
 // app/context/CartContext.tsx
 'use client';
+// import { Decimal } from '@prisma/client/runtime/library';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { generateHiveTransferUrl, generateDistriatedHiveOp, dehydrateMemo } from '@/lib/utils';
@@ -10,12 +11,13 @@ interface CartItem {
   price: string;
   quantity: number;
   options: { [key: string]: string }; // e.g., { size: 'large', cuisson: 'medium' }
+  conversion_rate?: number; // Optional conversion rate for this item, if applicable
 };
 
 interface CartContextType {
   cart: CartItem[];
-  // hiveOp?: string; // Removed as per user's earlier instruction
   table: string; // Changed to string, assuming '203' or actual table number
+  conversion_rate: number; // Conversion rate for prices
   addItem: (item: CartItem) => void;
   removeItem: (id: string) => void; // `id` here is the unique cart item id
   updateQuantity: (id: string, newQuantity: number, options: { [key: string]: string }, table?: string) => void;
@@ -29,8 +31,8 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType>({
   cart: [],
-  // hiveOp: '', // Removed from default value
   table: '203', // Default table
+  conversion_rate: 1.0000, // Default conversion rate
   addItem: () => {},
   removeItem: () => {},
   updateQuantity: () => {},
@@ -47,6 +49,7 @@ export const useCart = () => useContext(CartContext);
 export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [tableState, setTableState] = useState<string>(''); // Renamed to avoid conflict with context value
+  const [conversionRate, setConversionRate] = useState<number>(1.0); // Default conversion rate
   const searchParams = useSearchParams();
   const urlTable = searchParams.get('table');
 
@@ -54,7 +57,12 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     // Initialize cart from localStorage on mount
     const savedCart = localStorage.getItem('cart');
     if (savedCart) {
-      setCart(JSON.parse(savedCart));
+      const parsedCart: CartItem[] = JSON.parse(savedCart);
+      setCart(parsedCart);
+      const firstItemWithRate = parsedCart.find(item => item.conversion_rate !== undefined);
+      if (firstItemWithRate && firstItemWithRate.conversion_rate !== undefined) {
+        setConversionRate(firstItemWithRate.conversion_rate);
+      }
     }
     // Initialize table from localStorage or URL
     const savedTable = localStorage.getItem('cartTable');
@@ -92,10 +100,15 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
         };
         return newCart;
       }
+      // Set conversion_rate if not already set (default 1.0)
+      if (item.conversion_rate !== undefined && conversionRate === 1.0) {
+        setConversionRate(item.conversion_rate);
+        alert(`CartContext - Setting conversion rate to: ${item.conversion_rate}`);
+      }      
       // If not, add new item
       return [...prevCart, { ...item, quantity: 1 }];
     });
-  }, []); // Empty dependency array because we're using functional update
+  }, [conversionRate]); 
 
   const removeItem = useCallback((id: string) => {
     setCart(prevCart => prevCart.filter(item => item.id !== id));
@@ -126,13 +139,13 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   }, [cart]); // Depends on 'cart' content
 
   const getTotalPrice = useCallback(() => {
-    return cart
-      .reduce((total, item) => {
-        const price = parseFloat(item.price);
-        return total + price * item.quantity;
-      }, 0)
-      .toFixed(2);
-  }, [cart]); // Depends on 'cart' content
+    const eurPrice = cart.reduce((total, item) => {
+      const price = parseFloat(item.price);
+      return total + price * item.quantity;
+    }, 0);
+    const hbdPrice = eurPrice * conversionRate;
+    return hbdPrice.toFixed(2);
+  }, [cart, conversionRate]);
 
   const orderNow = useCallback(() => {
     // Prepare the items array for dehydration, if dehydrateMemo expects this format
@@ -144,31 +157,13 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
         options: item.options
     }));
 
-/* interface CartItem {
-  id: string; // This ID should be unique, incorporating options like 'drink-123-large' or 'dish-456-mediumrare'
-  name: string; // e.g., 'Coca-Cola (Large)' or 'Steak (Medium Rare)'
-  price: string;
-  quantity: number;
-  options: { [key: string]: string }; // e.g., { size: 'large', cuisson: 'medium' }
-};
-*/
     // Dehydrate the items list to a string
     let dehydratedItemsString = dehydrateMemo(itemsToDehydrate); // Ensure it ends with a semicolon if order;
     dehydratedItemsString = dehydratedItemsString.endsWith(';') ? dehydratedItemsString : dehydratedItemsString + ';';
     console.log(`dehydratedItemsString: '${dehydratedItemsString}'`); // Debug log to check the final memo
     const memoWithTableInfo = dehydratedItemsString + (tableState ? ` TABLE ${tableState} ` : ' No table specified ');
-    // Construct the full memo object, embedding the dehydrated items string
-    /*const fullMemoObject = {
-        type: 'order',
-        table: tableState,
-        // Assuming the dehydrated string is placed under a key like 'dehydratedItems'
-        dehydratedItems: dehydratedItemsString, // Embed the dehydrated items string
-        totalPrice: getTotalPrice(),
-        timestamp: new Date().toISOString(),
-    };*/
 
     // Stringify the entire memo object for the Hive transfer
-    /*const finalMemoString = JSON.stringify(fullMemoObject);*/
 
     const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
     const amountHbd = getTotalPrice(); // Use the formatted total price
@@ -216,8 +211,8 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     <CartContext.Provider
       value={{
         cart,
-        // hiveOp: '', // Removed from context value
         table: tableState,
+        conversion_rate: conversionRate,
         addItem,
         removeItem,
         updateQuantity,

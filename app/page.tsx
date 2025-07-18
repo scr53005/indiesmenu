@@ -366,7 +366,13 @@ export default function Home() {
                     {line.type === 'item' ? (
                       <div className="order-item-line">
                         <span className="order-item-quantity">{line.quantity}</span>
-                        <span className="order-item-description">{line.description}</span>
+                        <span
+                          className={`order-item-description ${
+                            line.categoryType === 'drink' ? 'drink-item' : line.categoryType === 'dish' ? 'dish-item' : ''
+                          }`}
+                        >
+                          {line.description}
+                        </span>
                       </div>
                     ) : line.type === 'separator' ? (
                       <hr className="order-separator" />
@@ -422,7 +428,7 @@ export default function Home() {
           background: #005bb5;
         }
         .late-order {
-          color:rgb(160, 10, 10); /* Bootstrap danger color */
+          color:rgb(220, 60, 60); /* Bootstrap danger color */
           font-weight: bold;
         }
         /* --- New styles for order details alignment and HR fix --- */
@@ -446,6 +452,12 @@ export default function Home() {
           font-weight: bold;
           color: #333; /* Darker color for better contrast */
         }
+        .drink-item {
+          color: #008000; /* Green for drinks */
+        }
+        .dish-item {
+          color: #8B0000; /* Dark red for dishes */
+        }          
         .full-width-raw {
           grid-column: span 2; /* Raw content spans both columns */
         }
