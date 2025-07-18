@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 async function importDrinksData() {
   const excelFilePath = './drinksMenu.xlsx';
-  const fixedRecordDate = new Date('2025-06-01T00:00:00.000Z'); // Ensure consistent date object for comparison
+  const fixedRecordDate = new Date('2025-07-01T00:00:00.000Z'); // Ensure consistent date object for comparison
 
   if (!fs.existsSync(excelFilePath)) {
     console.error(`Error: Excel file not found at ${excelFilePath}`);
