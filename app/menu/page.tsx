@@ -236,6 +236,7 @@ export default function MenuPage() {
 
   const handleOrder = useCallback(() => {
     if (cart.length === 0) {
+      // No items in cart, show alert
       alert('Rien a commander !');
       return;
     }
