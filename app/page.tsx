@@ -70,48 +70,25 @@ export default function Home() {
   // Initialize audio elements once
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      if (!bell1Ref.current) {
         bell1Ref.current = new Audio('/sounds/doorbell.mp3');
         bell1Ref.current.load();
         console.log('Doorbell file preloaded');
-      }
-      if (!bell2Ref.current) {
+        // Preload the second bell sound
         bell2Ref.current = new Audio('/sounds/chime-2.mp3');
         bell2Ref.current.load();
         console.log('Chime file preloaded');
       }
-    }
   }, []);  // Empty dependency array ensures this runs only once on mount
 
   // Make playBellSounds a stable function using useCallback
   const playBellSounds = useCallback(() => {
-    if (!canPlayAudio) { // Only attempt to unlock if not already unlocked
-      if (bell1Ref.current) {
-        // Playing and immediately pausing/resetting is a common trick to unlock browser audio context
-        bell1Ref.current.play()
-          .then(() => {
-            bell1Ref.current!.pause();
-            bell1Ref.current!.currentTime = 0;
-            setCanPlayAudio(true); // Update state to reflect unlocked status
-            console.log('page.tsx: Audio unlocked via button'); // Corresponds to your line 268
-          })
-          .catch(error => {
-            console.error('Failed to unlock audio with bell sound, trying chime:', error);
-            // Fallback: Try unlocking with the chime sound if bell failed
-            if (bell2Ref.current) {
-                bell2Ref.current.play()
-                    .then(() => {
-                        bell2Ref.current!.pause();
-                        bell2Ref.current!.currentTime = 0;
-                        setCanPlayAudio(true);
-                        console.log('page.tsx: Audio unlocked via button (chime fallback)');
-                    })
-                    .catch(e => console.error("Failed to unlock audio with chime sound:", e));
-            }
-          });
-      } else {
-        console.warn('Audio references not yet available for unlock. Please wait for preload.');
-      }
+    if (canPlayAudio && bell1Ref.current && bell2Ref.current) {
+      bell1Ref.current.currentTime = 0; // Reset to start for immediate playback
+      bell1Ref.current.play().catch(e => console.error("Error playing bell sound:", e));
+      bell2Ref.current.currentTime = 0;
+      bell2Ref.current.play().catch(e => console.error("Error playing chime sound:", e));
+    } else {
+      console.log('page.tsx: Audio not unlocked or not initialized; skipping sounds (canPlayAudio:', canPlayAudio, ', bellSoundRef.current:', bell1Ref.current, ')');
     }
   }, [canPlayAudio]); // Dependency: canPlayAudio to prevent unnecessary re-creations of this callback
 
@@ -124,7 +101,7 @@ export default function Home() {
     } else {
       console.log('page.tsx: Audio not unlocked or not initialized; skipping doorbell sounds (canPlayAudio:', canPlayAudio, ', bellSoundRef.current:', bell1Ref.current, ')');
     }
-  }, [canPlayAudio, bell1Ref]); // Depend on isAudioUnlocked to get its latest value
+  }, [canPlayAudio, bell1Ref]); // Depend on canPlayAudio to get its latest value
 
   const playChimeSound = useCallback(() => {
     if (canPlayAudio && bell2Ref.current) {
@@ -133,8 +110,21 @@ export default function Home() {
     } else {
       console.log('page.tsx: Audio not unlocked or not initialized; skipping chime sounds (canPlayAudio:', canPlayAudio, ', chimeSoundRef.current:', bell2Ref.current, ')');
     }
-  }, [canPlayAudio, bell2Ref]); // Depend on isAudioUnlocked to get its latest value
+  }, [canPlayAudio, bell2Ref]); // Depend on canPlayAudio to get its latest value
 
+  const unlockAudio = () => {
+    if (!canPlayAudio) {
+      setCanPlayAudio(true);
+      // console.log('Audio unlocked via button: ' + canPlayAudio); 
+      // playBell1Sound();
+      // playChimeSound();
+    }
+  };
+
+  useEffect(() => {
+    console.log('canPlayAudio state changed:', canPlayAudio);
+    // playBellSounds();
+  }, [canPlayAudio]);
 
   // Make pollHbd a stable function using useCallback
   const pollHbd = useCallback(async () => {
@@ -174,6 +164,8 @@ export default function Home() {
             } else {
                 // Otherwise, attempt to hydrate it with menu data
                 try {
+                    console.log('Hydrating memo with menu data:', orderContentToHydrate, menuDataRef.current);
+                    // Use the imported hydrateMemo function to convert the memo string into structured lines
                     parsedMemo = hydrateMemo(orderContentToHydrate, menuDataRef.current);
                 } catch (e) {
                     console.error(`Error hydrating memo for TX ${tx.id}:`, e);
@@ -194,7 +186,12 @@ export default function Home() {
           setLastId(data.latestId);
 
           if (newTransfersToDisplay.length > 0) {
-            if (canPlayAudio) { playBellSounds(); }
+            if (canPlayAudio) { 
+              console.log('Trying to play bell sounds for new transfers');
+              playBellSounds(); 
+            } else {
+              console.log('New transfer seen but canPlayAudio is ' + canPlayAudio + ', not playing sounds');
+            }
             // Iterate over the correctly processed and new transfers for toasts
             newTransfersToDisplay.forEach(tx => {
               const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
@@ -236,11 +233,9 @@ export default function Home() {
     } finally {
       isPollingActiveRef.current = false; // Reset flag after poll completes
     }
-  }, [playBellSounds, setTransfers, setLastId, setSeenTransferIds]); // Dependencies for useCallback
+  }, [canPlayAudio, playBellSounds, setTransfers, setLastId, setSeenTransferIds]); // Dependencies for useCallback
 
-
-
-  // Fetch menu data once on component mount
+   // Fetch menu data once on component mount
    useEffect(() => {
      const fetchMenu = async () => {
       try {
@@ -272,28 +267,7 @@ export default function Home() {
     return () => clearInterval(intervalId);
   }, [pollHbd]); // Dependency: pollHbd is stable because of useCallback
 
-  useEffect(() => {
-    console.log('canPlayAudio state changed:', canPlayAudio);
-  }, [canPlayAudio]);
-  
-  const unlockAudio = () => {
-    if (!canPlayAudio) {
-      setCanPlayAudio(true);
-      // Show a toast to indicate audio is unlocked
-      setTimeout(() => {
-        toast.info('Audio unlocked! You can now hear the doorbell and chime sounds.', {
-          autoClose: 5000,  
-          toastId: 'audio-unlocked',
-          className: 'flash-toast', 
-        });
-      }, 5000); // Delay to ensure the button click is registered before playing sounds
-      console.log('Audio unlocked via button: ' + canPlayAudio);
-      playBellSounds();
-      playBell1Sound();
-      playChimeSound();
-    }
-  };
-  
+ 
     const handleFulfill = async (id: string) => {
     console.log(`Attempting to fulfill transfer ID: ${id}`);
     try {

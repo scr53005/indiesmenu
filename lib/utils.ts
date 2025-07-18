@@ -131,7 +131,9 @@ export function dehydrateMemo(cart: CartItem[]): string {
     cartMemoParts.push(itemMemo);
   });
 
-  return cartMemoParts.join(';');
+  let forReturnMemo = cartMemoParts.join(';') 
+  // alert(`dehydrateMemo - forReturnMemo: '${forReturnMemo}'`); // Debug log to check the final memo
+  return forReturnMemo.trim(); // Trim any extra whitespace
 }
 
 // --- NEW TYPE for structured memo content ---
@@ -147,7 +149,8 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
   if (tableIndex !== -1) {
     orderContent = rawMemo.substring(0, tableIndex).trim();
   }
-
+  console.log(`hydrateMemo - orderContent: '${orderContent}'`); // Debug log to check the order content
+  // alert(`hydrateMemo - orderContent: '${orderContent}'`); // Debug log to check the order content
   // Check if the orderContent is likely a codified order
   // This regex checks for item identifiers like 'd:1' or 'b:2' and at least one semicolon.
   if (!/(?:d:\d+|b:\d+)/.test(orderContent) || !orderContent.includes(';')) {

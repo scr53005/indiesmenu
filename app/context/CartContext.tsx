@@ -153,7 +153,9 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 };
 */
     // Dehydrate the items list to a string
-    const dehydratedItemsString = dehydrateMemo(itemsToDehydrate);
+    let dehydratedItemsString = dehydrateMemo(itemsToDehydrate); // Ensure it ends with a semicolon if order;
+    dehydratedItemsString = dehydratedItemsString.endsWith(';') ? dehydratedItemsString : dehydratedItemsString + ';';
+    console.log(`dehydratedItemsString: '${dehydratedItemsString}'`); // Debug log to check the final memo
     const memoWithTableInfo = dehydratedItemsString + (tableState ? ` TABLE ${tableState} ` : ' No table specified ');
     // Construct the full memo object, embedding the dehydrated items string
     /*const fullMemoObject = {
