@@ -103,7 +103,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
       // Set conversion_rate if not already set (default 1.0)
       if (item.conversion_rate !== undefined && conversionRate === 1.0) {
         setConversionRate(item.conversion_rate);
-        alert(`CartContext - Setting conversion rate to: ${item.conversion_rate}`);
+        // alert(`CartContext - Setting conversion rate to: ${item.conversion_rate}`);
       }      
       // If not, add new item
       return [...prevCart, { ...item, quantity: 1 }];
@@ -187,7 +187,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     const fixedMemoString = 'Un serveur est appelé ' + (tableState ? `TABLE ${tableState}` : '');
 
     const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
-    const amountHbd = '0.001'; // Symbolic amount for waiter call
+    const amountHbd = '0.020'; // Symbolic amount for waiter call
 
     const encodedOperation = generateHiveTransferUrl({
       recipient,

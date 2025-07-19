@@ -211,7 +211,7 @@ export default function MenuPage() {
   }, [addItem, menu]); // addItem is from context, selectedSizes and selectedCuisson are no longer direct dependencies here as options are passed
 
   const fallBackNoKeychain = () => {
-    const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.hivekeychain'; // Android
+    const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.mobilekeychain'; // Android
     const iosFallbackUrl = 'https://apps.apple.com/us/app/hive-keychain/id1550923076'; // iOS
     setTimeout(() => {
       if (document.hasFocus()) {
@@ -310,13 +310,17 @@ export default function MenuPage() {
           onClick={() => setActiveMenuSection('dishes')}
           className={`menu-section-button ${activeMenuSection === 'dishes' ? 'active' : ''}`}
         >
-          Les plats
+          <span className="flex items-center justify-center gap-x-2">
+            <img src='/images/burger-32x28.jpg' alt='burger' className="w-8 h-7 object-contain"/>Les plats
+          </span>
         </button>
         <button
           onClick={() => setActiveMenuSection('drinks')}
           className={`menu-section-button ${activeMenuSection === 'drinks' ? 'active' : ''}`}
         >
-          Les boissons
+          <span className="flex items-center justify-center gap-x-2">
+            Les boissons<img src='/images/biere-32x30.jpg' alt='biere' className="w-8 h-7 object-contain"/>
+          </span>
         </button>
       </div>
 
