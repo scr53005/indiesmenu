@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# VS code
+.vscode/
+
 # production
 /build
 
