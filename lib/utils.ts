@@ -1,5 +1,14 @@
 import { Buffer } from 'buffer'; // Needed for client-side base64 encoding
 import { FormattedDish, FormattedDrink, MenuData } from '@/lib/data/menu';
+import { parseStringPromise } from 'xml2js';
+import prisma from '@/lib/prisma';
+
+// Interface for the return type
+export interface CurrencyRate {
+  date: string; // ISO string from API
+  conversion_rate: number;
+  isFresh: boolean;
+}
 
 interface HiveTransferParams {
   recipient: string;
@@ -15,7 +24,32 @@ interface CartItem {
   options: { [key: string]: string }; // e.g., { size: '50cl' }
 }
 
-  // Helper for option short codes for memo
+// Fetches the latest EUR/USD rate from the API
+export async function getLatestEurUsdRate(today: Date): Promise<CurrencyRate> {
+  const todayStr = today.toISOString().split('T')[0];
+  try {
+    const response = await fetch(`/api/currency?today=${todayStr}`);
+    if (!response.ok) {
+      console.warn('Failed to fetch currency rate from API, status:', response.status);
+      return {
+        date: today.toISOString(),
+        conversion_rate: 1.0,
+        isFresh: false,
+      };
+    }
+    const data: CurrencyRate = await response.json();
+    return data;
+  } catch (error) {
+    console.warn('Error fetching currency rate from API:', error);
+    return {
+      date: today.toISOString(),
+      conversion_rate: 1.0,
+      isFresh: false,
+    };
+  }
+}
+
+// Helper for option short codes for memo
 const optionShortCodes: { [key: string]: string } = {
   size: 's',
   cuisson: 'c', // Assuming 'cuisson' can be an option key from your dishes

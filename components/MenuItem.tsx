@@ -70,7 +70,7 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
     };
 
     return (
-        <div className="menu-item"> {/* key prop is applied in the map function in the parent component */}
+        <div className="menu-item text-black"> {/* key prop is applied in the map function in the parent component */}
             {item.image && (
                 <img src={item.image} alt={item.name} className="menu-item-image" />
             )}

@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const lastId = searchParams.get('lastId') || '411975049738723586';
-    console.log('Polling HAF with lastId:', lastId);
+    // console.log('Polling HAF with lastId:', lastId);
 
     const hiveAccount = process.env.HIVE_ACCOUNT || 'indies.cafe';
     // Poll HAF
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       'SELECT id, from_account, amount, symbol, memo FROM hafsql.operation_transfer_table WHERE to_account = $1 AND symbol = \'HBD\' AND memo LIKE \'%TABLE %\' AND id > $2 ORDER BY id DESC LIMIT 10',
       [hiveAccount, lastId]
     );
-    console.log('HAF query result:', result.rows.length, 'rows');
+    // console.log('HAF query result:', result.rows.length, 'rows');
 
     const transfers = [];
     for (const row of result.rows) {

@@ -290,6 +290,7 @@ async function importDishesDrinksData() {
                 Category: string;
                 Item: string;
                 Price: number;
+                Image?: string;
             }[];
 
             console.log(`Processing ${priceListDataDishes.length} dish price list entries...`);
@@ -331,6 +332,7 @@ async function importDishesDrinksData() {
                                 name: entry.Item,
                                 price_eur: entry.Price,
                                 record_date: fixedRecordDate,
+                                image: entry.Image, 
                             },
                         });
                         console.log(`Processed dish: ${dish.name}`);

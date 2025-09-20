@@ -1,10 +1,11 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
-import { getTable, hydrateMemo, HydratedOrderLine } from '@/lib/utils';
+import { getTable, hydrateMemo, HydratedOrderLine, getLatestEurUsdRate } from '@/lib/utils';
 import { MenuData } from '@/lib/data/menu';
 import 'react-toastify/dist/ReactToastify.css';
 import React from 'react';
+
 
 interface Transfer {
   id: string;
@@ -125,6 +126,27 @@ export default function Home() {
     console.log('canPlayAudio state changed:', canPlayAudio);
     // playBellSounds();
   }, [canPlayAudio]);
+
+  // New useEffect to fetch and update currency rate
+  useEffect(() => {
+    const updateCurrencyRate = async () => {
+      const today = new Date();
+      const rateData = await getLatestEurUsdRate(today);
+      console.log(
+        `EUR/USD rate: ${rateData.conversion_rate} for ${rateData.date.split('T')[0]}, isFresh: ${
+          rateData.isFresh
+        }`
+      );
+      toast.info(
+        `EUR/USD rate: ${rateData.conversion_rate.toFixed(4)} (${
+          rateData.isFresh ? 'fresh from ECB' : 'from cache'
+        })`,
+        { autoClose: 3000 }
+      );
+    };
+
+    updateCurrencyRate();
+  }, []); // Empty dependency array to run once on mount
 
   // Make pollHbd a stable function using useCallback
   const pollHbd = useCallback(async () => {
