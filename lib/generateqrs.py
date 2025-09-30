@@ -54,11 +54,11 @@ def generate_qr_codes_and_overlay(uri_file_path, tables_file_path, template_file
 
     # --- Define Positions and Sizes (Internal to each generated image - trial and error values) ---
     QR_CODE_SIZE_PIXELS = 545
-    QR_POS_X = 861
-    QR_POS_Y = 176
+    QR_POS_X = 909
+    QR_POS_Y = 117
 
-    TABLE_NUM_TEXT_POS_X = 862
-    TABLE_NUM_TEXT_POS_Y = 783
+    TABLE_NUM_TEXT_POS_X = 902
+    TABLE_NUM_TEXT_POS_Y = 739
     FONT_SIZE = 34
     TEXT_COLOR = (0, 0, 0)
 
@@ -251,7 +251,8 @@ def generate_qr_codes_and_overlay(uri_file_path, tables_file_path, template_file
 if __name__ == "__main__":
     URI_FILE = "indiesuri.txt"
     TABLES_FILE = "indiestables.csv"
-    TEMPLATE_FILE = "TableQR-template.jpg"
+    TEMPLATE_FILE = "TableQR-template-EN-v.2.png"
+    # --- TEMPLATE_FILE = "TableQR-template.jpg"
     OUTPUT_DIR = "output_qrs" # This will now be a temporary directory for image processing
 
     generate_qr_codes_and_overlay(URI_FILE, TABLES_FILE, TEMPLATE_FILE, OUTPUT_DIR)
