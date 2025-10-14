@@ -63,6 +63,7 @@ model dishes {
   dish_id            Int                  @id @default(autoincrement())
   name               String               @unique @db.VarChar(200)
   price_eur          Decimal              @db.Decimal(10, 2)
+  discount   Float?   @default(1.0) // Optional, defaults to 1.0 (no discount)
   record_date        DateTime             @default(dbgenerated("'2025-05-29'::date")) @db.Date
   image              String?              @db.VarChar(255)
   categories_dishes  categories_dishes[]
@@ -83,6 +84,7 @@ model drink_sizes {
   drink_id    Int
   size        String   @db.VarChar(50)
   price_eur   Decimal  @db.Decimal(10, 2)
+  discount   Float?   @default(1.0) // Optional, defaults to 1.0 (no discount)
   record_date DateTime @default(dbgenerated("'2025-06-01'::date")) @db.Date
   drinks      drinks   @relation(fields: [drink_id], references: [drink_id], onDelete: NoAction, onUpdate: NoAction)
 

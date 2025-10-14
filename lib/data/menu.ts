@@ -23,6 +23,7 @@ export type FormattedDish = {
   name: string;
   type: 'dish';
   price: string; // Formatted as string (e.g., "15.50")
+  discount?: number; // Optional discount field
   categoryIds: number[];
   cuissons: FormattedCuisson[]; 
   ingredients: FormattedIngredient[]; 
@@ -33,7 +34,7 @@ export type FormattedDrink = {
   id: string;
   name: string;
   type: 'drink';
-  availableSizes: { size: string; price: string; }[];
+  availableSizes: { size: string; price: string; discount?: number }[];
   categoryIds: number[];
   image?: string;
   ingredients: FormattedIngredient[]; // NEW: Associated ingredients for the drink
@@ -130,7 +131,7 @@ export async function getMenuData(): Promise<MenuData> {
         type: 'drink',
         availableSizes: drink.drink_sizes.map((ds) => ({
           size: ds.size,
-          price: ds.price_eur.toFixed(2),
+          price: (ds.price_eur.toNumber() * (ds.discount?? 1.0)).toFixed(2),
         })),
         categoryIds: drink.categories_drinks.map(cd => cd.category_id),
         image: drink.image || undefined,
@@ -146,7 +147,7 @@ export async function getMenuData(): Promise<MenuData> {
       id: `dish-${dish.dish_id}`,
       name: dish.name,
       type: 'dish',
-      price: dish.price_eur.toFixed(2),
+      price: (dish.price_eur.toNumber() * (dish.discount ?? 1.0)).toFixed(2), // Apply discount if available
       categoryIds: dish.categories_dishes.map((cd) => cd.category_id),
       image: dish.image || undefined,
       cuissons: dish.dishes_cuisson.map(dc => ({ // Map associated cuissons
