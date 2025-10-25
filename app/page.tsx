@@ -359,68 +359,76 @@ export default function Home() {
       ) : transfers.length === 0 ? (
         <p>Pas de commandes en attente</p>
       ) : (
-        <ul>
-          {transfers.map(tx => { 
-          // Format received_at as CEST
-          const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
-            timeZone: 'Europe/Paris',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          });
+        <>
+          <ul>
+            {transfers.map(tx => {
+            // Format received_at as CEST
+            const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
+              timeZone: 'Europe/Paris',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            });
 
-           // Compute time difference in seconds
-            const now = new Date();
-            const receivedTime = new Date(tx.received_at);
-            const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
-            const isLate = timeDiffSeconds > 600; // 600 seconds = 10 minutes
-            // const memoClasses = `order-memo ${tx.isCallWaiter ? 'call-waiter-memo' : ''}`;
+             // Compute time difference in seconds
+              const now = new Date();
+              const receivedTime = new Date(tx.received_at);
+              const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
+              const isLate = timeDiffSeconds > 600; // 600 seconds = 10 minutes
+              // const memoClasses = `order-memo ${tx.isCallWaiter ? 'call-waiter-memo' : ''}`;
 
-          return (
-            <li key={tx.id.toString()}> {/* Convert to string for React key */}
-              <p>Commande:</p> {/* "Commande:" label is now a separate <p> */}
-              {/* Order details container: apply call-waiter styling here */}
-              <div className={`order-details-container ${tx.isCallWaiter ? 'call-waiter-item' : ''}`}>
-                {tx.parsedMemo.map((line, index) => (
-                  <React.Fragment key={index}>
-                    {line.type === 'item' ? (
-                      <div className="order-item-line">
-                        <span className="order-item-quantity">{line.quantity}</span>
-                        <span
-                          className={`order-item-description ${
-                            line.categoryType === 'drink' ? 'drink-item' : line.categoryType === 'dish' ? 'dish-item' : ''
-                          }`}
-                        >
-                          {line.description}
-                        </span>
-                      </div>
-                    ) : line.type === 'separator' ? (
-                      <hr className="order-separator" />
-                    ) : ( // type === 'raw'
-                      <div className="order-item-description full-width-raw">{line.content}</div>
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-              <p>
-                Pour la table: <strong>{getTable(tx.memo) || 'unknown'}</strong>
-              </p>
-              <p>
-                Client: <strong>{tx.from_account || 'unknown'}</strong>
-              </p>
-              <p>
-                Prix en {tx.symbol}: <strong>{tx.amount}</strong>
-              </p>
-              <p className={isLate ? 'late-order' : ''}>
-                Ordre recu le:<strong> {receivedDateTime}</strong>
-              </p>
-              <button onClick={() => handleFulfill(tx.id.toString())}>C'est parti !</button>
-            </li>
-          );
-          })}
-        </ul>
+            return (
+              <li key={tx.id.toString()}> {/* Convert to string for React key */}
+                <p>Commande:</p> {/* "Commande:" label is now a separate <p> */}
+                {/* Order details container: apply call-waiter styling here */}
+                <div className={`order-details-container ${tx.isCallWaiter ? 'call-waiter-item' : ''}`}>
+                  {tx.parsedMemo.map((line, index) => (
+                    <React.Fragment key={index}>
+                      {line.type === 'item' ? (
+                        <div className="order-item-line">
+                          <span className="order-item-quantity">{line.quantity}</span>
+                          <span
+                            className={`order-item-description ${
+                              line.categoryType === 'drink' ? 'drink-item' : line.categoryType === 'dish' ? 'dish-item' : ''
+                            }`}
+                          >
+                            {line.description}
+                          </span>
+                        </div>
+                      ) : line.type === 'separator' ? (
+                        <hr className="order-separator" />
+                      ) : ( // type === 'raw'
+                        <div className="order-item-description full-width-raw">{line.content}</div>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+                <p>
+                  Pour la table: <strong>{getTable(tx.memo) || 'unknown'}</strong>
+                </p>
+                <p>
+                  Client: <strong>{tx.from_account || 'unknown'}</strong>
+                </p>
+                <p>
+                  Prix en {tx.symbol}: <strong>{tx.amount}</strong>
+                </p>
+                <p className={isLate ? 'late-order' : ''}>
+                  Ordre recu le:<strong> {receivedDateTime}</strong>
+                </p>
+                <button onClick={() => handleFulfill(tx.id.toString())}>C'est parti !</button>
+              </li>
+            );
+            })}
+          </ul>
+          <button
+            onClick={() => window.open('/history', '_blank')}
+            className="history-button"
+          >
+            Historique des ordres
+          </button>
+        </>
       )}
       <style jsx>{`
         .container {
@@ -448,6 +456,15 @@ export default function Home() {
         }
         button:hover {
           background: #005bb5;
+        }
+        .history-button {
+          background: #28a745;
+          margin-top: 20px;
+          display: block;
+          width: 100%;
+        }
+        .history-button:hover {
+          background: #218838;
         }
         .late-order {
           color:rgb(220, 60, 60); /* Bootstrap danger color */

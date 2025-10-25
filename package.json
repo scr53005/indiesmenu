@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.0",
+    "@pnpm/exe": "^10.19.0",
     "@prisma/client": "^6.11.1",
     "@vercel/postgres": "^0.10.0",
     "axios": "^1.9.0",
