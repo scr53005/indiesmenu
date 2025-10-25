@@ -56,6 +56,7 @@ export default function Home() {
   const bell1Ref = useRef<HTMLAudioElement | null>(null);
   const bell2Ref = useRef<HTMLAudioElement | null>(null);
   const [menuData, setMenuData] = useState<MenuData | null>(null);
+  const [transmittedToKitchen, setTransmittedToKitchen] = useState<Map<string, string>>(new Map()); // Map of transfer ID to timestamp
 
 // Refs to hold the *latest* state values that pollHbd needs without re-triggering effects
   const lastIdRef = useRef(lastId);
@@ -290,6 +291,26 @@ export default function Home() {
   }, [pollHbd]); // Dependency: pollHbd is stable because of useCallback
 
  
+  const handleTransmitToKitchen = (id: string) => {
+    const now = new Date();
+    const timestamp = now.toLocaleTimeString('fr-FR', {
+      timeZone: 'Europe/Paris',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    setTransmittedToKitchen(prev => {
+      const updated = new Map(prev);
+      updated.set(id, timestamp);
+      return updated;
+    });
+
+    toast.success('Transmis en cuisine!', {
+      autoClose: 3000,
+      toastId: `kitchen-${id}`,
+    });
+  };
+
     const handleFulfill = async (id: string) => {
     console.log(`Attempting to fulfill transfer ID: ${id}`);
     try {
@@ -304,6 +325,12 @@ export default function Home() {
         // Remove fulfilled transfer from seen IDs to allow re-toast if re-added
         setSeenTransferIds(prev => {
           const updated = new Set(prev);
+          updated.delete(id);
+          return updated;
+        });
+        // Remove from kitchen transmission map
+        setTransmittedToKitchen(prev => {
+          const updated = new Map(prev);
           updated.delete(id);
           return updated;
         });
@@ -353,83 +380,111 @@ export default function Home() {
           </button>
         </> /* Close the Fragment */
       )}
-      <br/><br/> 
+      <br/><br/>
       {loading ? (
         <p>Chargement...</p>
       ) : transfers.length === 0 ? (
         <p>Pas de commandes en attente</p>
       ) : (
-        <>
-          <ul>
-            {transfers.map(tx => {
-            // Format received_at as CEST
-            const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
-              timeZone: 'Europe/Paris',
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-            });
+        <ul>
+          {transfers.map(tx => {
+          // Format received_at as CEST
+          const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
+            timeZone: 'Europe/Paris',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
 
-             // Compute time difference in seconds
-              const now = new Date();
-              const receivedTime = new Date(tx.received_at);
-              const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
-              const isLate = timeDiffSeconds > 600; // 600 seconds = 10 minutes
-              // const memoClasses = `order-memo ${tx.isCallWaiter ? 'call-waiter-memo' : ''}`;
+           // Compute time difference in seconds
+            const now = new Date();
+            const receivedTime = new Date(tx.received_at);
+            const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
+            const isLate = timeDiffSeconds > 600; // 600 seconds = 10 minutes
 
-            return (
-              <li key={tx.id.toString()}> {/* Convert to string for React key */}
-                <p>Commande:</p> {/* "Commande:" label is now a separate <p> */}
-                {/* Order details container: apply call-waiter styling here */}
-                <div className={`order-details-container ${tx.isCallWaiter ? 'call-waiter-item' : ''}`}>
-                  {tx.parsedMemo.map((line, index) => (
-                    <React.Fragment key={index}>
-                      {line.type === 'item' ? (
-                        <div className="order-item-line">
-                          <span className="order-item-quantity">{line.quantity}</span>
-                          <span
-                            className={`order-item-description ${
-                              line.categoryType === 'drink' ? 'drink-item' : line.categoryType === 'dish' ? 'dish-item' : ''
-                            }`}
-                          >
-                            {line.description}
-                          </span>
-                        </div>
-                      ) : line.type === 'separator' ? (
-                        <hr className="order-separator" />
-                      ) : ( // type === 'raw'
-                        <div className="order-item-description full-width-raw">{line.content}</div>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-                <p>
-                  Pour la table: <strong>{getTable(tx.memo) || 'unknown'}</strong>
+            // Check if order contains dishes (and is not a "call waiter" order)
+            const hasDishes = !tx.isCallWaiter && tx.parsedMemo.some(line => line.type === 'item' && line.categoryType === 'dish');
+            const isTransmittedToKitchen = transmittedToKitchen.has(tx.id.toString());
+            const kitchenTransmitTime = transmittedToKitchen.get(tx.id.toString());
+
+          return (
+            <li key={tx.id.toString()}> {/* Convert to string for React key */}
+              <p>Commande:</p> {/* "Commande:" label is now a separate <p> */}
+              {/* Order details container: apply call-waiter styling here */}
+              <div className={`order-details-container ${tx.isCallWaiter ? 'call-waiter-item' : ''}`}>
+                {tx.parsedMemo.map((line, index) => (
+                  <React.Fragment key={index}>
+                    {line.type === 'item' ? (
+                      <div className="order-item-line">
+                        <span className="order-item-quantity">{line.quantity}</span>
+                        <span
+                          className={`order-item-description ${
+                            line.categoryType === 'drink' ? 'drink-item' : line.categoryType === 'dish' ? 'dish-item' : ''
+                          }`}
+                        >
+                          {line.description}
+                        </span>
+                      </div>
+                    ) : line.type === 'separator' ? (
+                      <hr className="order-separator" />
+                    ) : ( // type === 'raw'
+                      <div className="order-item-description full-width-raw">{line.content}</div>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+
+              {/* Show kitchen transmission timestamp if transmitted */}
+              {hasDishes && isTransmittedToKitchen && (
+                <p className="kitchen-transmitted">
+                  Transmis en cuisine à <strong>{kitchenTransmitTime}</strong>
                 </p>
-                <p>
-                  Client: <strong>{tx.from_account || 'unknown'}</strong>
-                </p>
-                <p>
-                  Prix en {tx.symbol}: <strong>{tx.amount}</strong>
-                </p>
-                <p className={isLate ? 'late-order' : ''}>
-                  Ordre recu le:<strong> {receivedDateTime}</strong>
-                </p>
-                <button onClick={() => handleFulfill(tx.id.toString())}>C'est parti !</button>
-              </li>
-            );
-            })}
-          </ul>
-          <button
-            onClick={() => window.open('/history', '_blank')}
-            className="history-button"
-          >
-            Historique des ordres
-          </button>
-        </>
+              )}
+
+              <p>
+                Pour la table: <strong>{getTable(tx.memo) || 'unknown'}</strong>
+              </p>
+              <p>
+                Client: <strong>{tx.from_account || 'unknown'}</strong>
+              </p>
+              <p>
+                Prix en {tx.symbol}: <strong>{tx.amount}</strong>
+              </p>
+              <p className={isLate ? 'late-order' : ''}>
+                Ordre recu le:<strong> {receivedDateTime}</strong>
+              </p>
+
+              {/* Kitchen transmission button (only for orders with dishes that haven't been transmitted) */}
+              {hasDishes && !isTransmittedToKitchen && (
+                <button
+                  onClick={() => handleTransmitToKitchen(tx.id.toString())}
+                  className="kitchen-button"
+                >
+                  Transmettre en cuisine
+                </button>
+              )}
+              {' '}
+              {/* Fulfill button - disabled if has dishes and not transmitted to kitchen */}
+              <button
+                onClick={() => handleFulfill(tx.id.toString())}
+                disabled={hasDishes && !isTransmittedToKitchen}
+                className={hasDishes && !isTransmittedToKitchen ? 'disabled-button' : ''}
+              >
+                C'est parti !
+              </button>
+            </li>
+          );
+          })}
+        </ul>
       )}
+      <button
+        onClick={() => window.open('/history', '_blank')}
+        className="history-button"
+      >
+        Historique des ordres
+      </button>
       <style jsx>{`
         .container {
           max-width: 800px;
@@ -456,6 +511,28 @@ export default function Home() {
         }
         button:hover {
           background: #005bb5;
+        }
+        .kitchen-button {
+          background: #ff8c00; /* Dark orange */
+          color: white;
+          margin-right: 5px;
+        }
+        .kitchen-button:hover {
+          background: #e67e00; /* Darker orange on hover */
+        }
+        .disabled-button {
+          background: #ccc;
+          cursor: not-allowed;
+          opacity: 0.6;
+        }
+        .disabled-button:hover {
+          background: #ccc;
+        }
+        .kitchen-transmitted {
+          color: #ff6600; /* Vibrant orange */
+          font-weight: bold;
+          margin: 10px 0;
+          margin-left: 10px;
         }
         .history-button {
           background: #28a745;
