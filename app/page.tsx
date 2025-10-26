@@ -5,6 +5,7 @@ import { getTable, hydrateMemo, HydratedOrderLine, getLatestEurUsdRate } from '@
 import { MenuData } from '@/lib/data/menu';
 import 'react-toastify/dist/ReactToastify.css';
 import React from 'react';
+import Image from 'next/image';
 
 
 interface Transfer {
@@ -353,7 +354,7 @@ export default function Home() {
 
   return (
     <div className="container">
-      <ToastContainer 
+      <ToastContainer
         autoClose={5000}
         hideProgressBar={false}
         closeOnClick
@@ -361,6 +362,16 @@ export default function Home() {
         draggable
         limit={5} // Prevent toast overload
       />
+      <div className="logo-container">
+        <Image
+          src="/images/sticker1.jpg"
+          alt="Logo"
+          width={150}
+          height={150}
+          className="logo"
+          priority
+        />
+      </div>
       <h1>Commandes pour @{ process.env.NEXT_PUBLIC_HIVE_ACCOUNT }</h1>
       <br/>
       {!canPlayAudio && (
@@ -490,6 +501,16 @@ export default function Home() {
           max-width: 800px;
           margin: 0 auto;
           padding: 20px;
+        }
+        .logo-container {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 20px;
+          margin-top: 10px;
+        }
+        .logo {
+          border-radius: 10px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         ul {
           list-style: none;
