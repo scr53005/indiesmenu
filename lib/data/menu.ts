@@ -38,6 +38,7 @@ export type FormattedDrink = {
   categoryIds: number[];
   image?: string;
   ingredients: FormattedIngredient[]; // NEW: Associated ingredients for the drink
+  selection_mode?: string; // 'choose_one' or null - indicates if customer must select an ingredient
 };
 
 export type MenuItem = FormattedDish | FormattedDrink;
@@ -138,7 +139,8 @@ export async function getMenuData(): Promise<MenuData> {
         ingredients: drink.drinks_ingredients.map(di => ({ // Map associated ingredients
           id: di.ingredients.ingredient_id,
           name: di.ingredients.name,
-        })),        
+        })),
+        selection_mode: drink.selection_mode || undefined,
       });
     });
 

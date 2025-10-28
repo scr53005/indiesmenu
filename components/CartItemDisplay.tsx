@@ -33,6 +33,10 @@ const CartItemDisplay: React.FC<CartItemDisplayProps> = React.memo(({ item, tabl
             {/* Display options if the item has any */}
             {hasOptions && (
                 <div className="cart-item-options">
+                    {/* Display ingredient option if present for drinks */}
+                    {item.options.ingredient && (
+                        <span className="option-tag">{item.options.ingredient}</span>
+                    )}
                     {/* Display size option if present */}
                     {item.options.size && (
                         <span className="option-tag">Size: {item.options.size}</span>

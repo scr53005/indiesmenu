@@ -94,6 +94,7 @@ model drink_sizes {
 model drinks {
   drink_id           Int                  @id @default(autoincrement())
   name               String               @unique @db.VarChar(200)
+  selection_mode     String?              @db.VarChar(20)
   record_date        DateTime             @default(dbgenerated("'2025-06-01'::date")) @db.Date
   image              String?              @db.VarChar(255)
   categories_drinks  categories_drinks[]

@@ -30,6 +30,7 @@ export default function MenuPage() {
   const [loading, setLoading] = useState(true);
   const [selectedSizes, setSelectedSizes] = useState<{ [key: string]: string }>({}); // Track selected drink sizes
   const [selectedCuisson, setSelectedCuisson] = useState<{ [key: string]: string }>({}); // Track selected cuisson for dishes
+  const [selectedIngredients, setSelectedIngredients] = useState<{ [key: string]: string }>({}); // Track selected ingredients for drinks
   const searchParams = useSearchParams();
   const urlTable = searchParams.get('table') || '218';
   const validatedTable = parseInt(urlTable, 10);
@@ -126,8 +127,10 @@ export default function MenuPage() {
   useEffect(() => {
     const calculateHeights = () => {
       setTimeout(() => {
-        if (cartRef.current) {
-          setCartHeight(cart.length > 0 ? cartRef.current.offsetHeight : 0);
+        if (cart.length > 0 && cartRef.current) {
+          setCartHeight(cartRef.current.offsetHeight);
+        } else {
+          setCartHeight(0); // Cart is empty, reset height to 0
         }
         if (menuSelectorRef.current) {
           setMenuSelectorHeight(menuSelectorRef.current.offsetHeight);
@@ -169,6 +172,10 @@ export default function MenuPage() {
     setSelectedCuisson(prev => ({ ...prev, [dishId]: cuisson }));
   }, []);
 
+  const handleIngredientChange = useCallback((drinkId: string, ingredient: string) => {
+    setSelectedIngredients(prev => ({ ...prev, [drinkId]: ingredient }));
+  }, []);
+
   // Updated handleAddItem to correctly process options passed from MenuItem
   const handleAddItem = useCallback((item: FormattedDish | FormattedDrink, options?: { [key: string]: string }) => {
     let cartItemId = item.id;
@@ -187,10 +194,19 @@ export default function MenuPage() {
       }
     } else { // It's a drink
       const drinkItem = item as FormattedDrink;
-      // If it's a drink and has a selected size, append it to ID and name, and update price
+
+      // Build cart item ID from base ID, ingredient (if any), and size (if any)
+      const idParts = [item.id];
+      if (itemOptions.ingredient) {
+        idParts.push(itemOptions.ingredient.toLowerCase().replace(/\s/g, '-'));
+      }
       if (itemOptions.size) {
-        cartItemId = `${item.id}-${itemOptions.size.toLowerCase().replace(/\s/g, '-')}`;
-        // cartItemName = `${item.name} (${itemOptions.size})`;
+        idParts.push(itemOptions.size.toLowerCase().replace(/\s/g, '-'));
+      }
+      cartItemId = idParts.join('-');
+
+      // Update price based on selected size
+      if (itemOptions.size) {
         const selectedSizeOption = drinkItem.availableSizes.find(s => s.size === itemOptions.size);
         if (selectedSizeOption) {
           cartItemPrice = selectedSizeOption.price;
@@ -353,11 +369,13 @@ export default function MenuPage() {
                       <MenuItem
                         key={item.id}
                         item={item}
-                        selectedCuisson={selectedCuisson} // Pass selectedCuisson
+                        selectedCuisson={selectedCuisson}
                         handleCuissonChange={handleCuissonChange}
                         handleAddItem={handleAddItem}
-                        selectedSizes={{}} // Pass empty object as it's not applicable for dishes
-                        handleSizeChange={() => {}} // Pass no-op as it's not applicable for dishes
+                        selectedSizes={{}} // Not used for dishes currently
+                        handleSizeChange={() => {}} // Not used for dishes currently
+                        selectedIngredients={selectedIngredients}
+                        handleIngredientChange={handleIngredientChange}
                       />
                     ))}
                   </div>
@@ -386,8 +404,10 @@ export default function MenuPage() {
                         selectedSizes={selectedSizes}
                         handleSizeChange={handleSizeChange}
                         handleAddItem={handleAddItem}
-                        selectedCuisson={{}} // Pass empty object as it's not applicable for drinks
-                        handleCuissonChange={() => {}} // Pass no-op as it's not applicable for drinks
+                        selectedCuisson={{}} // Not used for drinks currently
+                        handleCuissonChange={() => {}} // Not used for drinks currently
+                        selectedIngredients={selectedIngredients}
+                        handleIngredientChange={handleIngredientChange}
                       />
                     ))}
                   </div>

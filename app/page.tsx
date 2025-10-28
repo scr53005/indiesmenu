@@ -63,12 +63,14 @@ export default function Home() {
   const lastIdRef = useRef(lastId);
   const menuDataRef = useRef(menuData);
   const seenTransferIdsRef = useRef(seenTransferIds);
+  const canPlayAudioRef = useRef(canPlayAudio); // Add ref for canPlayAudio
   const isPollingActiveRef = useRef(false); // To prevent concurrent poll executions
 
   // Update refs whenever the corresponding state changes
   useEffect(() => { lastIdRef.current = lastId; }, [lastId]);
   useEffect(() => { menuDataRef.current = menuData; }, [menuData]);
   useEffect(() => { seenTransferIdsRef.current = seenTransferIds; }, [seenTransferIds]);
+  useEffect(() => { canPlayAudioRef.current = canPlayAudio; }, [canPlayAudio]); // Keep ref in sync
 
   // Initialize audio elements once
   useEffect(() => {
@@ -210,11 +212,11 @@ export default function Home() {
           setLastId(data.latestId);
 
           if (newTransfersToDisplay.length > 0) {
-            if (canPlayAudio) { 
+            if (canPlayAudioRef.current) {
               console.log('Trying to play bell sounds for new transfers');
-              playBellSounds(); 
+              playBellSounds();
             } else {
-              console.log('New transfer seen but canPlayAudio is ' + canPlayAudio + ', not playing sounds');
+              console.log('New transfer seen but canPlayAudio is ' + canPlayAudioRef.current + ', not playing sounds');
             }
             // Iterate over the correctly processed and new transfers for toasts
             newTransfersToDisplay.forEach(tx => {
@@ -257,7 +259,7 @@ export default function Home() {
     } finally {
       isPollingActiveRef.current = false; // Reset flag after poll completes
     }
-  }, [canPlayAudio, playBellSounds, setTransfers, setLastId, setSeenTransferIds]); // Dependencies for useCallback
+  }, [playBellSounds, setTransfers, setLastId, setSeenTransferIds]); // Dependencies for useCallback (removed canPlayAudio)
 
    // Fetch menu data once on component mount
    useEffect(() => {

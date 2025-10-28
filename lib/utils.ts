@@ -52,7 +52,8 @@ export async function getLatestEurUsdRate(today: Date): Promise<CurrencyRate> {
 // Helper for option short codes for memo
 const optionShortCodes: { [key: string]: string } = {
   size: 's',
-  cuisson: 'c', // Assuming 'cuisson' can be an option key from your dishes
+  cuisson: 'c', // Cuisson for meat dishes
+  ingredient: 'i', // Ingredient for drinks with choose_one selection mode
   // Add other short codes as needed based on your item options
 };
 
@@ -217,8 +218,10 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
       } else if (key === 's') {
         options.size = value;
       } else if (key === 'c') {
-        options.cuisson = value; // Assuming 'cuisson' is a valid option for dishes
-      } 
+        options.cuisson = value; // Cuisson for meat dishes
+      } else if (key === 'i') {
+        options.ingredient = value; // Ingredient for drinks
+      }
     }
 
     const [typePrefix, dehydratedBaseId] = idPart.split(':'); // dehydratedBaseId is like "25-rare" or "2-large"
@@ -254,6 +257,11 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
       const drink = drinkMap.get(actualItemIdForLookup);
       if (drink) {
         let description = drink.name;
+        // Add ingredient to description if present (for juices, teas, infusions)
+        if (options.ingredient) {
+          description = `${description} (${options.ingredient})`;
+        }
+        // Add size to description if present
         if (options.size) {
           const sizeObj = drink.availableSizes.find(s => s.size === options.size);
           if (sizeObj) {

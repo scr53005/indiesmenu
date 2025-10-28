@@ -8,10 +8,13 @@ interface MenuItemProps {
     item: FormattedDish | FormattedDrink; // Use the enriched types from menu.ts
     selectedSizes: { [key: string]: string }; // Tracks selected size for drinks
     selectedCuisson: { [key: string]: string }; // Tracks selected cuisson for dishes
+    selectedIngredients: { [key: string]: string }; // Tracks selected ingredient for drinks with choose_one mode
     // Callback for when a drink size selection changes
     handleSizeChange: (itemId: string, size: string) => void;
     // Callback for when a dish cuisson selection changes
     handleCuissonChange: (itemId: string, cuissonEnglishName: string) => void;
+    // Callback for when a drink ingredient selection changes
+    handleIngredientChange: (itemId: string, ingredientName: string) => void;
     // Callback for adding an item to the cart, now accepts options
     handleAddItem: (item: FormattedDish | FormattedDrink, options?: { [key: string]: string }) => void;
 }
@@ -20,14 +23,18 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
     item,
     selectedSizes,
     selectedCuisson,
+    selectedIngredients,
     handleSizeChange,
     handleCuissonChange,
+    handleIngredientChange,
     handleAddItem
 }) => {
     // Determine if the current item is a dish for type-specific rendering
     const isDish = item.type === 'dish';
     // Check if a dish has associated cuisson options
     const hasCuissonOptions = isDish && (item as FormattedDish).cuissons && (item as FormattedDish).cuissons.length > 0;
+    // Check if a drink requires ingredient selection
+    const hasIngredientSelection = !isDish && (item as FormattedDrink).selection_mode === 'choose_one' && (item as FormattedDrink).ingredients && (item as FormattedDrink).ingredients.length > 0;
 
     // Initialize display price with the item's base price
     let displayPrice; // = item.price;
@@ -52,10 +59,14 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
         displayPrice = (item as FormattedDish).price;
     }
 
-    // Determine the currently selected cuisson for a dish, defaulting to the first option if available
-    const currentCuisson = selectedCuisson[item.id] || (hasCuissonOptions ? (item as FormattedDish).cuissons[0]?.english_name : '');
+    // Determine the currently selected cuisson for a dish, defaulting to Medium if available, otherwise first option
+    const currentCuisson = selectedCuisson[item.id] || (hasCuissonOptions ?
+        ((item as FormattedDish).cuissons.find(c => c.english_name === 'Medium')?.english_name ||
+         (item as FormattedDish).cuissons[0]?.english_name) : '');
     // Determine the currently selected size for a drink, defaulting to the first option if available
     const currentSize = selectedSizes[item.id] || (!isDish && (item as FormattedDrink).availableSizes[0]?.size || '');
+    // Determine the currently selected ingredient for a drink, defaulting to the first option if available
+    const currentIngredient = selectedIngredients[item.id] || (hasIngredientSelection ? (item as FormattedDrink).ingredients[0]?.name : '');
 
     // Function to handle adding the item to the cart, including selected options
     const handleAddToCartClick = () => {
@@ -65,6 +76,9 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
         }
         if (!isDish) {
             options.size = currentSize; // Add selected size to options for drinks
+        }
+        if (hasIngredientSelection) {
+            options.ingredient = currentIngredient; // Add selected ingredient to options for drinks
         }
         handleAddItem(item, options); // Call the parent's addItem function with item and options
     };
@@ -103,7 +117,21 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
                 ) : (
                     // Render specific controls for drinks
                     <div>
-                        {(item as FormattedDrink).availableSizes.length > 0 && ( // Only render select if sizes exist for the drink
+                        {hasIngredientSelection && ( // Render ingredient select if drink has choose_one mode
+                            <select
+                                value={currentIngredient}
+                                onChange={(e) => handleIngredientChange(item.id, e.target.value)}
+                                className="mt-2 p-1 border rounded"
+                            >
+                                {(item as FormattedDrink).ingredients.map((ingredient) => (
+                                    <option key={ingredient.id} value={ingredient.name}>
+                                        {ingredient.name}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                        {(item as FormattedDrink).availableSizes.length > 1 ? (
+                            // Show dropdown if multiple sizes available
                             <select
                                 value={currentSize}
                                 onChange={(e) => handleSizeChange(item.id, e.target.value)}
@@ -115,6 +143,16 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
                                     </option>
                                 ))}
                             </select>
+                        ) : (item as FormattedDrink).availableSizes.length === 1 ? (
+                            // Show size as text if only one size available
+                            <p className="text-sm text-gray-700 mt-1">
+                                {(item as FormattedDrink).availableSizes[0].size}
+                            </p>
+                        ) : null}
+                        {!hasIngredientSelection && (item as FormattedDrink).ingredients.length > 0 && ( // Display ingredients for info if not choose_one mode
+                            <p className="text-sm text-gray-600 mt-1">
+                                Ingredients: {(item as FormattedDrink).ingredients.map(i => i.name).join(', ')}
+                            </p>
                         )}
                         <p>€{displayPrice}</p>
                     </div>
