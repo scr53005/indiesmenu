@@ -13,13 +13,9 @@ import { MenuData, FormattedDish, FormattedDrink, FormattedCuisson, FormattedIng
 
 // New Interface for Grouped Items (more flexible)
 interface GroupedCategory<T> {
+  id: number;
   name: string;
   items: T[];
-}
-
-// Use the imported FormattedDish and FormattedDrink for GroupedMenu
-interface GroupedMenu {
-  [categoryId: number]: GroupedCategory<FormattedDish | FormattedDrink>;
 }
 
 export default function MenuPage() {
@@ -42,14 +38,18 @@ export default function MenuPage() {
   const [openCategories, setOpenCategories] = useState<Set<number>>(new Set());
 
   // Grouped menu data for easier rendering - ensure types are correct
-  const [groupedDishes, setGroupedDishes] = useState<GroupedMenu>({});
-  const [groupedDrinks, setGroupedDrinks] = useState<GroupedMenu>({});
+  const [groupedDishes, setGroupedDishes] = useState<GroupedCategory<FormattedDish>[]>([]);
+  const [groupedDrinks, setGroupedDrinks] = useState<GroupedCategory<FormattedDrink>[]>([]);
 
   // Refs for dynamic height calculation
   const cartRef = useRef<HTMLDivElement>(null);
   const menuSelectorRef = useRef<HTMLDivElement>(null);
   const [cartHeight, setCartHeight] = useState(0);
   const [menuSelectorHeight, setMenuSelectorHeight] = useState(0);
+
+  // State for wallet notification
+  const [showWalletNotification, setShowWalletNotification] = useState(false);
+  const [walletCredentials, setWalletCredentials] = useState<{username: string, activeKey: string} | null>(null);
 
   useEffect(() => {
     // Set the table number in the cart context
@@ -82,46 +82,103 @@ export default function MenuPage() {
   // Process menu data into grouped categories once fetched
   useEffect(() => {
     if (menu) {
-      const dishesByCat: GroupedMenu = {};
-      const drinksByCat: GroupedMenu = {};
+      // Filter out Sauces category (26) and maintain category order from API
+      const filteredCategories = menu.categories.filter(cat => cat.category_id !== 26);
 
-      menu.categories.forEach(cat => {
-        dishesByCat[cat.category_id] = { name: cat.name, items: [] };
-        drinksByCat[cat.category_id] = { name: cat.name, items: [] };
-      });
+      // Build dishes by category
+      const dishesArray: GroupedCategory<FormattedDish>[] = filteredCategories.map(cat => ({
+        id: cat.category_id,
+        name: cat.name,
+        items: menu.dishes
+          .filter(dish => dish.categoryIds.includes(cat.category_id))
+          .sort((a, b) => {
+            // Items with images first
+            if (a.image && !b.image) return -1;
+            if (!a.image && b.image) return 1;
+            return 0; // Maintain original order for items with same image status
+          })
+      }));
 
-      menu.dishes.forEach(dish => {
-        dish.categoryIds.forEach(catId => {
-          if (dishesByCat[catId]) {
-            dishesByCat[catId].items.push(dish); // dish is now FormattedDish
-          }
-        });
-      });
-
-      menu.drinks.forEach(drink => {
-        drink.categoryIds.forEach(catId => {
-          if (drinksByCat[catId]) {
-            drinksByCat[catId].items.push(drink); // drink is now FormattedDrink
-          }
-        });
-      });
+      // Build drinks by category
+      const drinksArray: GroupedCategory<FormattedDrink>[] = filteredCategories.map(cat => ({
+        id: cat.category_id,
+        name: cat.name,
+        items: menu.drinks
+          .filter(drink => drink.categoryIds.includes(cat.category_id))
+          .sort((a, b) => {
+            // Items with images first
+            if (a.image && !b.image) return -1;
+            if (!a.image && b.image) return 1;
+            return 0; // Maintain original order for items with same image status
+          })
+      }));
 
       // Filter out empty categories
-      for (const id in dishesByCat) {
-        if (dishesByCat[id].items.length === 0) {
-          delete dishesByCat[id];
-        }
-      }
-      for (const id in drinksByCat) {
-        if (drinksByCat[id].items.length === 0) {
-          delete drinksByCat[id];
-        }
-      }
+      const nonEmptyDishes = dishesArray.filter(cat => cat.items.length > 0);
+      const nonEmptyDrinks = drinksArray.filter(cat => cat.items.length > 0);
 
-      setGroupedDishes(dishesByCat);
-      setGroupedDrinks(drinksByCat);
+      setGroupedDishes(nonEmptyDishes);
+      setGroupedDrinks(nonEmptyDrinks);
     }
   }, [menu]);
+
+  // Load saved wallet credentials on mount
+  useEffect(() => {
+    const savedCredentials = localStorage.getItem('innopay_wallet_credentials');
+    if (savedCredentials) {
+      try {
+        const credentials = JSON.parse(savedCredentials);
+        setWalletCredentials(credentials);
+        console.log('Loaded wallet credentials:', credentials.username);
+      } catch (e) {
+        console.error('Failed to parse saved credentials:', e);
+      }
+    }
+  }, []);
+
+  // Listen for wallet credentials from wallet.innopay.lu
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      console.log('Received postMessage from:', event.origin, 'data:', event.data);
+
+      // Verify origin for security (allow localhost and local network for testing)
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+      const allowedOrigins = [
+        'https://wallet.innopay.lu',
+        'http://localhost:3000',
+        `http://${currentHost}:3000`, // Dynamic local network support
+      ];
+
+      if (!allowedOrigins.includes(event.origin)) {
+        console.log('Rejected message from unauthorized origin:', event.origin);
+        console.log('Allowed origins:', allowedOrigins);
+        return;
+      }
+
+      if (event.data.type === 'INNOPAY_WALLET_CREATED') {
+        const { username, activeKey } = event.data;
+        console.log('Processing INNOPAY_WALLET_CREATED message for:', username);
+
+        // Store credentials
+        const credentials = { username, activeKey };
+        setWalletCredentials(credentials);
+        localStorage.setItem('innopay_wallet_credentials', JSON.stringify(credentials));
+
+        // Hide wallet notification
+        setShowWalletNotification(false);
+
+        console.log(`Wallet credentials stored for ${username}`);
+        alert(`Portefeuille créé! Bienvenue ${username}. Vous pouvez maintenant commander directement.`);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    console.log('postMessage listener registered');
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Don't show wallet notification on page load anymore
+  // It will only show when an order fails due to missing protocol handler
 
   // Effect to calculate dynamic heights for fixed elements
   useEffect(() => {
@@ -260,8 +317,37 @@ export default function MenuPage() {
       return;
     }
     const hiveOpUrl = orderNow();
-    window.location.href = hiveOpUrl;
-  }, [cart.length, orderNow]);
+
+    // Set a flag to detect if the page loses focus (app opened)
+    let protocolHandlerWorked = false;
+
+    const blurHandler = () => {
+      protocolHandlerWorked = true;
+      console.log('Page lost focus - protocol handler likely worked');
+    };
+
+    window.addEventListener('blur', blurHandler);
+
+    // Try to open the hive:// URL
+    try {
+      window.location.href = hiveOpUrl;
+    } catch (error) {
+      console.log('Failed to open hive:// URL:', error);
+      // Safari might throw error - treat as protocol handler not working
+      protocolHandlerWorked = false;
+    }
+
+    // After 1.5 seconds, check if the protocol handler worked
+    setTimeout(() => {
+      window.removeEventListener('blur', blurHandler);
+
+      // Show banner if protocol handler didn't work AND user doesn't have wallet credentials
+      if (!protocolHandlerWorked && !walletCredentials) {
+        console.log('Protocol handler did not work - showing wallet notification');
+        setShowWalletNotification(true);
+      }
+    }, 1500);
+  }, [cart.length, orderNow, walletCredentials]);
 
   const toggleCategory = useCallback((categoryId: number) => {
     setOpenCategories(prev => {
@@ -288,6 +374,117 @@ export default function MenuPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
 
+      {/* TEST BANNER - Always visible */}
+      {/* TEMPORARILY COMMENTED OUT FOR PRODUCTION TESTING
+      <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-3 shadow-lg">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center">
+            <p className="font-semibold text-sm md:text-base">
+              TEST BANNER - If you see this, banners work!
+            </p>
+            <p className="text-xs opacity-90">
+              showWalletNotification: {showWalletNotification ? 'TRUE' : 'FALSE'} |
+              walletCredentials: {walletCredentials ? 'EXISTS' : 'NULL'} |
+              loading: {loading ? 'TRUE' : 'FALSE'}
+            </p>
+          </div>
+          <div className="flex justify-center gap-2 mt-2">
+            <button
+              onClick={() => {
+                localStorage.removeItem('innopay_notification_dismissed');
+                localStorage.removeItem('innopay_wallet_credentials');
+                setWalletCredentials(null);
+                setShowWalletNotification(true);
+                console.log('Forced blue banner to show');
+              }}
+              className="bg-white text-red-600 px-3 py-1 rounded text-xs font-semibold hover:bg-red-50"
+            >
+              Force Show Blue Banner
+            </button>
+            <button
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+              className="bg-white text-red-600 px-3 py-1 rounded text-xs font-semibold hover:bg-red-50"
+            >
+              Clear All & Reload
+            </button>
+          </div>
+        </div>
+      </div>
+      */}
+
+      {/* Wallet Notification Banner */}
+      {showWalletNotification && !walletCredentials && (
+        <div className="fixed top-0 left-0 right-0 z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+            <div className="flex-1">
+              <p className="font-semibold text-sm md:text-base">
+                💳 Pour commander, créez votre portefeuille Innopay
+              </p>
+              <p className="text-xs md:text-sm opacity-90 mt-1">
+                Gratuit et instantané - Pas besoin d'installer d'application
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href={typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== 'indies.innopay.lu'
+                  ? `http://${window.location.hostname}:3000/user`
+                  : window.location.hostname === 'localhost'
+                  ? 'http://localhost:3000/user'
+                  : 'https://wallet.innopay.lu/user'}
+                target="_blank"
+                rel="noopener"
+                className="bg-white text-blue-600 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-blue-50 transition-colors whitespace-nowrap"
+              >
+                Créer un compte
+              </a>
+              <button
+                onClick={() => {
+                  setShowWalletNotification(false);
+                  console.log('Notification dismissed temporarily - will show again on next order attempt');
+                }}
+                className="text-white hover:text-blue-200 transition-colors p-2"
+                aria-label="Fermer"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wallet Status Display - Shows when credentials are loaded */}
+      {walletCredentials && (
+        <div className="fixed top-[80px] left-0 right-0 z-[9998] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">✓</span>
+              <div>
+                <p className="font-semibold text-sm md:text-base">
+                  Connecté: @{walletCredentials.username}
+                </p>
+                <p className="text-xs opacity-90">
+                  Portefeuille Innopay actif
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (confirm('Déconnecter votre portefeuille?')) {
+                  localStorage.removeItem('innopay_wallet_credentials');
+                  setWalletCredentials(null);
+                }
+              }}
+              className="text-white hover:text-green-200 transition-colors px-3 py-1 text-sm border border-white rounded"
+            >
+              Déconnecter
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Fixed Cart Section */}
       {cart.length > 0 && (
         <div ref={cartRef} className="fixed-cart-container">
@@ -307,7 +504,7 @@ export default function MenuPage() {
           <div className="cart-summary-row">
             <span className="cart-total-text">Total: {getTotalPrice()} HBD</span>
             <button onClick={handleCallWaiter} className="call-waiter-button">
-              Serveur !
+              Serveur&nbsp;!
             </button>
             <button onClick={handleOrder} className="order-now-button">
               Commandez
@@ -355,17 +552,17 @@ export default function MenuPage() {
 
         {activeMenuSection === 'dishes' && (
           <div className="menu-section">
-            {Object.entries(groupedDishes).map(([id, category]) => (
-              <div key={id} className="category-folder-container">
-                <h3 onClick={() => toggleCategory(parseInt(id))} className="category-folder-header">
+            {groupedDishes.map((category) => (
+              <div key={category.id} className="category-folder-container">
+                <h3 onClick={() => toggleCategory(category.id)} className="category-folder-header">
                   {category.name}
                   <span className="toggle-icon">
-                    {openCategories.has(parseInt(id)) ? '▲' : '▼'}
+                    {openCategories.has(category.id) ? '▲' : '▼'}
                   </span>
                 </h3>
-                {openCategories.has(parseInt(id)) && (
+                {openCategories.has(category.id) && (
                   <div className="category-items-grid">
-                    {category.items.map((item: FormattedDish) => ( // Cast to FormattedDish
+                    {category.items.map((item: FormattedDish) => (
                       <MenuItem
                         key={item.id}
                         item={item}
@@ -387,17 +584,17 @@ export default function MenuPage() {
 
         {activeMenuSection === 'drinks' && (
           <div className="menu-section">
-            {Object.entries(groupedDrinks).map(([id, category]) => (
-              <div key={id} className="category-folder-container">
-                <h3 onClick={() => toggleCategory(parseInt(id))} className="category-folder-header">
+            {groupedDrinks.map((category) => (
+              <div key={category.id} className="category-folder-container">
+                <h3 onClick={() => toggleCategory(category.id)} className="category-folder-header">
                   {category.name}
                   <span className="toggle-icon">
-                    {openCategories.has(parseInt(id)) ? '▲' : '▼'}
+                    {openCategories.has(category.id) ? '▲' : '▼'}
                   </span>
                 </h3>
-                {openCategories.has(parseInt(id)) && (
+                {openCategories.has(category.id) && (
                   <div className="category-items-grid">
-                    {category.items.map((item: FormattedDrink) => ( // Cast to FormattedDrink
+                    {category.items.map((item: FormattedDrink) => (
                       <MenuItem
                         key={item.id}
                         item={item}

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Sorin/Documents/GitHub/innopay/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

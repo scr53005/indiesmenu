@@ -72,13 +72,34 @@ export async function getMenuData(): Promise<MenuData> {
           },
         },
       },
-      orderBy: {
-        name: 'asc', // Order categories alphabetically
-      },
+    });
+
+    // Custom ordering: hardcoded category order by category_id
+    // Order: SUGGESTION(30), PLAT DU JOUR(31), PARTAGER(20), FINGER FOOD(21),
+    //        SALADES(22), POISSONS(23), SOUPE DU MOMENT(24), BURGERS(25),
+    //        VIANDES(27), DESSERTS(28), KIDS MENU(29)
+    const categoryOrder = [30, 31, 20, 21, 22, 23, 24, 25, 27, 28, 29];
+    const sortedCategories = categories.sort((a, b) => {
+      const aIndex = categoryOrder.indexOf(a.category_id);
+      const bIndex = categoryOrder.indexOf(b.category_id);
+
+      // If both are in the order list, sort by their position
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      // If only a is in the list, it comes first
+      if (aIndex !== -1) return -1;
+      // If only b is in the list, it comes first
+      if (bIndex !== -1) return 1;
+      // Otherwise, maintain original order (shouldn't happen if all categories are listed)
+      return 0;
     });
 
     // Fetch dishes and drinks separately to include their categories (as needed for formatting)
+    // Filter to only include active dishes that are not sold out
     const dishes = await prisma.dishes.findMany({
+      where: {
+        active: true,
+        sold_out: false,
+      },
       include: {
         categories_dishes: {
           include: {
@@ -174,7 +195,7 @@ export async function getMenuData(): Promise<MenuData> {
     });
 
     return {
-      categories,
+      categories: sortedCategories,
       dishes: formattedDishes,
       drinks: Array.from(formattedDrinks.values()),
       cuissons: allCuissons.map(c => ({ // Format global cuissons list
@@ -185,8 +206,8 @@ export async function getMenuData(): Promise<MenuData> {
       ingredients: allIngredients.map(i => ({ // Format global ingredients list
         id: i.ingredient_id,
         name: i.name,
-      })),   
-      conversion_rate: conversionRate ? conversionRate.conversion_rate.toNumber(): 1.0000, // Include conversion rate if available   
+      })),
+      conversion_rate: conversionRate ? conversionRate.conversion_rate.toNumber(): 1.0000, // Include conversion rate if available
     };
 
   } finally {

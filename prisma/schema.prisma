@@ -62,8 +62,12 @@ model currency_conversion {
 model dishes {
   dish_id            Int                  @id @default(autoincrement())
   name               String               @unique @db.VarChar(200)
+  description        String?              @db.Text // Detailed description for suggestions
   price_eur          Decimal              @db.Decimal(10, 2)
-  discount   Float?   @default(1.0) // Optional, defaults to 1.0 (no discount)
+  discount           Float?               @default(1.0) // Optional, defaults to 1.0 (no discount)
+  sold_out           Boolean?             @default(false) // For strikethrough display on plat du jour
+  position           Int?                 @default(0) // Display order within category
+  active             Boolean?             @default(true) // Lifecycle: true=display, false=rotated out
   record_date        DateTime             @default(dbgenerated("'2025-05-29'::date")) @db.Date
   image              String?              @db.VarChar(255)
   categories_dishes  categories_dishes[]

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { CartProvider } from './context/CartContext'; // Import your CartProvider
-import { Suspense } from 'react'; // <--- NEW: Import Suspense from React
+import { CartProvider } from './context/CartContext';
+import { Suspense } from 'react';
+import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,11 +17,16 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Indie's Café Menu and Order Tracker",
-  description: "Created by Innopay and OffChain Luxembourg",
+  description: "Menu digital pour Indie's - Commander et payer avec Innopay",
   icons: {
-    icon: '/favicon-32x32.png', // Path to your favicon, relative to 'public' folder
-    // You can add more sizes/types if needed, e.g., for apple-touch-icon
-    // apple: '/apple-touch-icon.png',
+    icon: '/favicon-32x32.png',
+    apple: '/images/innopay-blue.png',
+  },
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: "Indies Menu",
   },
 };
 
@@ -32,11 +38,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <ServiceWorkerRegistration />
         <Suspense fallback={<div>Loading application...</div>}>
         <CartProvider>
           {children}
         </CartProvider>
-       </Suspense> 
+       </Suspense>
       </body>
     </html>
   );

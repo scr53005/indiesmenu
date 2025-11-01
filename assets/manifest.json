@@ -1,0 +1,46 @@
+{
+  "id": "/menu",
+  "name": "Indies Menu",
+  "short_name": "Indies",
+  "description": "Menu digital pour Indie's - Commander et payer avec Innopay",
+  "start_url": "/menu",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/images/innopay-blue.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/innopay-blue.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["food", "business"],
+  "screenshots": [
+    {
+      "src": "/images/indiesInt1600x878.jpg",
+      "sizes": "1600x878",
+      "type": "image/jpeg",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/images/indiesExt1600x878.jpg",
+      "sizes": "1600x878",
+      "type": "image/jpeg",
+      "form_factor": "wide"
+    }
+  ]
+}

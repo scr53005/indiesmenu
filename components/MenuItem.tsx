@@ -17,6 +17,8 @@ interface MenuItemProps {
     handleIngredientChange: (itemId: string, ingredientName: string) => void;
     // Callback for adding an item to the cart, now accepts options
     handleAddItem: (item: FormattedDish | FormattedDrink, options?: { [key: string]: string }) => void;
+    // Optional: offline mode disables add to cart button
+    offlineMode?: boolean;
 }
 
 const MenuItem: React.FC<MenuItemProps> = React.memo(({
@@ -27,7 +29,8 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
     handleSizeChange,
     handleCuissonChange,
     handleIngredientChange,
-    handleAddItem
+    handleAddItem,
+    offlineMode = false
 }) => {
     // Determine if the current item is a dish for type-specific rendering
     const isDish = item.type === 'dish';
@@ -158,12 +161,14 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
                     </div>
                 )}
             </div>
-            <button
-                onClick={handleAddToCartClick}
-                className="add-to-cart-button"
-            >
-                Add to Cart
-            </button>
+            {!offlineMode && (
+                <button
+                    onClick={handleAddToCartClick}
+                    className="add-to-cart-button"
+                >
+                    Add to Cart
+                </button>
+            )}
         </div>
     );
 });

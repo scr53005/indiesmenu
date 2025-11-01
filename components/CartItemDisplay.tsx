@@ -26,29 +26,29 @@ const CartItemDisplay: React.FC<CartItemDisplayProps> = React.memo(({ item, tabl
     const hasOptions = Object.keys(item.options).length > 0;
 
     return (
-        <div className="cart-item-grid"> {/* key prop is applied in the map function in parent */}
-            <div className="cart-item-name">{item.name}</div>
-            <div className="cart-item-price">€{item.price}</div>
+        <div className="cart-item-grid text-black"> {/* key prop is applied in the map function in parent */}
+            <div className="cart-item-name text-black">{item.name}</div>
+            <div className="cart-item-price text-black">€{item.price}</div>
 
             {/* Display options if the item has any */}
             {hasOptions && (
-                <div className="cart-item-options">
+                <div className="cart-item-options text-black">
                     {/* Display ingredient option if present for drinks */}
                     {item.options.ingredient && (
-                        <span className="option-tag">{item.options.ingredient}</span>
+                        <span className="option-tag text-black">{item.options.ingredient}</span>
                     )}
                     {/* Display size option if present */}
                     {item.options.size && (
-                        <span className="option-tag">Size: {item.options.size}</span>
+                        <span className="option-tag text-black">Size: {item.options.size}</span>
                     )}
                     {/* Display cuisson option if present for meat dishes */}
                     {item.options.cuisson && (
-                        <span className="option-tag">Cuisson: {item.options.cuisson}</span>
+                        <span className="option-tag text-black">Cuisson: {item.options.cuisson}</span>
                     )}
                 </div>
             )}
 
-            <div className="cart-item-quantity">{item.quantity}</div>
+            <div className="cart-item-quantity text-black">{item.quantity}</div>
             <button
                 onClick={() => updateQuantity(item.id, item.quantity - 1, item.options, tableParam || '203')}
                 className="cart-button minus-button"
