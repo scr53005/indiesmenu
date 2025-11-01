@@ -6,10 +6,11 @@ const prisma = new PrismaClient();
 // PUT - Update dish
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const dishId = parseInt(params.id);
+    const { id } = await params;
+    const dishId = parseInt(id);
     const body = await request.json();
     const { name, description, price_eur, position, active, sold_out } = body;
 
@@ -37,10 +38,11 @@ export async function PUT(
 // DELETE - Delete dish
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const dishId = parseInt(params.id);
+    const { id } = await params;
+    const dishId = parseInt(id);
 
     // Delete category relationships first
     await prisma.categories_dishes.deleteMany({
