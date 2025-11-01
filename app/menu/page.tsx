@@ -2,6 +2,7 @@
 'use client';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { useCart } from '@/app/context/CartContext';
 import MenuItem from '@/components/MenuItem'; // Import the new MenuItem component
 import CartItemDisplay from '@/components/CartItemDisplay'; // Import the new CartItemDisplay component
@@ -51,6 +52,13 @@ export default function MenuPage() {
   const [showWalletNotification, setShowWalletNotification] = useState(false);
   const [walletCredentials, setWalletCredentials] = useState<{username: string, activeKey: string} | null>(null);
 
+  // State for header carousel
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const carouselImages = [
+    '/images/indiesInt1600x878.jpg',
+    '/images/indiesExt1600x878.jpg'
+  ];
+
   useEffect(() => {
     // Set the table number in the cart context
     setTable(table);
@@ -67,8 +75,57 @@ export default function MenuPage() {
         const data: MenuData = await response.json();
         setMenu(data);
         setLoading(false);
-        setActiveMenuSection('drinks'); // Default to showing drinks after loading
+
+        // Determine default menu section based on Luxembourg time
+        const luxTime = new Date().toLocaleString('en-US', {
+          timeZone: 'Europe/Luxembourg',
+          hour12: false
+        });
+        const luxDate = new Date(luxTime);
+        const hours = luxDate.getHours();
+        const minutes = luxDate.getMinutes();
+        const totalMinutes = hours * 60 + minutes;
+
+        // Lunch: 11:45 - 14:15 (705 - 855 minutes)
+        // Dinner: 18:30 - 21:59 (1110 - 1319 minutes)
+        const isLunchTime = totalMinutes >= 705 && totalMinutes <= 855;
+        const isDinnerTime = totalMinutes >= 1110 && totalMinutes <= 1319;
+
+        if (isLunchTime || isDinnerTime) {
+          setActiveMenuSection('dishes');
+          console.log('Meal service time - defaulting to dishes');
+        } else {
+          setActiveMenuSection('drinks');
+          console.log('Outside meal service - defaulting to drinks');
+        }
+
         console.log("Fetched conversion rate:", data.conversion_rate);
+
+        // Prefetch all menu images for offline caching
+        const prefetchImages = () => {
+          const imageUrls: string[] = [
+            ...data.dishes.map(d => d.image),
+            ...data.drinks.map(d => d.image)
+          ].filter((url): url is string => url !== null && url !== undefined && url !== '');
+
+          console.log(`Prefetching ${imageUrls.length} menu images for offline access...`);
+
+          imageUrls.forEach((url, index) => {
+            const img = new window.Image();
+            img.src = url;
+            img.onload = () => {
+              if (index === imageUrls.length - 1) {
+                console.log('✓ All menu images prefetched and cached');
+              }
+            };
+            img.onerror = () => {
+              console.warn(`Failed to prefetch image: ${url}`);
+            };
+          });
+        };
+
+        // Start prefetching after a short delay to prioritize initial page load
+        setTimeout(prefetchImages, 1000);
       } catch (e: any) {
         setError(e.message);
         setLoading(false);
@@ -179,6 +236,15 @@ export default function MenuPage() {
 
   // Don't show wallet notification on page load anymore
   // It will only show when an order fails due to missing protocol handler
+
+  // Carousel rotation effect
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentImageIndex((prevIndex) => (prevIndex + 1) % carouselImages.length);
+    }, 8000); // Rotate every 8 seconds
+
+    return () => clearInterval(interval);
+  }, [carouselImages.length]);
 
   // Effect to calculate dynamic heights for fixed elements
   useEffect(() => {
@@ -542,10 +608,43 @@ export default function MenuPage() {
 
         {/* New Welcome Section - Appears only when cart is empty */}
         {cart.length === 0 && (
-          <section className="bg-cover bg-center h-64 flex items-center justify-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1414235077428-338989a2e8c0)' }}>
-            <div className="text-center text-white">
-              <h1 className="text-4xl md:text-5xl font-bold">Bienvenue a Indie's Cafe</h1>
-              <p className="mt-2 text-lg">Table {table} - Explorez notre menu</p>
+          <section className="relative h-64 flex items-center justify-center overflow-hidden bg-gray-200">
+            {/* Carousel Images */}
+            {carouselImages.map((image, index) => (
+              <Image
+                key={image}
+                src={image}
+                alt="Indies Cafe"
+                fill
+                priority
+                className="object-cover transition-opacity duration-1000"
+                style={{
+                  opacity: currentImageIndex === index ? 1 : 0,
+                  zIndex: currentImageIndex === index ? 11 : 10
+                }}
+              />
+            ))}
+            {/* Overlay for better text readability */}
+            <div className="absolute inset-0 bg-black bg-opacity-40 z-[5]" />
+            {/* Content */}
+            <div className="relative z-[13] text-center text-white px-4">
+              <h1 className="text-4xl md:text-5xl font-bold drop-shadow-lg">Bienvenue à Indie's Cafe</h1>
+              <p className="mt-2 text-lg md:text-xl drop-shadow-md">Table {table} - Explorez notre menu</p>
+            </div>
+            {/* Carousel Indicators */}
+            <div className="absolute bottom-4 left-0 right-0 z-20 flex justify-center gap-2">
+              {carouselImages.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setCurrentImageIndex(index)}
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    currentImageIndex === index
+                      ? 'bg-white w-8'
+                      : 'bg-white bg-opacity-50'
+                  }`}
+                  aria-label={`Image ${index + 1}`}
+                />
+              ))}
             </div>
           </section>
         )}

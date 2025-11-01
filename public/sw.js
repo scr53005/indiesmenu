@@ -1,16 +1,17 @@
 // Service Worker for Indies Menu PWA
-const CACHE_NAME = 'indies-menu-v1';
-const MENU_DATA_CACHE = 'indies-menu-data-v1';
-const OFFLINE_URL = '/menu/offline';
+const CACHE_NAME = 'indies-menu-v2';
+const MENU_DATA_CACHE = 'indies-menu-data-v2';
+const OFFLINE_URL = '/offline.html';
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
   '/',
   '/menu',
-  '/menu/offline',
+  '/offline.html',
   '/manifest.json',
   '/favicon-32x32.png',
-  '/images/innopay-blue.png',
+  '/images/innopay-blue-192.png',
+  '/images/innopay-blue-512.png',
   '/images/innopay-logo.png',
 ];
 
