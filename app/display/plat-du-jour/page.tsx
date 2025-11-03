@@ -98,7 +98,7 @@ export default function PlatDuJourDisplay() {
 
           {/* Center title */}
           <h1 className="text-6xl font-bold text-yellow-400 tracking-wider">
-            PLAT DU JOUR
+            PROPOSITION DE LA SEMAINE
           </h1>
 
           {/* Right logos */}

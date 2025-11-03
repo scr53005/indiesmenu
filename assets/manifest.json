@@ -16,16 +16,14 @@
       "type": "image/png"
     },
     {
-      "src": "/images/innopay-blue.png",
+      "src": "/images/innopay-blue-192.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     },
     {
-      "src": "/images/innopay-blue.png",
+      "src": "/images/innopay-blue-512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     }
   ],
   "categories": ["food", "business"],
@@ -41,6 +39,11 @@
       "sizes": "1600x878",
       "type": "image/jpeg",
       "form_factor": "wide"
+    },
+    {
+      "src": "/images/screenshotNw-1125x1300.jpg",
+      "sizes": "1125x1300",
+      "type": "image/jpeg"
     }
   ]
 }
