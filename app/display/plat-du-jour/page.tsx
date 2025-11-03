@@ -120,7 +120,7 @@ export default function PlatDuJourDisplay() {
 
           {data?.suggestions && data.suggestions.length > 0 && (
             <div className="text-center">
-              <p className="text-4xl text-yellow-300 leading-relaxed">
+              <p className="text-4xl font-bold text-yellow-300 leading-relaxed">
                 {data.suggestions.map((sugg, index) => (
                   <span key={sugg.dish_id}>
                     {index > 0 && <span className="text-yellow-400"><br/>et<br/></span>}
@@ -131,7 +131,7 @@ export default function PlatDuJourDisplay() {
                   </span>
                 ))}
                 {' '}
-                <span className="text-red-500 font-bold text-3xl">
+                <span className="text-red-500 font-bold text-4xl">
                   {data.suggestions[0].price_eur}€
                 </span>
               </p>
@@ -151,7 +151,7 @@ export default function PlatDuJourDisplay() {
                 key={plat.dish_id}
                 className="text-center"
               >
-                <p className={`text-4xl inline ${plat.sold_out ? 'line-through text-yellow-600' : 'text-yellow-400'}`}>
+                <p className={`text-4xl font-bold inline ${plat.sold_out ? 'line-through text-yellow-600' : 'text-yellow-400'}`}>
                   {plat.name}
                 </p>
                 {' '}
@@ -164,7 +164,7 @@ export default function PlatDuJourDisplay() {
             {/* Soup (special formatting) */}
             {(smallSoup || largeSoup) && (
               <div className="text-center mt-6">
-                <p className="text-4xl text-orange-400">
+                <p className="text-4xl font-bold text-orange-400">
                   Soupe de {smallSoup?.description || largeSoup?.description || 'Tomates'}{' '}
                   <span className="text-red-500 font-bold">
                     {smallSoup?.price_eur}€/{largeSoup?.price_eur}€
