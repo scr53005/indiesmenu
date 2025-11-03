@@ -97,7 +97,7 @@ export default function PlatDuJourDisplay() {
           </div>
 
           {/* Center title */}
-          <h1 className="text-6xl text-center font-bold text-yellow-400 tracking-wider">
+          <h1 className="text-5xl text-center font-bold text-yellow-400 tracking-wider">
             PROPOSITION DE LA SEMAINE
           </h1>
 
@@ -120,7 +120,7 @@ export default function PlatDuJourDisplay() {
 
           {data?.suggestions && data.suggestions.length > 0 && (
             <div className="text-center">
-              <p className="text-2xl text-yellow-300 leading-relaxed">
+              <p className="text-3xl text-yellow-300 leading-relaxed">
                 {data.suggestions.map((sugg, index) => (
                   <span key={sugg.dish_id}>
                     {index > 0 && <span className="text-yellow-400"><br/>et<br/></span>}
@@ -151,11 +151,11 @@ export default function PlatDuJourDisplay() {
                 key={plat.dish_id}
                 className="text-center"
               >
-                <p className={`text-2xl inline ${plat.sold_out ? 'line-through text-yellow-600' : 'text-yellow-400'}`}>
+                <p className={`text-3xl inline ${plat.sold_out ? 'line-through text-yellow-600' : 'text-yellow-400'}`}>
                   {plat.name}
                 </p>
                 {' '}
-                <span className={`text-2xl font-bold ${plat.sold_out ? 'line-through text-red-400' : 'text-red-500'}`}>
+                <span className={`text-3xl font-bold ${plat.sold_out ? 'line-through text-red-400' : 'text-red-500'}`}>
                   {plat.price_eur}€
                 </span>
               </div>
@@ -164,7 +164,7 @@ export default function PlatDuJourDisplay() {
             {/* Soup (special formatting) */}
             {(smallSoup || largeSoup) && (
               <div className="text-center mt-6">
-                <p className="text-2xl text-orange-400">
+                <p className="text-3xl text-orange-400">
                   Soupe de {smallSoup?.description || largeSoup?.description || 'Tomates'}{' '}
                   <span className="text-red-500 font-bold">
                     {smallSoup?.price_eur}€/{largeSoup?.price_eur}€
