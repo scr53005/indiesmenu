@@ -564,11 +564,18 @@ export default function MenuPage() {
       console.log('Guest checkout:', { amountEuroWithFee, memo: customMemo });
 
       // Determine Innopay URL based on environment
-      const innopayUrl = window.location.hostname !== 'localhost' && window.location.hostname !== 'indies.innopay.lu'
-        ? `http://${window.location.hostname}:3000`
-        : window.location.hostname === 'localhost'
-        ? 'http://localhost:3000'
-        : 'https://innopay.lu';
+      let innopayUrl: string;
+      if (window.location.hostname === 'localhost') {
+        innopayUrl = 'http://localhost:3000';
+      } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
+        innopayUrl = 'https://wallet.innopay.lu';
+      } else {
+        // Local network (e.g., 192.168.x.x)
+        innopayUrl = `http://${window.location.hostname}:3000`;
+      }
+
+      console.log('[DEBUG] Current hostname:', window.location.hostname);
+      console.log('[DEBUG] Determined innopayUrl:', innopayUrl);
 
       // Build return URL for success redirect (always back to current origin)
       const returnUrl = `${window.location.origin}/menu?table=${table}`;
@@ -611,7 +618,10 @@ export default function MenuPage() {
       console.error('Guest checkout error:', error);
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
-      alert('Erreur lors de la création de la session de paiement. Veuillez réessayer.');
+
+      // Show detailed error in alert for debugging in production
+      const errorDetails = error.message || 'Unknown error';
+      alert(`Erreur lors de la création de la session de paiement.\n\nDétails: ${errorDetails}\n\nVeuillez réessayer ou contacter le support.`);
     }
   }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table]);
 
