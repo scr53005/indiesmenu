@@ -58,6 +58,8 @@ export default function MenuPage() {
 
   // State for payment success notification
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
+  const [blockchainComplete, setBlockchainComplete] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   // State for guest checkout warning modal
   const [showGuestWarningModal, setShowGuestWarningModal] = useState(false);
@@ -76,22 +78,81 @@ export default function MenuPage() {
     console.log('[PAYMENT SUCCESS CHECK] paymentStatus:', paymentStatus, 'sessionId:', sessionId);
     console.log('[PAYMENT SUCCESS CHECK] Full URL:', window.location.href);
 
-    if (paymentStatus === 'success') {
-      console.log('[PAYMENT SUCCESS] Setting showPaymentSuccess to true');
+    if (paymentStatus === 'success' && sessionId) {
+      console.log('[PAYMENT SUCCESS] Setting showPaymentSuccess to true (Stripe confirmed)');
       setShowPaymentSuccess(true);
+      setBlockchainComplete(false); // Start in "processing" state
+      setCurrentSessionId(sessionId);
       clearCart();
       // Remove query params from URL
       const newUrl = `${window.location.pathname}?table=${table}`;
       window.history.replaceState({}, '', newUrl);
-      // Auto-hide after 10 seconds
-      setTimeout(() => {
-        console.log('[PAYMENT SUCCESS] Auto-hiding banner after 10 seconds');
-        setShowPaymentSuccess(false);
-      }, 10000);
     } else {
       console.log('[PAYMENT SUCCESS CHECK] No success payment detected');
     }
   }, [searchParams, clearCart, table]);
+
+  // Poll for blockchain transaction completion
+  useEffect(() => {
+    if (!showPaymentSuccess || !currentSessionId || blockchainComplete) {
+      return; // Don't poll if banner isn't showing or blockchain is already complete
+    }
+
+    let pollCount = 0;
+    const maxPolls = 60; // Poll for up to 60 seconds (60 polls × 1 second)
+
+    const pollInterval = setInterval(async () => {
+      pollCount++;
+      console.log(`[BLOCKCHAIN POLL] Attempt ${pollCount}/${maxPolls} for session ${currentSessionId}`);
+
+      try {
+        // Determine Innopay URL
+        let innopayUrl: string;
+        if (window.location.hostname === 'localhost') {
+          innopayUrl = 'http://localhost:3000';
+        } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
+          innopayUrl = 'https://wallet.innopay.lu';
+        } else {
+          innopayUrl = `http://${window.location.hostname}:3000`;
+        }
+
+        const response = await fetch(`${innopayUrl}/api/checkout/status?session_id=${currentSessionId}`);
+
+        if (!response.ok) {
+          console.error('[BLOCKCHAIN POLL] API error:', response.status);
+          return;
+        }
+
+        const data = await response.json();
+        console.log('[BLOCKCHAIN POLL] Status:', data);
+
+        if (data.isComplete) {
+          console.log('[BLOCKCHAIN POLL] ✓ Blockchain transactions complete!');
+          setBlockchainComplete(true);
+          clearInterval(pollInterval);
+
+          // Auto-hide banner after 10 seconds once blockchain is complete
+          setTimeout(() => {
+            console.log('[PAYMENT SUCCESS] Auto-hiding banner after blockchain completion');
+            setShowPaymentSuccess(false);
+          }, 15000);
+        }
+
+      } catch (error) {
+        console.error('[BLOCKCHAIN POLL] Error:', error);
+      }
+
+      // Stop polling after max attempts
+      if (pollCount >= maxPolls) {
+        console.warn('[BLOCKCHAIN POLL] Timeout - stopped polling after 60 attempts');
+        clearInterval(pollInterval);
+        // Still show success, but with warning
+        setBlockchainComplete(true); // Show final state even if we timeout
+      }
+    }, 1500); // Poll every 1.5 second
+
+    return () => clearInterval(pollInterval);
+  }, [showPaymentSuccess, currentSessionId, blockchainComplete]);
 
   useEffect(() => {
     // Set the table number in the cart context
@@ -732,18 +793,33 @@ export default function MenuPage() {
         </div>
       )}
 
-      {/* Payment Success Banner */}
-      {showPaymentSuccess && (() => {
-        console.log('[RENDER] Payment success banner is being rendered!');
-        return true;
-      })() && (
+      {/* Payment Success Banner - Two States */}
+      {showPaymentSuccess && !blockchainComplete && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-700"></div>
+              <div>
+                <p className="font-semibold text-base md:text-lg">
+                  Paiement réussi!
+                </p>
+                <p className="text-sm opacity-90">
+                  Commande en cours de transmission...
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPaymentSuccess && blockchainComplete && (
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
               <span className="text-3xl">✓</span>
               <div>
                 <p className="font-semibold text-base md:text-lg">
-                  Le paiement a réussi. Votre commande est en route
+                  Votre commande a été transmise et est en cours de préparation
                 </p>
               </div>
             </div>
