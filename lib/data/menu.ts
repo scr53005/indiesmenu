@@ -23,10 +23,10 @@ export type FormattedDish = {
   name: string;
   type: 'dish';
   price: string; // Formatted as string (e.g., "15.50")
-  discount?: number; // Optional discount field
+  discount: number; // Discount multiplier (1.0 = no discount, 0.9 = 10% off)
   categoryIds: number[];
-  cuissons: FormattedCuisson[]; 
-  ingredients: FormattedIngredient[]; 
+  cuissons: FormattedCuisson[];
+  ingredients: FormattedIngredient[];
   image?: string;
 };
 
@@ -34,7 +34,7 @@ export type FormattedDrink = {
   id: string;
   name: string;
   type: 'drink';
-  availableSizes: { size: string; price: string; discount?: number }[];
+  availableSizes: { size: string; price: string; discount: number }[]; // Discount multiplier (1.0 = no discount, 0.9 = 10% off)
   categoryIds: number[];
   image?: string;
   ingredients: FormattedIngredient[]; // NEW: Associated ingredients for the drink
@@ -153,7 +153,8 @@ export async function getMenuData(): Promise<MenuData> {
         type: 'drink',
         availableSizes: drink.drink_sizes.map((ds) => ({
           size: ds.size,
-          price: (ds.price_eur.toNumber() * (ds.discount?? 1.0)).toFixed(2),
+          price: (ds.price_eur.toNumber() * (ds.discount ?? 1.0)).toFixed(2),
+          discount: ds.discount ?? 1.0, // Pass discount to frontend (1.0 = no discount)
         })),
         categoryIds: drink.categories_drinks.map(cd => cd.category_id),
         image: drink.image || undefined,
@@ -171,6 +172,7 @@ export async function getMenuData(): Promise<MenuData> {
       name: dish.name,
       type: 'dish',
       price: (dish.price_eur.toNumber() * (dish.discount ?? 1.0)).toFixed(2), // Apply discount if available
+      discount: dish.discount ?? 1.0, // Pass discount to frontend (1.0 = no discount)
       categoryIds: dish.categories_dishes.map((cd) => cd.category_id),
       image: dish.image || undefined,
       cuissons: dish.dishes_cuisson.map(dc => ({ // Map associated cuissons
@@ -181,7 +183,7 @@ export async function getMenuData(): Promise<MenuData> {
       ingredients: dish.dishes_ingredients.map(di => ({ // Map associated ingredients
         id: di.ingredients.ingredient_id,
         name: di.ingredients.name,
-      })),      
+      })),
     }));
 
     // let conversionRate = 1.0; // Set a default conversion rate, if applicable

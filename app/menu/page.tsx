@@ -20,7 +20,7 @@ interface GroupedCategory<T> {
 }
 
 export default function MenuPage() {
-  const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, setTable } = useCart();
+  const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, setTable } = useCart();
   // Use the imported MenuData type for the menu state
   const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [], conversion_rate: 1.0000 }); // Initialize with empty data
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +50,17 @@ export default function MenuPage() {
 
   // State for wallet notification
   const [showWalletNotification, setShowWalletNotification] = useState(false);
+  const [isSafariBanner, setIsSafariBanner] = useState(false); // Track if banner is shown for Safari
   const [walletCredentials, setWalletCredentials] = useState<{username: string, activeKey: string} | null>(null);
+  const [bannerPosition, setBannerPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  // State for payment success notification
+  const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
+
+  // State for guest checkout warning modal
+  const [showGuestWarningModal, setShowGuestWarningModal] = useState(false);
 
   // State for header carousel
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -58,6 +68,30 @@ export default function MenuPage() {
     '/images/indiesInt1600x878.jpg',
     '/images/indiesExt1600x878.jpg'
   ];
+
+  // Check for payment success on mount
+  useEffect(() => {
+    const paymentStatus = searchParams.get('payment');
+    const sessionId = searchParams.get('session_id');
+    console.log('[PAYMENT SUCCESS CHECK] paymentStatus:', paymentStatus, 'sessionId:', sessionId);
+    console.log('[PAYMENT SUCCESS CHECK] Full URL:', window.location.href);
+
+    if (paymentStatus === 'success') {
+      console.log('[PAYMENT SUCCESS] Setting showPaymentSuccess to true');
+      setShowPaymentSuccess(true);
+      clearCart();
+      // Remove query params from URL
+      const newUrl = `${window.location.pathname}?table=${table}`;
+      window.history.replaceState({}, '', newUrl);
+      // Auto-hide after 10 seconds
+      setTimeout(() => {
+        console.log('[PAYMENT SUCCESS] Auto-hiding banner after 10 seconds');
+        setShowPaymentSuccess(false);
+      }, 10000);
+    } else {
+      console.log('[PAYMENT SUCCESS CHECK] No success payment detected');
+    }
+  }, [searchParams, clearCart, table]);
 
   useEffect(() => {
     // Set the table number in the cart context
@@ -190,8 +224,75 @@ export default function MenuPage() {
       } catch (e) {
         console.error('Failed to parse saved credentials:', e);
       }
+    } else {
+      // Detect Safari/iOS and show wallet notification proactively
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+      if (isSafari || isIOS) {
+        console.log('Safari/iOS detected - showing wallet notification proactively');
+        setShowWalletNotification(true);
+        setIsSafariBanner(true);
+      }
     }
   }, []);
+
+  // Drag handlers for wallet banner
+  const handleBannerMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragOffset({
+      x: e.clientX - bannerPosition.x,
+      y: e.clientY - bannerPosition.y
+    });
+  };
+
+  const handleBannerTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    setIsDragging(true);
+    setDragOffset({
+      x: touch.clientX - bannerPosition.x,
+      y: touch.clientY - bannerPosition.y
+    });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging) {
+        setBannerPosition({
+          x: e.clientX - dragOffset.x,
+          y: e.clientY - dragOffset.y
+        });
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isDragging) {
+        const touch = e.touches[0];
+        setBannerPosition({
+          x: touch.clientX - dragOffset.x,
+          y: touch.clientY - dragOffset.y
+        });
+      }
+    };
+
+    const handleEnd = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleEnd);
+      document.addEventListener('touchmove', handleTouchMove);
+      document.addEventListener('touchend', handleEnd);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleEnd);
+    };
+  }, [isDragging, dragOffset]);
 
   // Listen for wallet credentials from wallet.innopay.lu
   useEffect(() => {
@@ -303,17 +404,20 @@ export default function MenuPage() {
   const handleAddItem = useCallback((item: FormattedDish | FormattedDrink, options?: { [key: string]: string }) => {
     let cartItemId = item.id;
     let cartItemName = item.name;
-    let cartItemPrice: string = '0.00'; // = item.price; // Start with base price for dishes
+    let cartItemPrice: string = '0.00';
+    let cartItemDiscount: number = 1.0; // Default: no discount
 
     const itemOptions = options || {}; // Use the options passed from MenuItem
 
     if (item.type === 'dish') {
       const dishItem = item as FormattedDish;
       cartItemPrice = dishItem.price; // Use the base price for dishes
+      cartItemDiscount = dishItem.discount; // Get discount from dish
+      console.log('[MENU] Adding dish to cart:', { id: item.id, name: item.name, price: cartItemPrice, discount: cartItemDiscount });
       // If it's a dish and has a selected cuisson, append it to ID and name
       if (itemOptions.cuisson) {
         cartItemId = `${item.id}-${itemOptions.cuisson.toLowerCase().replace(/\s/g, '-')}`;
-        cartItemName = item.name; // `${item.name} (${itemOptions.cuisson})`;
+        cartItemName = item.name;
       }
     } else { // It's a drink
       const drinkItem = item as FormattedDrink;
@@ -328,26 +432,33 @@ export default function MenuPage() {
       }
       cartItemId = idParts.join('-');
 
-      // Update price based on selected size
+      // Update price and discount based on selected size
       if (itemOptions.size) {
         const selectedSizeOption = drinkItem.availableSizes.find(s => s.size === itemOptions.size);
         if (selectedSizeOption) {
           cartItemPrice = selectedSizeOption.price;
+          cartItemDiscount = selectedSizeOption.discount; // Get discount from size
         }
       } else {
-        cartItemPrice = drinkItem.availableSizes[0]?.price || '0.00'; // Default to first size price if no size selected
+        const firstSize = drinkItem.availableSizes[0];
+        cartItemPrice = firstSize?.price || '0.00';
+        cartItemDiscount = firstSize?.discount ?? 1.0;
       }
+      console.log('[MENU] Adding drink to cart:', { id: item.id, name: item.name, price: cartItemPrice, discount: cartItemDiscount, size: itemOptions.size });
     }
+
+    console.log('[MENU] Final cart item being added:', { id: cartItemId, name: cartItemName, price: cartItemPrice, discount: cartItemDiscount });
 
     addItem({
       id: cartItemId,
       name: cartItemName,
-      price: cartItemPrice, // Use the potentially updated price for drinks
+      price: cartItemPrice,
       quantity: 1,
-      options: itemOptions, // Pass the options as received
-      conversion_rate: menu?.conversion_rate, // Add conversion_rate from menu
+      options: itemOptions,
+      conversion_rate: menu?.conversion_rate,
+      discount: cartItemDiscount, // Pass discount to cart
     });
-  }, [addItem, menu]); // addItem is from context, selectedSizes and selectedCuisson are no longer direct dependencies here as options are passed
+  }, [addItem, menu]);
 
   const fallBackNoKeychain = () => {
     const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.mobilekeychain'; // Android
@@ -386,13 +497,30 @@ export default function MenuPage() {
 
     // Set a flag to detect if the page loses focus (app opened)
     let protocolHandlerWorked = false;
+    let blurTime = 0;
 
     const blurHandler = () => {
-      protocolHandlerWorked = true;
-      console.log('Page lost focus - protocol handler likely worked');
+      blurTime = Date.now();
+      console.log('Page lost focus - protocol handler might have worked');
+    };
+
+    const focusHandler = () => {
+      if (blurTime > 0) {
+        const blurDuration = Date.now() - blurTime;
+        console.log(`Page regained focus after ${blurDuration}ms`);
+
+        // Only consider it successful if blur lasted more than 2 seconds (real app switch)
+        // Safari error alert causes brief blur (<500ms)
+        if (blurDuration > 2000) {
+          protocolHandlerWorked = true;
+          console.log('Blur duration suggests successful app switch - clearing cart');
+          clearCart();
+        }
+      }
     };
 
     window.addEventListener('blur', blurHandler);
+    window.addEventListener('focus', focusHandler);
 
     // Try to open the hive:// URL
     try {
@@ -403,17 +531,90 @@ export default function MenuPage() {
       protocolHandlerWorked = false;
     }
 
-    // After 1.5 seconds, check if the protocol handler worked
+    // After 3 seconds, check if the protocol handler worked
     setTimeout(() => {
       window.removeEventListener('blur', blurHandler);
+      window.removeEventListener('focus', focusHandler);
 
       // Show banner if protocol handler didn't work AND user doesn't have wallet credentials
       if (!protocolHandlerWorked && !walletCredentials) {
         console.log('Protocol handler did not work - showing wallet notification');
         setShowWalletNotification(true);
+        setIsSafariBanner(false); // This is a protocol handler failure, not Safari detection
       }
-    }, 1500);
-  }, [cart.length, orderNow, walletCredentials]);
+    }, 3000);
+  }, [cart.length, orderNow, clearCart, walletCredentials]);
+
+  const handleGuestCheckout = useCallback(() => {
+    if (cart.length === 0) {
+      alert('Rien a commander !');
+      return;
+    }
+    // Show warning modal first
+    setShowGuestWarningModal(true);
+  }, [cart.length]);
+
+  const proceedWithGuestCheckout = useCallback(async () => {
+    try {
+      // Use no-discount price + 5% processing fee
+      const amountEuroNoDiscount = parseFloat(getTotalEurPriceNoDiscount());
+      const amountEuroWithFee = amountEuroNoDiscount * 1.05;
+      const customMemo = getMemo();
+
+      console.log('Guest checkout:', { amountEuroWithFee, memo: customMemo });
+
+      // Determine Innopay URL based on environment
+      const innopayUrl = window.location.hostname !== 'localhost' && window.location.hostname !== 'indies.innopay.lu'
+        ? `http://${window.location.hostname}:3000`
+        : window.location.hostname === 'localhost'
+        ? 'http://localhost:3000'
+        : 'https://innopay.lu';
+
+      // Build return URL for success redirect (always back to current origin)
+      const returnUrl = `${window.location.origin}/menu?table=${table}`;
+
+      console.log('Fetching from:', `${innopayUrl}/api/checkout/guest`);
+      console.log('Request body:', { amountEuro: amountEuroWithFee, recipient: 'indies.cafe', memo: customMemo, returnUrl });
+
+      const response = await fetch(`${innopayUrl}/api/checkout/guest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amountEuro: amountEuroWithFee,
+          recipient: 'indies.cafe',
+          memo: customMemo,
+          returnUrl
+        })
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Response error data:', errorData);
+        throw new Error(`Checkout failed: ${response.statusText} - ${JSON.stringify(errorData)}`);
+      }
+
+      const data = await response.json();
+      console.log('Response data:', data);
+
+      const { url } = data;
+      console.log('Redirecting to Stripe:', url);
+
+      // Redirect to Stripe checkout
+      window.location.href = url;
+
+      clearCart();
+
+    } catch (error: any) {
+      console.error('Guest checkout error:', error);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      alert('Erreur lors de la création de la session de paiement. Veuillez réessayer.');
+    }
+  }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table]);
+
 
   const toggleCategory = useCallback((categoryId: number) => {
     setOpenCategories(prev => {
@@ -439,61 +640,44 @@ export default function MenuPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
-
-      {/* TEST BANNER - Always visible */}
-      {/* TEMPORARILY COMMENTED OUT FOR PRODUCTION TESTING
-      <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-3 shadow-lg">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center">
-            <p className="font-semibold text-sm md:text-base">
-              TEST BANNER - If you see this, banners work!
-            </p>
-            <p className="text-xs opacity-90">
-              showWalletNotification: {showWalletNotification ? 'TRUE' : 'FALSE'} |
-              walletCredentials: {walletCredentials ? 'EXISTS' : 'NULL'} |
-              loading: {loading ? 'TRUE' : 'FALSE'}
-            </p>
-          </div>
-          <div className="flex justify-center gap-2 mt-2">
-            <button
-              onClick={() => {
-                localStorage.removeItem('innopay_notification_dismissed');
-                localStorage.removeItem('innopay_wallet_credentials');
-                setWalletCredentials(null);
-                setShowWalletNotification(true);
-                console.log('Forced blue banner to show');
-              }}
-              className="bg-white text-red-600 px-3 py-1 rounded text-xs font-semibold hover:bg-red-50"
-            >
-              Force Show Blue Banner
-            </button>
-            <button
-              onClick={() => {
-                localStorage.clear();
-                window.location.reload();
-              }}
-              className="bg-white text-red-600 px-3 py-1 rounded text-xs font-semibold hover:bg-red-50"
-            >
-              Clear All & Reload
-            </button>
-          </div>
-        </div>
-      </div>
-      */}
-
       {/* Wallet Notification Banner */}
       {showWalletNotification && !walletCredentials && (
-        <div className="fixed top-0 left-0 right-0 z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-            <div className="flex-1">
-              <p className="font-semibold text-sm md:text-base">
-                💳 Pour commander, créez votre portefeuille Innopay
-              </p>
-              <p className="text-xs md:text-sm opacity-90 mt-1">
-                Gratuit et instantané - Pas besoin d'installer d'application
-              </p>
+        <div
+          className={`fixed z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg ${bannerPosition.x !== 0 || bannerPosition.y !== 0 ? 'rounded-lg' : ''}`}
+          style={{
+            left: bannerPosition.x === 0 ? '0' : `${bannerPosition.x}px`,
+            top: bannerPosition.y === 0 ? '0' : `${bannerPosition.y}px`,
+            right: bannerPosition.x === 0 ? '0' : 'auto',
+            cursor: isDragging ? 'grabbing' : 'grab',
+            touchAction: 'none',
+            userSelect: 'none'
+          }}
+          onMouseDown={handleBannerMouseDown}
+          onTouchStart={handleBannerTouchStart}
+        >
+          <div className="max-w-4xl mx-auto flex items-center gap-4">
+            {/* Drag handle indicator */}
+            <div className="text-white opacity-50 text-xs flex-shrink-0">
+              ⋮⋮
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Left zone: Text - takes most space */}
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm md:text-base">
+                {isSafariBanner
+                  ? "💳 Si vous n'avez pas de portefeuille compatible Innopay, nous conseillons de créer un compte avant de commander!"
+                  : "💳 Pour commander, créez votre portefeuille Innopay"
+                }
+              </p>
+              {!isSafariBanner && (
+                <p className="text-xs md:text-sm opacity-90 mt-1">
+                  Gratuit et instantané - Pas besoin d'installer d'application
+                </p>
+              )}
+            </div>
+
+            {/* Center zone: Buttons stacked */}
+            <div className="flex flex-col items-center gap-2 flex-shrink-0">
               <a
                 href={typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== 'indies.innopay.lu'
                   ? `http://${window.location.hostname}:3000/user`
@@ -502,19 +686,99 @@ export default function MenuPage() {
                   : 'https://wallet.innopay.lu/user'}
                 target="_blank"
                 rel="noopener"
-                className="bg-white text-blue-600 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-blue-50 transition-colors whitespace-nowrap"
+                className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold text-sm hover:bg-blue-50 transition-colors whitespace-nowrap"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
               >
                 Créer un compte
               </a>
+              <button
+                onClick={handleGuestCheckout}
+                className="bg-gray-600 bg-opacity-60 text-gray-300 px-3 py-1.5 rounded-lg font-normal text-xs hover:bg-opacity-70 transition-colors w-[120px] text-center"
+                style={{ whiteSpace: 'normal', lineHeight: '1.3' }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                Commandez sans compte
+              </button>
+            </div>
+
+            {/* Right zone: Close button - minimal width */}
+            <div className="flex-shrink-0 w-2">
               <button
                 onClick={() => {
                   setShowWalletNotification(false);
                   console.log('Notification dismissed temporarily - will show again on next order attempt');
                 }}
-                className="text-white hover:text-blue-200 transition-colors p-2"
+                className="text-white hover:text-blue-200 transition-colors p-1"
                 aria-label="Fermer"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
               >
                 ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Success Banner */}
+      {showPaymentSuccess && (() => {
+        console.log('[RENDER] Payment success banner is being rendered!');
+        return true;
+      })() && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">✓</span>
+              <div>
+                <p className="font-semibold text-base md:text-lg">
+                  Le paiement a réussi. Votre commande est en route
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowPaymentSuccess(false)}
+              className="bg-white text-green-700 px-4 py-2 rounded-lg font-semibold hover:bg-green-50 transition-colors ml-4"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Guest Checkout Warning Modal */}
+      {showGuestWarningModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-60">
+          <div className="bg-gray-700 text-gray-300 rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold mb-4 text-center">Commander sans compte</h3>
+
+            <p className="text-sm mb-3">
+              Commander sans compte implique une <span className="text-red-600 font-semibold">charge supplémentaire de <span className="text-red-500 font-bold">5%</span></span> liée aux commissions de carte bancaire.
+            </p>
+
+            {parseFloat(getDiscountAmount()) > 0 && (
+              <p className="text-sm mb-4">
+                En commandant sans créer un compte vous <span className="text-red-600 font-semibold">renoncez à un discount de: <span className="text-red-500 font-bold">{getDiscountAmount()} €</span></span>
+              </p>
+            )}
+
+            <div className="flex flex-col gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowGuestWarningModal(false);
+                  proceedWithGuestCheckout();
+                }}
+                className="bg-black text-gray-300 px-4 py-3 rounded-lg font-semibold hover:bg-gray-900 transition-colors"
+              >
+                Continuer et payer <span className="text-red-500">{(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)} €</span>
+              </button>
+
+              <button
+                onClick={() => setShowGuestWarningModal(false)}
+                className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
+              >
+                Revenir pour bénéficier
               </button>
             </div>
           </div>
@@ -554,7 +818,7 @@ export default function MenuPage() {
       {/* Fixed Cart Section */}
       {cart.length > 0 && (
         <div ref={cartRef} className="fixed-cart-container">
-          <div className="cart-header">Votre Ordre ({getTotalItems()} items)</div>
+          <div className="cart-header">Votre Ordre ({getTotalItems()} items) <br/><span className="text-sm">Les prix affichés incluent le discount</span></div>
           <div className="cart-items-list">
             {cart.map(item => (
               // Use the memoized CartItemDisplay component
@@ -568,7 +832,7 @@ export default function MenuPage() {
             ))}
           </div>
           <div className="cart-summary-row">
-            <span className="cart-total-text">Total: {getTotalPrice()} HBD</span>
+            <span className="cart-total-text">Total: {getTotalEurPrice()}&nbsp;€</span>
             <button onClick={handleCallWaiter} className="call-waiter-button">
               Serveur&nbsp;!
             </button>

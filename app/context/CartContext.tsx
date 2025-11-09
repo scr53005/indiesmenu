@@ -12,6 +12,7 @@ interface CartItem {
   quantity: number;
   options: { [key: string]: string }; // e.g., { size: 'large', cuisson: 'medium' }
   conversion_rate?: number; // Optional conversion rate for this item, if applicable
+  discount: number; // Discount multiplier (e.g., 0.9 = 10% off, 1.0 = no discount)
 };
 
 interface CartContextType {
@@ -26,6 +27,10 @@ interface CartContextType {
   callWaiter: () => string;
   getTotalItems: () => number;
   getTotalPrice: () => string;
+  getTotalEurPrice: () => string;
+  getTotalEurPriceNoDiscount: () => string;
+  getDiscountAmount: () => string;
+  getMemo: () => string;
   setTable: (tableId: string) => void;
 }
 
@@ -41,6 +46,10 @@ const CartContext = createContext<CartContextType>({
   callWaiter: () => '',
   getTotalItems: () => 0,
   getTotalPrice: () => '0.00',
+  getTotalEurPrice: () => '0.00',
+  getTotalEurPriceNoDiscount: () => '0.00',
+  getDiscountAmount: () => '0.00',
+  getMemo: () => '',
   setTable: () => {},
 });
 
@@ -87,6 +96,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Use functional updates to make these callbacks stable
   const addItem = useCallback((item: CartItem) => {
+    console.log('[CART CONTEXT] addItem called with:', item);
     setCart(prevCart => {
       // Find item with same unique ID (which now includes options in its 'id' string)
       const existingItemIndex = prevCart.findIndex(cartItem => cartItem.id === item.id);
@@ -98,15 +108,18 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
           ...newCart[existingItemIndex],
           quantity: newCart[existingItemIndex].quantity + 1,
         };
+        console.log('[CART CONTEXT] Updated existing item, new cart:', newCart);
         return newCart;
       }
       // Set conversion_rate if not already set (default 1.0)
       if (item.conversion_rate !== undefined && conversionRate === 1.0) {
         setConversionRate(item.conversion_rate);
         // alert(`CartContext - Setting conversion rate to: ${item.conversion_rate}`);
-      }      
+      }
       // If not, add new item
-      return [...prevCart, { ...item, quantity: 1 }];
+      const newCart = [...prevCart, { ...item, quantity: 1 }];
+      console.log('[CART CONTEXT] Added new item, new cart:', newCart);
+      return newCart;
     });
   }, [conversionRate]); 
 
@@ -147,24 +160,54 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     return hbdPrice.toFixed(2);
   }, [cart, conversionRate]);
 
-  const orderNow = useCallback(() => {
-    // Prepare the items array for dehydration, if dehydrateMemo expects this format
+  const getTotalEurPrice = useCallback(() => {
+    const eurPrice = cart.reduce((total, item) => {
+      const price = parseFloat(item.price);
+      return total + price * item.quantity;
+    }, 0);
+    return eurPrice.toFixed(2);
+  }, [cart]);
+
+  const getTotalEurPriceNoDiscount = useCallback(() => {
+    const eurPriceNoDiscount = cart.reduce((total, item) => {
+      const price = parseFloat(item.price);
+      const discount = item.discount;
+
+      // Only reverse discount if discount < 1 (actual discount, not surcharge or no-discount)
+      const originalPrice = discount < 1 ? price / discount : price;
+
+      return total + originalPrice * item.quantity;
+    }, 0);
+    return eurPriceNoDiscount.toFixed(2);
+  }, [cart]);
+
+  const getDiscountAmount = useCallback(() => {
+    const guestPrice = parseFloat(getTotalEurPriceNoDiscount()) * 1.05; // No discount + 5% fee
+    const accountPrice = parseFloat(getTotalEurPrice()); // With discount, no fee
+    const forfeitureAmount = guestPrice - accountPrice;
+    return forfeitureAmount.toFixed(2);
+  }, [getTotalEurPrice, getTotalEurPriceNoDiscount]);
+
+  const getMemo = useCallback(() => {
+    // Prepare the items array for dehydration
     const itemsToDehydrate = cart.map(item => ({
-        id: item.id,
-        name: item.name,
-        price: item.price, // parseFloat(item.price), // Convert price back to number for memo structure
-        quantity: item.quantity,
-        options: item.options
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      options: item.options
     }));
 
     // Dehydrate the items list to a string
-    let dehydratedItemsString = dehydrateMemo(itemsToDehydrate); // Ensure it ends with a semicolon if order;
+    let dehydratedItemsString = dehydrateMemo(itemsToDehydrate);
     dehydratedItemsString = dehydratedItemsString.endsWith(';') ? dehydratedItemsString : dehydratedItemsString + ';';
-    console.log(`dehydratedItemsString: '${dehydratedItemsString}'`); // Debug log to check the final memo
     const memoWithTableInfo = dehydratedItemsString + (tableState ? ` TABLE ${tableState} ` : ' No table specified ');
 
-    // Stringify the entire memo object for the Hive transfer
+    return memoWithTableInfo;
+  }, [cart, tableState]);
 
+  const orderNow = useCallback(() => {
+    const memoWithTableInfo = getMemo();
     const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
     const amountHbd = getTotalPrice(); // Use the formatted total price
 
@@ -177,10 +220,10 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     console.log('CartContext - Generated Hive Order URL:', encodedOperation);
     console.log('CartContext - Final Order Memo Object:', memoWithTableInfo); // Log the full object for clarity
 
-    clearCart(); // Clear cart after generating order URL
+    // clearCart(); // Clear cart after generating order URL
 
     return encodedOperation;
-  }, [cart, tableState, getTotalPrice, clearCart]); // Dependencies: cart, tableState, getTotalPrice, clearCart
+  }, [getMemo, getTotalPrice, getTotalEurPrice]); // Dependencies: getMemo, getTotalPrice, getTotalEurPrice
 
   const callWaiter = useCallback(() => {
     // As requested, use a fixed string for the memo for 'Call a Waiter'
@@ -221,6 +264,10 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
         callWaiter,
         getTotalItems,
         getTotalPrice,
+        getTotalEurPrice,
+        getTotalEurPriceNoDiscount,
+        getDiscountAmount,
+        getMemo,
         setTable
       }}
     >
