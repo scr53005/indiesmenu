@@ -136,8 +136,8 @@ export async function getMenuData(): Promise<MenuData> {
     });
 
     // NEW: Fetch all cuissons and ingredients globally (with error handling)
-    let allCuissons = [];
-    let allIngredients = [];
+    let allCuissons: Array<{ cuisson_id: number; english_name: string; french_name: string }> = [];
+    let allIngredients: Array<{ ingredient_id: number; name: string }> = [];
 
     try {
       allCuissons = await prisma.cuisson.findMany({
