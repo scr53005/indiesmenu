@@ -45,8 +45,10 @@ export default function MenuPage() {
   // Refs for dynamic height calculation
   const cartRef = useRef<HTMLDivElement>(null);
   const menuSelectorRef = useRef<HTMLDivElement>(null);
+  const welcomeCarouselRef = useRef<HTMLDivElement>(null);
   const [cartHeight, setCartHeight] = useState(0);
   const [menuSelectorHeight, setMenuSelectorHeight] = useState(0);
+  const [welcomeCarouselHeight, setWelcomeCarouselHeight] = useState(0);
 
   // State for wallet notification
   const [showWalletNotification, setShowWalletNotification] = useState(false);
@@ -420,6 +422,9 @@ export default function MenuPage() {
         if (menuSelectorRef.current) {
           setMenuSelectorHeight(menuSelectorRef.current.offsetHeight);
         }
+        if (welcomeCarouselRef.current) {
+          setWelcomeCarouselHeight(welcomeCarouselRef.current.offsetHeight);
+        }
       }, 0);
     };
 
@@ -699,15 +704,50 @@ export default function MenuPage() {
     });
   }, []);
 
+  const totalFixedHeaderHeight = cartHeight + menuSelectorHeight;
+
+  // Loading Skeleton Component (shown while menu data is fetching)
+  const MenuSkeleton = () => (
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      {/* Fixed Menu Selector Skeleton */}
+      <div
+        className="fixed-menu-selector bg-gray-300 animate-pulse"
+        style={{ top: '0px' }}
+      >
+        <div className="h-12 bg-gray-400 rounded mx-2"></div>
+      </div>
+
+      {/* Main Content Skeleton */}
+      <div className="main-content-area" style={{ paddingTop: '80px' }}>
+        {/* Welcome Section Skeleton */}
+        <section className="relative h-64 flex items-center justify-center overflow-hidden bg-gray-300 animate-pulse">
+          <div className="relative z-10 text-center text-gray-500 px-4">
+            <div className="h-12 w-64 bg-gray-400 rounded mx-auto mb-4"></div>
+            <div className="h-6 w-48 bg-gray-400 rounded mx-auto"></div>
+          </div>
+        </section>
+
+        {/* Category Skeletons */}
+        <div className="menu-section">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="category-folder-container">
+              <div className="category-folder-header bg-gray-300 animate-pulse">
+                <div className="h-6 w-32 bg-gray-400 rounded"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   if (loading) {
-    return <div className="loading-spinner">Loading menu...</div>;
+    return <MenuSkeleton />;
   }
 
   if (error) {
     return <div className="error-message">Error: {error}</div>;
   }
-
-  const totalFixedHeaderHeight = cartHeight + menuSelectorHeight;
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
@@ -717,7 +757,11 @@ export default function MenuPage() {
           className={`fixed z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg ${bannerPosition.x !== 0 || bannerPosition.y !== 0 ? 'rounded-lg' : ''}`}
           style={{
             left: bannerPosition.x === 0 ? '0' : `${bannerPosition.x}px`,
-            top: bannerPosition.y === 0 ? '0' : `${bannerPosition.y}px`,
+            top: bannerPosition.y === 0
+              ? (cart.length === 0 && welcomeCarouselHeight > 0
+                  ? `${totalFixedHeaderHeight + (welcomeCarouselHeight / 2) - 50}px` // Position at half carousel height (adjusted for banner height)
+                  : `${totalFixedHeaderHeight}px`) // Default: below menu selector
+              : `${bannerPosition.y}px`,
             right: bannerPosition.x === 0 ? '0' : 'auto',
             cursor: isDragging ? 'grabbing' : 'grab',
             touchAction: 'none',
@@ -958,7 +1002,7 @@ export default function MenuPage() {
 
         {/* New Welcome Section - Appears only when cart is empty */}
         {cart.length === 0 && (
-          <section className="relative h-64 flex items-center justify-center overflow-hidden bg-gray-200">
+          <section ref={welcomeCarouselRef} className="relative h-64 flex items-center justify-center overflow-hidden bg-gray-200">
             {/* Carousel Images */}
             {carouselImages.map((image, index) => (
               <Image

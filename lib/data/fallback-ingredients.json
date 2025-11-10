@@ -1,0 +1,21 @@
+[
+  { "id": 1, "name": "Jägermeister" },
+  { "id": 2, "name": "Apple juice" },
+  { "id": 3, "name": "Grenadine" },
+  { "id": 4, "name": "Lemon juice" },
+  { "id": 5, "name": "Vodka" },
+  { "id": 6, "name": "Passoa" },
+  { "id": 7, "name": "Strawberry" },
+  { "id": 8, "name": "Vanilla" },
+  { "id": 20,	"name": "Camomille" },
+  { "id": 21,	"name": "Verveine" },
+  { "id": 22,	"name": "Vert Menthe" },
+  { "id": 23,	"name": "Fruits Rouges" },
+  { "id": 24,	"name": "Vert Jasmin" },
+  { "id": 25,	"name": "Vert" },
+  { "id": 20,	"name": "Citron" },
+  { "id": 20,	"name": "Ginger" },
+  { "id": 20,	"name": "Menthe" },
+  { "id": 70,	"name": "Orange juice" },
+  { "id": 71, "name":	"Tomato juice" }
+]

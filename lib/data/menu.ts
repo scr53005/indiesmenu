@@ -135,13 +135,50 @@ export async function getMenuData(): Promise<MenuData> {
       },
     });
 
-    // NEW: Fetch all cuissons and ingredients globally
-    const allCuissons = await prisma.cuisson.findMany({
-      orderBy: { english_name: 'asc' } // Order them for consistent display
-    });
-    const allIngredients = await prisma.ingredients.findMany({
-      orderBy: { name: 'asc' } // Order them for consistent display
-    });
+    // NEW: Fetch all cuissons and ingredients globally (with error handling)
+    let allCuissons = [];
+    let allIngredients = [];
+
+    try {
+      allCuissons = await prisma.cuisson.findMany({
+        orderBy: { english_name: 'asc' }
+      });
+    } catch (error) {
+      console.error('[MENU] Error fetching cuissons from database (non-fatal):', error);
+      // Load from fallback file
+      try {
+        const fallbackCuissons = await import('./fallback-cuissons.json');
+        allCuissons = fallbackCuissons.default.map(c => ({
+          cuisson_id: c.id,
+          english_name: c.english_name,
+          french_name: c.french_name
+        }));
+        console.log('[MENU] Loaded cuissons from fallback file');
+      } catch (fallbackError) {
+        console.error('[MENU] Failed to load fallback cuissons:', fallbackError);
+        // Continue with empty array as last resort
+      }
+    }
+
+    try {
+      allIngredients = await prisma.ingredients.findMany({
+        orderBy: { name: 'asc' }
+      });
+    } catch (error) {
+      console.error('[MENU] Error fetching ingredients from database (non-fatal):', error);
+      // Load from fallback file
+      try {
+        const fallbackIngredients = await import('./fallback-ingredients.json');
+        allIngredients = fallbackIngredients.default.map(i => ({
+          ingredient_id: i.id,
+          name: i.name
+        }));
+        console.log('[MENU] Loaded ingredients from fallback file');
+      } catch (fallbackError) {
+        console.error('[MENU] Failed to load fallback ingredients:', fallbackError);
+        // Continue with empty array as last resort
+      }
+    }
 
     // --- Prepare drinks for frontend format ---
     const formattedDrinks = new Map<number, FormattedDrink>();
@@ -215,5 +252,87 @@ export async function getMenuData(): Promise<MenuData> {
   } finally {
     // Keep prisma.$disconnect() here as this is the "core" logic function
     await prisma.$disconnect();
+  }
+}
+
+// ===================================
+// CACHING LAYER
+// ===================================
+
+let menuCache: {
+  data: MenuData | null;
+  timestamp: number;
+  isStale: boolean;
+} = {
+  data: null,
+  timestamp: 0,
+  isStale: true,
+};
+
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 1 week in milliseconds
+const STALE_WHILE_REVALIDATE_TTL = 24 * 60 * 60 * 1000; // 24 hours - serve stale while fetching fresh
+
+/**
+ * Get menu data with server-side caching
+ * - Cache revalidates every 7 days
+ * - Serves stale data while revalidating in background
+ * - Never throws errors (returns last good data on failure)
+ */
+export async function getCachedMenuData(): Promise<MenuData> {
+  const now = Date.now();
+  const cacheAge = now - menuCache.timestamp;
+
+  // Case 1: Cache is fresh (< 7 days old)
+  if (menuCache.data && cacheAge < CACHE_TTL) {
+    console.log(`[MENU CACHE] Serving fresh cache (age: ${Math.round(cacheAge / 1000 / 60)} minutes)`);
+    return menuCache.data;
+  }
+
+  // Case 2: Cache is stale but not too old (7-31 days) - serve stale, revalidate in background
+  if (menuCache.data && cacheAge < STALE_WHILE_REVALIDATE_TTL && !menuCache.isStale) {
+    console.log(`[MENU CACHE] Serving stale cache, revalidating in background`);
+    menuCache.isStale = true; // Mark as being revalidated
+
+    // Revalidate in background (don't await)
+    getMenuData()
+      .then((freshData) => {
+        menuCache = {
+          data: freshData,
+          timestamp: Date.now(),
+          isStale: false,
+        };
+        console.log(`[MENU CACHE] Background revalidation successful`);
+      })
+      .catch((error) => {
+        console.error(`[MENU CACHE] Background revalidation failed:`, error);
+        menuCache.isStale = false; // Reset flag so we can try again later
+      });
+
+    return menuCache.data; // Return stale data immediately
+  }
+
+  // Case 3: No cache or cache is very old - fetch fresh data
+  console.log(`[MENU CACHE] No cache or cache too old, fetching fresh data`);
+
+  try {
+    const freshData = await getMenuData();
+    menuCache = {
+      data: freshData,
+      timestamp: now,
+      isStale: false,
+    };
+    console.log(`[MENU CACHE] Fresh data cached successfully`);
+    return freshData;
+  } catch (error) {
+    console.error(`[MENU CACHE] Failed to fetch fresh data:`, error);
+
+    // If we have any cached data (even if very old), return it as fallback
+    if (menuCache.data) {
+      console.warn(`[MENU CACHE] Returning stale cache due to error (age: ${Math.round(cacheAge / 1000 / 60 / 60)} hours)`);
+      return menuCache.data;
+    }
+
+    // No cache and fetch failed - throw error (will be handled by route handler)
+    throw error;
   }
 }

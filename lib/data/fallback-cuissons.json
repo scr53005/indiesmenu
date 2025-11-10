@@ -1,0 +1,7 @@
+[
+  { "id": 1, "english_name": "Rare", "french_name": "Bleu" },
+  { "id": 2, "english_name": "Medium Rare", "french_name": "Saignant" },
+  { "id": 3, "english_name": "Medium", "french_name": "A point" },
+  { "id": 4, "english_name": "Medium Well", "french_name": "Cuit" },
+  { "id": 5, "english_name": "Well Done", "french_name": "Bien cuit" }
+]

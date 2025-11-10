@@ -1,28 +1,62 @@
 // indiesmenu/app/api/menu/route.ts
 
 import { NextResponse } from 'next/server';
-import { getMenuData } from '@/lib/data/menu'; // Import the new function
+import { getMenuData, getCachedMenuData } from '@/lib/data/menu'; // Import the new function
 
+/**
+ * GET /api/menu
+ * Returns menu data with aggressive caching and graceful error handling
+ * - Server-side cache revalidates every 1 week (604800 seconds)
+ * - Browser cache: 3 hours (10800 seconds)
+ * - Never returns 500 to customer (uses stale cache on errors)
+ */
 export async function GET() {
   try {
-    const menuData = await getMenuData(); // Call the shared data fetching function
+    // Try to get cached data first (with error recovery)
+    const menuData = await getCachedMenuData();
 
-    // Important: Update CORS headers for your deployed environment
-    // For local testing during refactoring, you might keep 'http://localhost:3030'
-    // But for Vercel, if this is meant for your own frontend on the same domain,
-    // you might not even need 'Access-Control-Allow-Origin' or it can be your Vercel domain.
-    // If it's for any public client, use '*' (with caution for non-GET methods).
     return NextResponse.json(menuData, {
       headers: {
-        'Access-Control-Allow-Origin': '*', // Changed to '*' as discussed, or your specific Vercel frontend domain
+        'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Max-Age': '86400',
+        // Browser caching: 3 hours
+        'Cache-Control': 'public, max-age=10800, stale-while-revalidate=86400',
       },
     });
   } catch (error) {
-    console.error('Error fetching menu via API:', error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+    console.error('[MENU API] Critical error - cache failure:', error);
+
+    // Last resort: try direct fetch without cache
+    try {
+      const menuData = await getMenuData();
+      return NextResponse.json(menuData, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache', // Don't cache errors
+        },
+      });
+    } catch (fallbackError) {
+      console.error('[MENU API] Fallback also failed:', fallbackError);
+
+      // Return minimal menu structure (better than 500)
+      return NextResponse.json({
+        categories: [],
+        dishes: [],
+        drinks: [],
+        cuissons: [],
+        ingredients: [],
+        conversion_rate: 1.0,
+        error: 'Menu temporarily unavailable'
+      }, {
+        status: 200, // Still return 200, not 500!
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    }
   }
 }
 
