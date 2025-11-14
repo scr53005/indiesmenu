@@ -118,12 +118,86 @@ export function distriate(tag?: string): string {
     return `${effectiveTag}-inno-${randomPart1}-${randomPart2}`;
 }
 
-export function generateDistriatedHiveOp(params: HiveTransferParams): string {
-  const distriateSuffix = distriate(); // Call without args to use 'kcs' default
-  const finalMemo = params.memo ? `${params.memo} ${distriateSuffix}` : distriateSuffix; // Handle empty original memo
+export function generateDistriatedHiveOp(params: HiveTransferParams, distriateSuffix?: string): string {
+  const suffix = distriateSuffix || distriate(); // Use provided suffix or generate new one
+  const finalMemo = params.memo ? `${params.memo} ${suffix}` : suffix; // Handle empty original memo
   params.memo = finalMemo; // Update params with the final memo
-  // params.recipient = params.recipient.toLowerCase(); // Ensure recipient is lowercase 
+  // params.recipient = params.recipient.toLowerCase(); // Ensure recipient is lowercase
   return generateHiveTransferUrl(params); // Use the existing function to generate the URL
+}
+
+/**
+ * Creates a Hive-Engine EURO token transfer operation (custom_json)
+ * @param from - Sender's Hive account name
+ * @param to - Recipient's Hive account name (e.g., 'innopay')
+ * @param amount - Amount of EURO tokens (e.g., "25.43")
+ * @param memo - Transfer memo (just the distriateSuffix for customer→innopay)
+ * @returns Custom JSON operation object ready to be signed and broadcast
+ */
+export function createEuroTransferOperation(
+  from: string,
+  to: string,
+  amount: string,
+  memo: string
+) {
+  return {
+    required_auths: [],
+    required_posting_auths: [from],
+    id: 'ssc-mainnet-hive',
+    json: JSON.stringify({
+      contractName: 'tokens',
+      contractAction: 'transfer',
+      contractPayload: {
+        symbol: 'EURO',
+        to: to,
+        quantity: amount,
+        memo: memo
+      }
+    })
+  };
+}
+
+/**
+ * Signs and broadcasts a Hive operation using the active key
+ * @param operation - The Hive operation to broadcast (e.g., custom_json for EURO transfer)
+ * @param activePrivateKey - The active private key from localStorage
+ * @returns Transaction ID if successful
+ */
+export async function signAndBroadcastOperation(
+  operation: any,
+  activePrivateKey: string
+): Promise<string> {
+  console.log('[SIGN] Starting broadcast...', { operation });
+
+  try {
+    const { Client, PrivateKey } = await import('@hiveio/dhive');
+    console.log('[SIGN] dhive imported');
+
+    const client = new Client([
+      'https://api.hive.blog',
+      'https://api.deathwing.me',
+      'https://hive-api.arcange.eu'
+    ], {
+      timeout: 15000, // 15 second timeout
+      failoverThreshold: 3
+    });
+    console.log('[SIGN] Client created');
+
+    const key = PrivateKey.fromString(activePrivateKey);
+    console.log('[SIGN] Key parsed');
+
+    console.log('[SIGN] Sending operation to blockchain...');
+    const result = await client.broadcast.sendOperations(
+      [['custom_json', operation]],
+      key
+    );
+    console.log('[SIGN] Broadcast successful!', result);
+
+    return result.id; // Transaction ID
+  } catch (error: any) {
+    console.error('[SIGN] Broadcast error:', error);
+    throw new Error(`Broadcast failed: ${error.message || error}`);
+  }
 }
 
 export function dehydrateMemo(cart: CartItem[]): string {

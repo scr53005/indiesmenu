@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { useCart } from '@/app/context/CartContext';
 import MenuItem from '@/components/MenuItem'; // Import the new MenuItem component
 import CartItemDisplay from '@/components/CartItemDisplay'; // Import the new CartItemDisplay component
+import Draggable from '@/app/components/Draggable'; // Import the new Draggable component
+import BottomBanner from '@/app/components/BottomBanner'; // Import the new BottomBanner component
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
@@ -29,9 +31,9 @@ export default function MenuPage() {
   const [selectedCuisson, setSelectedCuisson] = useState<{ [key: string]: string }>({}); // Track selected cuisson for dishes
   const [selectedIngredients, setSelectedIngredients] = useState<{ [key: string]: string }>({}); // Track selected ingredients for drinks
   const searchParams = useSearchParams();
-  const urlTable = searchParams.get('table') || '218';
+  const urlTable = searchParams.get('table') || '00';
   const validatedTable = parseInt(urlTable, 10);
-  const table = isNaN(validatedTable) ? '218' : validatedTable.toString(); // Default to '218' if parsing fails
+  const table = isNaN(validatedTable) ? '00' : validatedTable.toString(); // Default to '00' if parsing fails
   const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
 
   // State for menu navigation
@@ -54,17 +56,32 @@ export default function MenuPage() {
   const [showWalletNotification, setShowWalletNotification] = useState(false);
   const [isSafariBanner, setIsSafariBanner] = useState(false); // Track if banner is shown for Safari
   const [walletCredentials, setWalletCredentials] = useState<{username: string, activeKey: string} | null>(null);
-  const [bannerPosition, setBannerPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   // State for payment success notification
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [blockchainComplete, setBlockchainComplete] = useState(false);
+  const [transmissionError, setTransmissionError] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [showCartComposition, setShowCartComposition] = useState(false);
 
   // State for guest checkout warning modal
   const [showGuestWarningModal, setShowGuestWarningModal] = useState(false);
+
+  // State for account creation success notification
+  const [showAccountCreated, setShowAccountCreated] = useState(false);
+  const [accountCreationComplete, setAccountCreationComplete] = useState(false);
+  const [newAccountCredentials, setNewAccountCredentials] = useState<{
+    accountName: string;
+    masterPassword: string;
+    euroBalance: number;
+  } | null>(null);
+
+  // State for persistent wallet balance indicator
+  const [showWalletBalance, setShowWalletBalance] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<{
+    accountName: string;
+    euroBalance: number;
+  } | null>(null);
 
   // State for header carousel
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -84,8 +101,9 @@ export default function MenuPage() {
       console.log('[PAYMENT SUCCESS] Setting showPaymentSuccess to true (Stripe confirmed)');
       setShowPaymentSuccess(true);
       setBlockchainComplete(false); // Start in "processing" state
+      setTransmissionError(false); // Reset error state
       setCurrentSessionId(sessionId);
-      clearCart();
+      // DON'T clear cart yet - wait for blockchain confirmation
       // Remove query params from URL
       const newUrl = `${window.location.pathname}?table=${table}`;
       window.history.replaceState({}, '', newUrl);
@@ -93,6 +111,137 @@ export default function MenuPage() {
       console.log('[PAYMENT SUCCESS CHECK] No success payment detected');
     }
   }, [searchParams, clearCart, table]);
+
+  // Check for account creation success on mount
+  useEffect(() => {
+    const accountCreated = searchParams.get('account_created');
+    const credentialToken = searchParams.get('credential_token');
+    console.log('[ACCOUNT CREATED CHECK] accountCreated:', accountCreated, 'credentialToken:', credentialToken);
+
+    if (accountCreated === 'true' && credentialToken) {
+      // Retrieve credentials from innopay API using the token
+      const fetchCredentials = async () => {
+        try {
+          // Determine Innopay URL
+          let innopayUrl: string;
+          if (window.location.hostname === 'localhost') {
+            innopayUrl = 'http://localhost:3000';
+          } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
+            innopayUrl = 'https://wallet.innopay.lu';
+          } else {
+            innopayUrl = `http://${window.location.hostname}:3000`;
+          }
+
+          console.log('[ACCOUNT CREATED] Fetching credentials from innopay with token');
+          const response = await fetch(`${innopayUrl}/api/account/credentials`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credentialToken })
+          });
+
+          if (!response.ok) {
+            console.error('[ACCOUNT CREATED] Failed to fetch credentials:', response.status);
+            return;
+          }
+
+          const credentials = await response.json();
+          console.log('[ACCOUNT CREATED] Retrieved credentials for:', credentials.accountName);
+
+          // Store credentials in indiesmenu's localStorage
+          localStorage.setItem('innopay_accountName', credentials.accountName);
+          localStorage.setItem('innopay_masterPassword', credentials.masterPassword);
+          localStorage.setItem('innopay_activePrivate', credentials.keys.active.privateKey);
+          localStorage.setItem('innopay_postingPrivate', credentials.keys.posting.privateKey);
+          localStorage.setItem('innopay_memoPrivate', credentials.keys.memo.privateKey);
+
+          // Show success banner
+          setNewAccountCredentials({
+            accountName: credentials.accountName,
+            masterPassword: credentials.masterPassword,
+            euroBalance: credentials.euroBalance,
+          });
+          setShowAccountCreated(true);
+          setAccountCreationComplete(true); // Mark as complete immediately (blockchain already done)
+
+          // Clear cart since account was created with payment
+          clearCart();
+
+          console.log('[ACCOUNT CREATED] Success banner shown for account:', credentials.accountName);
+        } catch (error) {
+          console.error('[ACCOUNT CREATED] Error fetching credentials:', error);
+        }
+      };
+
+      fetchCredentials();
+
+      // Remove query params from URL
+      const newUrl = `${window.location.pathname}?table=${table}`;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [searchParams, clearCart, table]);
+
+  // Check for existing wallet credentials on mount
+  useEffect(() => {
+    const checkWalletBalance = async () => {
+      const accountName = localStorage.getItem('innopay_accountName');
+
+      if (!accountName) {
+        console.log('[WALLET BALANCE] No credentials found in localStorage');
+        return;
+      }
+
+      console.log('[WALLET BALANCE] Found credentials for:', accountName);
+
+      try {
+        // Fetch EURO token balance from Hive-Engine
+        const response = await fetch('https://api.hive-engine.com/rpc/contracts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'find',
+            params: {
+              contract: 'tokens',
+              table: 'balances',
+              query: {
+                account: accountName,
+                symbol: 'EURO'
+              }
+            },
+            id: 1
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.result && data.result.length > 0) {
+          // EURO token balance (no conversion needed - EURO is EURO)
+          const euroBalance = parseFloat(data.result[0].balance);
+
+          console.log('[WALLET BALANCE] EURO token balance retrieved:', euroBalance);
+
+          setWalletBalance({
+            accountName,
+            euroBalance: parseFloat(euroBalance.toFixed(2))
+          });
+          setShowWalletBalance(true);
+        } else {
+          console.log('[WALLET BALANCE] No EURO tokens found for account:', accountName);
+          // Account exists but has 0 EURO tokens, still show the indicator
+          setWalletBalance({
+            accountName,
+            euroBalance: 0
+          });
+          setShowWalletBalance(true);
+        }
+      } catch (error) {
+        console.error('[WALLET BALANCE] Error fetching EURO balance from Hive-Engine:', error);
+      }
+    };
+
+    // Check on mount (no dependency on conversion rate - EURO tokens don't need conversion)
+    checkWalletBalance();
+  }, []);
 
   // Poll for blockchain transaction completion
   useEffect(() => {
@@ -131,6 +280,7 @@ export default function MenuPage() {
         if (data.isComplete) {
           console.log('[BLOCKCHAIN POLL] ✓ Blockchain transactions complete!');
           setBlockchainComplete(true);
+          clearCart(); // Clear cart only on successful blockchain completion
           clearInterval(pollInterval);
 
           // Auto-hide banner after 10 seconds once blockchain is complete
@@ -148,8 +298,8 @@ export default function MenuPage() {
       if (pollCount >= maxPolls) {
         console.warn('[BLOCKCHAIN POLL] Timeout - stopped polling after 60 attempts');
         clearInterval(pollInterval);
-        // Still show success, but with warning
-        setBlockchainComplete(true); // Show final state even if we timeout
+        // Set transmission error flag
+        setTransmissionError(true);
       }
     }, 1500); // Poll every 1.5 second
 
@@ -301,62 +451,6 @@ export default function MenuPage() {
   }, []);
 
   // Drag handlers for wallet banner
-  const handleBannerMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setDragOffset({
-      x: e.clientX - bannerPosition.x,
-      y: e.clientY - bannerPosition.y
-    });
-  };
-
-  const handleBannerTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    setIsDragging(true);
-    setDragOffset({
-      x: touch.clientX - bannerPosition.x,
-      y: touch.clientY - bannerPosition.y
-    });
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setBannerPosition({
-          x: e.clientX - dragOffset.x,
-          y: e.clientY - dragOffset.y
-        });
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (isDragging) {
-        const touch = e.touches[0];
-        setBannerPosition({
-          x: touch.clientX - dragOffset.x,
-          y: touch.clientY - dragOffset.y
-        });
-      }
-    };
-
-    const handleEnd = () => {
-      setIsDragging(false);
-    };
-
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleEnd);
-      document.addEventListener('touchmove', handleTouchMove);
-      document.addEventListener('touchend', handleEnd);
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleEnd);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleEnd);
-    };
-  }, [isDragging, dragOffset]);
-
   // Listen for wallet credentials from wallet.innopay.lu
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -376,20 +470,42 @@ export default function MenuPage() {
         return;
       }
 
-      if (event.data.type === 'INNOPAY_WALLET_CREATED') {
-        const { username, activeKey } = event.data;
-        console.log('Processing INNOPAY_WALLET_CREATED message for:', username);
+      // Handle both old and new account creation message types
+      if (event.data.type === 'INNOPAY_WALLET_CREATED' || event.data.type === 'INNOPAY_ACCOUNT_CREATED') {
+        const { username, accountName, activeKey, masterPassword, postingKey, euroBalance } = event.data;
+        const finalUsername = accountName || username; // Support both old and new field names
+        console.log(`[${new Date().toISOString()}] [INDIESMENU] Processing ${event.data.type} message for:`, finalUsername);
 
-        // Store credentials
-        const credentials = { username, activeKey };
-        setWalletCredentials(credentials);
+        // Store credentials (store all available keys for future use)
+        const credentials = {
+          username: finalUsername,
+          activeKey,
+          ...(masterPassword && { masterPassword }), // Include master password if available
+          ...(postingKey && { postingKey }), // Include posting key if available
+        };
+        setWalletCredentials({ username: finalUsername, activeKey });
         localStorage.setItem('innopay_wallet_credentials', JSON.stringify(credentials));
 
         // Hide wallet notification
         setShowWalletNotification(false);
 
-        console.log(`Wallet credentials stored for ${username}`);
-        alert(`Portefeuille créé! Bienvenue ${username}. Vous pouvez maintenant commander directement.`);
+        // Show account creation success banners
+        setShowAccountCreated(true);
+        setAccountCreationComplete(false); // Start with yellow banner
+
+        // Store account credentials for display
+        setNewAccountCredentials({
+          accountName: finalUsername,
+          masterPassword: masterPassword || '(stored securely)',
+          euroBalance: euroBalance || 0
+        });
+
+        console.log(`[${new Date().toISOString()}] [INDIESMENU] Wallet credentials stored for ${finalUsername}`);
+
+        // Simulate order transmission completion after 2 seconds (yellow → green transition)
+        setTimeout(() => {
+          setAccountCreationComplete(true);
+        }, 2000);
       }
     };
 
@@ -553,12 +669,132 @@ export default function MenuPage() {
     }
   };
 
-  const handleOrder = useCallback(() => {
+  const handleOrder = useCallback(async () => {
     if (cart.length === 0) {
       // No items in cart, show alert
       alert('Rien a commander !');
       return;
     }
+
+    // Check if user has wallet credentials in localStorage
+    const accountName = localStorage.getItem('innopay_accountName');
+    const activeKey = localStorage.getItem('innopay_activePrivate');
+
+    console.log('[WALLET PAYMENT] Checking credentials:', { hasAccount: !!accountName, hasKey: !!activeKey });
+
+    if (accountName && activeKey) {
+      // NEW FLOW: User has credentials - pay with EURO tokens
+      console.log('[WALLET PAYMENT] Customer has credentials, initiating EURO token payment');
+      alert('Paiement avec votre portefeuille...');
+
+      try {
+        alert('Étape 1: Import des fonctions...');
+        // Import necessary functions (signAndBroadcast is now done server-side)
+        const { distriate, createEuroTransferOperation } = await import('@/lib/utils');
+
+        alert('Étape 2: Génération du suffix...');
+        // 1. Generate distriateSuffix ONCE (used for both transfers)
+        const suffix = distriate();
+        console.log('[WALLET PAYMENT] Generated suffix:', suffix);
+
+        alert('Étape 3: Récupération des détails...');
+        // 2. Get payment details
+        const amountEuro = getTotalEurPrice();
+        const orderMemo = getMemo();
+
+        console.log('[WALLET PAYMENT] Payment details:', { amountEuro, orderMemo, suffix });
+
+        alert(`Étape 4: Création opération EURO (${amountEuro}€)...`);
+        // 3. Create EURO transfer operation (customer → innopay)
+        const euroOp = createEuroTransferOperation(
+          accountName,
+          'innopay',
+          amountEuro,
+          suffix  // Only suffix, not full order memo
+        );
+
+        alert('Étape 5: Signature et diffusion (serveur)...');
+        console.log('[WALLET PAYMENT] Sending operation to server for signing...');
+
+        // 4. Sign and broadcast EURO transfer SERVER-SIDE
+        // Determine Innopay URL
+        let innopaySignUrl: string;
+        if (window.location.hostname === 'localhost') {
+          innopaySignUrl = 'http://localhost:3000';
+        } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
+          innopaySignUrl = 'https://wallet.innopay.lu';
+        } else {
+          innopaySignUrl = `http://${window.location.hostname}:3000`;
+        }
+
+        const signResponse = await fetch(`${innopaySignUrl}/api/sign-and-broadcast`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            operation: euroOp,
+            activePrivateKey: activeKey
+          })
+        });
+
+        if (!signResponse.ok) {
+          const errorData = await signResponse.json();
+          throw new Error(errorData.message || 'Signing failed');
+        }
+
+        const signResult = await signResponse.json();
+        const txId = signResult.txId;
+        console.log('[WALLET PAYMENT] EURO transfer successful! TX:', txId);
+        alert(`Étape 6: Transaction réussie! TX: ${txId.substring(0, 8)}...`);
+
+        // 5. Call innopay API to execute HBD/EURO transfer to restaurant
+        // Determine Innopay URL based on environment
+        let innopayUrl: string;
+        if (window.location.hostname === 'localhost') {
+          innopayUrl = 'http://localhost:3000';
+        } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
+          innopayUrl = 'https://wallet.innopay.lu';
+        } else {
+          innopayUrl = `http://${window.location.hostname}:3000`;
+        }
+
+        console.log('[WALLET PAYMENT] Calling innopay API...');
+
+        const response = await fetch(`${innopayUrl}/api/wallet-payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerAccount: accountName,
+            customerTxId: txId,
+            recipient: process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe',
+            amountEuro: amountEuro,
+            orderMemo: orderMemo,
+            distriateSuffix: suffix
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[WALLET PAYMENT] Payment complete!', result);
+
+        // 6. Clear cart and show success
+        clearCart();
+        alert('Commande envoyée avec succès!');
+
+      } catch (error: any) {
+        console.error('[WALLET PAYMENT] Error:', error);
+        alert(`Erreur: ${error.message || 'Erreur inconnue'}. Vérifiez la console pour plus de détails.`);
+      }
+
+      return; // Exit early - don't run the hive://sign/ flow
+    }
+
+    // If we reach here, no credentials found
+    console.log('[WALLET PAYMENT] No credentials found, using hive://sign/ flow');
+
+    // EXISTING FLOW: No credentials - use hive://sign/ protocol handler
     const hiveOpUrl = orderNow();
 
     // Set a flag to detect if the page loses focus (app opened)
@@ -675,10 +911,8 @@ export default function MenuPage() {
       const { url } = data;
       console.log('Redirecting to Stripe:', url);
 
-      // Redirect to Stripe checkout
+      // Redirect to Stripe checkout - DON'T clear cart yet, wait for blockchain confirmation
       window.location.href = url;
-
-      clearCart();
 
     } catch (error: any) {
       console.error('Guest checkout error:', error);
@@ -753,22 +987,15 @@ export default function MenuPage() {
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Wallet Notification Banner */}
       {showWalletNotification && !walletCredentials && (
-        <div
-          className={`fixed z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg ${bannerPosition.x !== 0 || bannerPosition.y !== 0 ? 'rounded-lg' : ''}`}
+        <Draggable
+          className="z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg rounded-lg"
           style={{
-            left: bannerPosition.x === 0 ? '0' : `${bannerPosition.x}px`,
-            top: bannerPosition.y === 0
-              ? (cart.length === 0 && welcomeCarouselHeight > 0
-                  ? `${totalFixedHeaderHeight + (welcomeCarouselHeight / 2) - 50}px` // Position at half carousel height (adjusted for banner height)
-                  : `${totalFixedHeaderHeight}px`) // Default: below menu selector
-              : `${bannerPosition.y}px`,
-            right: bannerPosition.x === 0 ? '0' : 'auto',
-            cursor: isDragging ? 'grabbing' : 'grab',
-            touchAction: 'none',
-            userSelect: 'none'
+            left: '0',
+            top: cart.length === 0 && welcomeCarouselHeight > 0
+              ? `${totalFixedHeaderHeight + welcomeCarouselHeight}px`
+              : `${totalFixedHeaderHeight}px`,
+            right: '0',
           }}
-          onMouseDown={handleBannerMouseDown}
-          onTouchStart={handleBannerTouchStart}
         >
           <div className="max-w-4xl mx-auto flex items-center gap-4">
             {/* Drag handle indicator */}
@@ -793,20 +1020,49 @@ export default function MenuPage() {
 
             {/* Center zone: Buttons stacked */}
             <div className="flex flex-col items-center gap-2 flex-shrink-0">
-              <a
-                href={typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== 'indies.innopay.lu'
-                  ? `http://${window.location.hostname}:3000/user`
-                  : window.location.hostname === 'localhost'
-                  ? 'http://localhost:3000/user'
-                  : 'https://wallet.innopay.lu/user'}
-                target="_blank"
-                rel="noopener"
+              <button
+                onClick={() => {
+                  // Build base URL based on environment
+                  let baseUrl = '';
+                  if (typeof window !== 'undefined') {
+                    if (window.location.hostname === 'localhost') {
+                      baseUrl = 'http://localhost:3000/user';
+                    } else if (window.location.hostname === 'indies.innopay.lu') {
+                      baseUrl = 'https://wallet.innopay.lu/user';
+                    } else {
+                      baseUrl = `http://${window.location.hostname}:3000/user`;
+                    }
+                  }
+
+                  // Get parameters
+                  const orderAmount = getTotalEurPrice();
+                  const discount = getDiscountAmount();
+                  const customMemo = getMemo();
+
+                  console.log(`[${new Date().toISOString()}] [INDIESMENU] Opening account creation with params:`, {
+                    orderAmount,
+                    discount,
+                    memoLength: customMemo.length,
+                    memo: customMemo.substring(0, 100) + (customMemo.length > 100 ? '...' : '')
+                  });
+
+                  // Build URL with parameters
+                  const params = new URLSearchParams();
+                  params.set('order_amount', orderAmount);
+                  if (parseFloat(discount) > 0) {
+                    params.set('discount', discount);
+                  }
+                  params.set('memo', customMemo);
+
+                  // Navigate in same window (like guest checkout)
+                  window.location.href = `${baseUrl}?${params.toString()}`;
+                }}
                 className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold text-sm hover:bg-blue-50 transition-colors whitespace-nowrap"
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
               >
                 Créer un compte
-              </a>
+              </button>
               <button
                 onClick={handleGuestCheckout}
                 className="bg-gray-600 bg-opacity-60 text-gray-300 px-3 py-1.5 rounded-lg font-normal text-xs hover:bg-opacity-70 transition-colors w-[120px] text-center"
@@ -834,11 +1090,11 @@ export default function MenuPage() {
               </button>
             </div>
           </div>
-        </div>
+        </Draggable>
       )}
 
       {/* Payment Success Banner - Two States */}
-      {showPaymentSuccess && !blockchainComplete && (
+      {showPaymentSuccess && !blockchainComplete && !transmissionError && (
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
@@ -854,6 +1110,57 @@ export default function MenuPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Transmission Error Banner - Shows below yellow payment success */}
+      {showPaymentSuccess && transmissionError && (
+        <>
+          {/* Yellow payment success banner (stays visible) */}
+          <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-3 shadow-lg">
+            <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">✓</span>
+                <p className="font-semibold text-base md:text-lg">
+                  Paiement réussi!
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Grey error banner below */}
+          <div className="fixed left-0 right-0 z-[9998] bg-gradient-to-r from-gray-600 to-gray-700 text-white px-4 py-4 shadow-lg" style={{ top: '60px' }}>
+            <div className="max-w-4xl mx-auto">
+              <div className="flex flex-col items-center gap-3">
+                <div className="text-center">
+                  <p className="font-semibold text-base md:text-lg">
+                    Une erreur de transmission s'est produite
+                  </p>
+                  <p className="text-sm opacity-90">
+                    Veuillez appeler un serveur et nous en excuser
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowCartComposition(true)}
+                    className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors shadow-md opacity-80 hover:opacity-100"
+                  >
+                    Commande
+                  </button>
+                  <button
+                    onClick={() => {
+                      clearCart();
+                      setShowPaymentSuccess(false);
+                      setTransmissionError(false);
+                    }}
+                    className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-lg transition-colors shadow-md opacity-80 hover:opacity-100"
+                  >
+                    Effacer
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {showPaymentSuccess && blockchainComplete && (
@@ -875,6 +1182,146 @@ export default function MenuPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Account Creation Success - Yellow Banner (Processing) */}
+      {showAccountCreated && !accountCreationComplete && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-700"></div>
+              <div>
+                <p className="font-semibold text-base md:text-lg">
+                  Compte créé! Paiement réussi!
+                </p>
+                <p className="text-sm opacity-90">
+                  Commande en cours de transmission...
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account Creation Success - Green Banner (Order Transmitted) */}
+      {showAccountCreated && accountCreationComplete && !newAccountCredentials && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">✓</span>
+              <div>
+                <p className="font-semibold text-base md:text-lg">
+                  Votre commande a été transmise et est en cours de préparation
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAccountCreated(false)}
+              className="bg-white text-green-700 px-4 py-2 rounded-lg font-semibold hover:bg-green-50 transition-colors ml-4"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Account Creation Success - Blue Banner (Account Credentials) */}
+      {showAccountCreated && accountCreationComplete && newAccountCredentials && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">🎉</span>
+                <div>
+                  <p className="font-semibold text-base md:text-lg">
+                    Compte créé avec succès!
+                  </p>
+                  <p className="text-sm opacity-90">
+                    Votre commande est en cours de préparation
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAccountCreated(false);
+                  setNewAccountCredentials(null);
+                }}
+                className="bg-white text-blue-700 px-4 py-2 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
+              >
+                OK
+              </button>
+            </div>
+            <div className="bg-white/10 rounded-lg p-3 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div>
+                  <span className="opacity-75">Compte:</span>
+                  <span className="ml-2 font-mono font-bold">{newAccountCredentials.accountName}</span>
+                </div>
+                <div>
+                  <span className="opacity-75">Solde:</span>
+                  <span className="ml-2 font-bold">{newAccountCredentials.euroBalance.toFixed(2)} EURO</span>
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="opacity-75">Mot de passe:</span>
+                <span className="ml-2 font-mono text-xs break-all">{newAccountCredentials.masterPassword}</span>
+              </div>
+              <p className="mt-2 text-xs opacity-75">
+                💡 Vos identifiants sont sauvegardés. Vous pouvez commander directement la prochaine fois!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wallet Balance Reopen Button */}
+      {!showWalletBalance && walletBalance && (
+        <button
+          onClick={() => setShowWalletBalance(true)}
+          className="fixed bottom-4 right-4 z-[9998] bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-colors"
+          aria-label="Voir portefeuille"
+        >
+          <span className="text-2xl">💰</span>
+        </button>
+      )}
+
+      {/* Persistent Wallet Balance Indicator */}
+      {showWalletBalance && walletBalance && (
+        <Draggable
+          className="z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 rounded-lg shadow-lg"
+          style={{
+            left: 'auto',
+            right: '1rem',
+            bottom: '1rem',
+            top: 'auto',
+            minWidth: '200px',
+            maxWidth: '300px',
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs opacity-75 mb-1">Votre portefeuille Innopay</p>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">💰</span>
+                <div>
+                  <p className="font-bold text-lg">{walletBalance.euroBalance.toFixed(2)} €</p>
+                  <p className="text-xs opacity-75 font-mono">{walletBalance.accountName}</p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowWalletBalance(false)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-1 transition-colors"
+              aria-label="Fermer"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </Draggable>
       )}
 
       {/* Guest Checkout Warning Modal */}
@@ -1107,6 +1554,78 @@ export default function MenuPage() {
           </div>
         )}
       </div>
+
+      {/* Cart Composition Modal */}
+      {showCartComposition && (
+        <div
+          className="fixed inset-0 z-[10000] bg-black bg-opacity-50 flex items-center justify-center p-4"
+          onClick={() => setShowCartComposition(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 flex justify-between items-center rounded-t-lg">
+              <h2 className="text-xl font-bold">Composition de la commande</h2>
+              <button
+                onClick={() => setShowCartComposition(false)}
+                className="text-2xl hover:text-gray-200 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              {cart.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Panier vide</p>
+              ) : (
+                <>
+                  <div className="space-y-4">
+                    {cart.map((item, index) => (
+                      <div key={index} className="border-b border-gray-200 pb-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-800">{item.name}</h3>
+                            {item.options?.size && (
+                              <p className="text-sm text-gray-600">Taille: {item.options.size}</p>
+                            )}
+                            {item.options?.cuisson && (
+                              <p className="text-sm text-gray-600">Cuisson: {item.options.cuisson}</p>
+                            )}
+                            {item.options?.selectedIngredients && item.options.selectedIngredients.length > 0 && (
+                              <p className="text-sm text-gray-600">
+                                Ingrédients: {item.options.selectedIngredients}
+                              </p>
+                            )}
+                            <p className="text-sm text-gray-500 mt-1">
+                              Quantité: {item.quantity}
+                            </p>
+                          </div>
+                          <div className="text-right ml-4">
+                            <p className="font-semibold text-gray-800">
+                              {(parseFloat(item.price) * item.quantity).toFixed(2)} €
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-6 pt-4 border-t-2 border-gray-300">
+                    <div className="flex justify-between items-center">
+                      <span className="text-lg font-bold text-gray-800">Total:</span>
+                      <span className="text-2xl font-bold text-blue-600">
+                        {getTotalEurPrice()} €
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Contact/Legal Banner */}
+      <BottomBanner language="fr" />
     </div>
   );
 }

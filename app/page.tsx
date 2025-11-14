@@ -51,7 +51,8 @@ function getOrderDisplayContent(memoLines: HydratedOrderLine[]): string {
 export default function Home() {
   const [canPlayAudio, setCanPlayAudio] = useState(false);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [lastId, setLastId] = useState('0');
+  const [lastIdHbd, setLastIdHbd] = useState('0');
+  const [lastIdEuro, setLastIdEuro] = useState('0');
   const [loading, setLoading] = useState(true);
   const [seenTransferIds, setSeenTransferIds] = useState<Set<string>>(new Set()); // Track seen IDs
   const bell1Ref = useRef<HTMLAudioElement | null>(null);
@@ -59,15 +60,18 @@ export default function Home() {
   const [menuData, setMenuData] = useState<MenuData | null>(null);
   const [transmittedToKitchen, setTransmittedToKitchen] = useState<Map<string, string>>(new Map()); // Map of transfer ID to timestamp
 
-// Refs to hold the *latest* state values that pollHbd needs without re-triggering effects
-  const lastIdRef = useRef(lastId);
+// Refs to hold the *latest* state values that polling functions need without re-triggering effects
+  const lastIdHbdRef = useRef(lastIdHbd);
+  const lastIdEuroRef = useRef(lastIdEuro);
   const menuDataRef = useRef(menuData);
   const seenTransferIdsRef = useRef(seenTransferIds);
   const canPlayAudioRef = useRef(canPlayAudio); // Add ref for canPlayAudio
-  const isPollingActiveRef = useRef(false); // To prevent concurrent poll executions
+  const isPollingHbdActiveRef = useRef(false); // To prevent concurrent HBD poll executions
+  const isPollingEuroActiveRef = useRef(false); // To prevent concurrent EURO poll executions
 
   // Update refs whenever the corresponding state changes
-  useEffect(() => { lastIdRef.current = lastId; }, [lastId]);
+  useEffect(() => { lastIdHbdRef.current = lastIdHbd; }, [lastIdHbd]);
+  useEffect(() => { lastIdEuroRef.current = lastIdEuro; }, [lastIdEuro]);
   useEffect(() => { menuDataRef.current = menuData; }, [menuData]);
   useEffect(() => { seenTransferIdsRef.current = seenTransferIds; }, [seenTransferIds]);
   useEffect(() => { canPlayAudioRef.current = canPlayAudio; }, [canPlayAudio]); // Keep ref in sync
@@ -155,15 +159,15 @@ export default function Home() {
   // Make pollHbd a stable function using useCallback
   const pollHbd = useCallback(async () => {
     // Use a ref to prevent multiple concurrent poll requests
-    if (isPollingActiveRef.current) {
-      console.log('Poll already active, skipping.');
+    if (isPollingHbdActiveRef.current) {
+      console.log('HBD poll already active, skipping.');
       return;
     }
-    isPollingActiveRef.current = true; // Set flag to indicate polling is in progress
+    isPollingHbdActiveRef.current = true; // Set flag to indicate polling is in progress
 
     try {
       // Use refs to get the latest state values without recreating pollHbd
-      const res = await fetch(`/api/poll-hbd?lastId=${lastIdRef.current}`);
+      const res = await fetch(`/api/poll-hbd?lastId=${lastIdHbdRef.current}`);
       const data: PollResponse = await res.json();
       if (res.ok) {
         if (data.transfers?.length) {
@@ -204,12 +208,12 @@ export default function Home() {
           // Now, filter these processed transfers to find the *actually new* ones (not seen before)
           const newTransfersToDisplay = newlyProcessedTransfers.filter(tx => !currentSeenIds.has(tx.id));
 
-          // Update seen IDs and lastId
+          // Update seen IDs and lastIdHbd
           // Mark all newly processed transfers as seen (even if not displayed as a new toast)
           newlyProcessedTransfers.forEach(tx => currentSeenIds.add(tx.id));
           setSeenTransferIds(currentSeenIds);
-          lastIdRef.current = data.latestId;
-          setLastId(data.latestId);
+          lastIdHbdRef.current = data.latestId;
+          setLastIdHbd(data.latestId);
 
           if (newTransfersToDisplay.length > 0) {
             if (canPlayAudioRef.current) {
@@ -254,12 +258,132 @@ export default function Home() {
         toast.error(`Poll error: ${data.error}`, { autoClose: 5000 });
       }
     } catch (error) {
-      console.error('Poll error:', error);
-      toast.error('Failed to fetch transfers', { autoClose: 5000 });
+      console.error('HBD poll error:', error);
+      toast.error('Failed to fetch HBD transfers', { autoClose: 5000 });
     } finally {
-      isPollingActiveRef.current = false; // Reset flag after poll completes
+      isPollingHbdActiveRef.current = false; // Reset flag after poll completes
     }
-  }, [playBellSounds, setTransfers, setLastId, setSeenTransferIds]); // Dependencies for useCallback (removed canPlayAudio)
+  }, [playBellSounds, setTransfers, setLastIdHbd, setSeenTransferIds]); // Dependencies for useCallback (removed canPlayAudio)
+
+  // Make pollEuro a stable function using useCallback
+  const pollEuro = useCallback(async () => {
+    // Use a ref to prevent multiple concurrent poll requests
+    if (isPollingEuroActiveRef.current) {
+      console.log('EURO poll already active, skipping.');
+      return;
+    }
+    isPollingEuroActiveRef.current = true; // Set flag to indicate polling is in progress
+
+    try {
+      // Use refs to get the latest state values without recreating pollEuro
+      const res = await fetch(`/api/poll-euro?lastId=${lastIdEuroRef.current}`);
+      const data: PollResponse = await res.json();
+      if (res.ok) {
+        if (data.transfers?.length) {
+          const currentSeenIds = new Set(seenTransferIdsRef.current); // Use ref for current seen IDs
+
+          // First, process all transfers from the API response to ensure parsedMemo is an array
+          const newlyProcessedTransfers = data.transfers.map(tx => {
+            let parsedMemo: HydratedOrderLine[];
+            let isCallWaiter = false;
+
+            const tableIndexInMemo = tx.memo.lastIndexOf('TABLE ');
+            const memoPrefix = tableIndexInMemo !== -1 ? tx.memo.substring(0, tableIndexInMemo).trim().toLowerCase() : tx.memo.toLowerCase();
+            if (memoPrefix.includes('appel')) {
+                isCallWaiter = true;
+            }
+
+            const orderContentToHydrate = tableIndexInMemo !== -1 ? tx.memo.substring(0, tableIndexInMemo).trim() : tx.memo;
+
+            // If it's a "Call a Waiter" memo, or if menuData is not available,
+            // keep parsedMemo as a single raw line.
+            if (isCallWaiter || !menuDataRef.current) {
+                parsedMemo = [{ type: 'raw', content: orderContentToHydrate }];
+            } else {
+                // Otherwise, attempt to hydrate it with menu data
+                try {
+                    console.log('Hydrating EURO memo with menu data:', orderContentToHydrate, menuDataRef.current);
+                    parsedMemo = hydrateMemo(orderContentToHydrate, menuDataRef.current);
+                } catch (e) {
+                    console.error(`Error hydrating memo for EURO TX ${tx.id}:`, e);
+                    parsedMemo = [{ type: 'raw', content: orderContentToHydrate }];
+                }
+            }
+            return { ...tx, parsedMemo, isCallWaiter };
+          });
+
+          // Now, filter these processed transfers to find the *actually new* ones (not seen before)
+          const newTransfersToDisplay = newlyProcessedTransfers.filter(tx => !currentSeenIds.has(tx.id));
+
+          // Update seen IDs and lastIdEuro
+          // Mark all newly processed transfers as seen (even if not displayed as a new toast)
+          newlyProcessedTransfers.forEach(tx => currentSeenIds.add(tx.id));
+          setSeenTransferIds(currentSeenIds);
+          lastIdEuroRef.current = data.latestId;
+          setLastIdEuro(data.latestId);
+
+          if (newTransfersToDisplay.length > 0) {
+            if (canPlayAudioRef.current) {
+              console.log('Trying to play bell sounds for new EURO transfers');
+              playBellSounds();
+            } else {
+              console.log('New EURO transfer seen but canPlayAudio is ' + canPlayAudioRef.current + ', not playing sounds');
+            }
+            // Iterate over the correctly processed and new transfers for toasts
+            newTransfersToDisplay.forEach(tx => {
+              const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
+                timeZone: 'Europe/Paris',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              toast.info(
+              `${getOrderDisplayContent(tx.parsedMemo)} for ${getTable(tx.memo) || 'unknown'}; ${tx.amount} ${tx.symbol} (Order received: ${receivedDateTime})`,
+              {
+                  autoClose: 5000,
+                  className: tx.isCallWaiter ? 'flash-toast call-waiter-toast' : 'flash-toast',
+                  toastId: tx.id,
+                  hideProgressBar: false,
+                  closeButton: true,
+                  position: 'top-right',
+                  closeOnClick: true,
+                  pauseOnHover: true,
+                  draggable: true,
+                  onOpen: () => {
+                    setTimeout(() => toast.dismiss(tx.id), 6000);
+                  },
+              }
+              );
+            });
+          }
+          // Merge with existing transfers and update state
+          setTransfers(prev => {
+            // Create a map of existing transfers by ID
+            const existingMap = new Map(prev.map(t => [t.id, t]));
+            // Add new transfers
+            newlyProcessedTransfers.forEach(tx => {
+              if (!existingMap.has(tx.id)) {
+                existingMap.set(tx.id, tx);
+              }
+            });
+            // Convert back to array and sort by ID desc
+            return Array.from(existingMap.values()).sort((a, b) =>
+              BigInt(b.id) > BigInt(a.id) ? 1 : -1
+            );
+          });
+        }
+      } else {
+        toast.error(`EURO poll error: ${data.error}`, { autoClose: 5000 });
+      }
+    } catch (error) {
+      console.error('EURO poll error:', error);
+      toast.error('Failed to fetch EURO transfers', { autoClose: 5000 });
+    } finally {
+      isPollingEuroActiveRef.current = false; // Reset flag after poll completes
+    }
+  }, [playBellSounds, setTransfers, setLastIdEuro, setSeenTransferIds]); // Dependencies for useCallback
 
    // Fetch menu data once on component mount
    useEffect(() => {
@@ -282,16 +406,21 @@ export default function Home() {
 
   // Effect to set up the polling interval (runs once on mount)
   useEffect(() => {
-    // Initial poll immediately when the component mounts
+    // Initial poll immediately when the component mounts - poll both HBD and EURO
     pollHbd();
-    // Then set up the interval for subsequent polls every 5 seconds
-    const intervalId = setInterval(pollHbd, 5000);
+    pollEuro();
+
+    // Then set up the interval for subsequent polls every 6 seconds for both
+    const intervalId = setInterval(() => {
+      pollHbd();
+      pollEuro();
+    }, 6000);
 
     setLoading(false); // Set loading to false once polling is initiated
 
     // Cleanup function: Clear the interval when the component unmounts
     return () => clearInterval(intervalId);
-  }, [pollHbd]); // Dependency: pollHbd is stable because of useCallback
+  }, [pollHbd, pollEuro]); // Dependencies: both polling functions are stable because of useCallback
 
  
   const handleTransmitToKitchen = (id: string) => {

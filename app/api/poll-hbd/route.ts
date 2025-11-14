@@ -5,6 +5,13 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const hafPool = new Pool({ connectionString: process.env.PG_CONNECTION_STRING });
 
+// NOTE: operation_transfer_table does NOT have a timestamp column
+// We use new Date() which gives server time, not actual blockchain transfer time
+// This is a known limitation - if server is down, transfers retrieved later will show
+// the retrieval time, not the actual transfer time.
+// TODO: Future improvement - join with haf_blocks or operation_view to get real timestamp
+// For now, EURO transfers (operation_custom_json_view) DO have timestamps and work correctly.
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -50,7 +57,7 @@ export async function GET(request: Request) {
             memo: transfer.memo,
             parsed_memo: transfer.parsedMemo,
             fulfilled: false,
-            received_at: new Date(),
+            received_at: new Date(), // Server time, not blockchain time (see NOTE above)
           },
         });
         console.log('Inserted transfer to back-end DB:', transfer.id);
