@@ -688,24 +688,34 @@ export default function MenuPage() {
       alert('Paiement avec votre portefeuille...');
 
       try {
-        alert('Étape 1: Import des fonctions...');
+        alert('Étape 1: Récupération du taux EUR/USD...');
+        // 1. Fetch EUR/USD rate from currency API
+        const currencyResponse = await fetch('/api/currency');
+        if (!currencyResponse.ok) {
+          throw new Error('Failed to fetch EUR/USD rate');
+        }
+        const currencyData = await currencyResponse.json();
+        const eurUsdRate = currencyData.eurToUsdRate;
+        console.log('[WALLET PAYMENT] EUR/USD rate:', eurUsdRate);
+
+        alert('Étape 2: Import des fonctions...');
         // Import necessary functions (signAndBroadcast is now done server-side)
         const { distriate, createEuroTransferOperation } = await import('@/lib/utils');
 
-        alert('Étape 2: Génération du suffix...');
-        // 1. Generate distriateSuffix ONCE (used for both transfers)
+        alert('Étape 3: Génération du suffix...');
+        // 2. Generate distriateSuffix ONCE (used for both transfers)
         const suffix = distriate();
         console.log('[WALLET PAYMENT] Generated suffix:', suffix);
 
-        alert('Étape 3: Récupération des détails...');
-        // 2. Get payment details
+        alert('Étape 4: Récupération des détails...');
+        // 3. Get payment details
         const amountEuro = getTotalEurPrice();
         const orderMemo = getMemo();
 
-        console.log('[WALLET PAYMENT] Payment details:', { amountEuro, orderMemo, suffix });
+        console.log('[WALLET PAYMENT] Payment details:', { amountEuro, orderMemo, suffix, eurUsdRate });
 
-        alert(`Étape 4: Création opération EURO (${amountEuro}€)...`);
-        // 3. Create EURO transfer operation (customer → innopay)
+        alert(`Étape 5: Création opération EURO (${amountEuro}€)...`);
+        // 4. Create EURO transfer operation (customer → innopay)
         const euroOp = createEuroTransferOperation(
           accountName,
           'innopay',
@@ -713,10 +723,10 @@ export default function MenuPage() {
           suffix  // Only suffix, not full order memo
         );
 
-        alert('Étape 5: Signature et diffusion (serveur)...');
+        alert('Étape 6: Signature et diffusion (serveur)...');
         console.log('[WALLET PAYMENT] Sending operation to server for signing...');
 
-        // 4. Sign and broadcast EURO transfer SERVER-SIDE
+        // 5. Sign and broadcast EURO transfer SERVER-SIDE
         // Determine Innopay URL
         let innopaySignUrl: string;
         if (window.location.hostname === 'localhost') {
@@ -744,9 +754,9 @@ export default function MenuPage() {
         const signResult = await signResponse.json();
         const txId = signResult.txId;
         console.log('[WALLET PAYMENT] EURO transfer successful! TX:', txId);
-        alert(`Étape 6: Transaction réussie! TX: ${txId.substring(0, 8)}...`);
+        alert(`Étape 7: Transaction réussie! TX: ${txId.substring(0, 8)}...`);
 
-        // 5. Call innopay API to execute HBD/EURO transfer to restaurant
+        // 6. Call innopay API to execute HBD/EURO transfer to restaurant
         // Determine Innopay URL based on environment
         let innopayUrl: string;
         if (window.location.hostname === 'localhost') {
@@ -767,6 +777,7 @@ export default function MenuPage() {
             customerTxId: txId,
             recipient: process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe',
             amountEuro: amountEuro,
+            eurUsdRate: eurUsdRate,
             orderMemo: orderMemo,
             distriateSuffix: suffix
           })
@@ -779,7 +790,7 @@ export default function MenuPage() {
         const result = await response.json();
         console.log('[WALLET PAYMENT] Payment complete!', result);
 
-        // 6. Clear cart and show success
+        // 7. Clear cart and show success
         clearCart();
         alert('Commande envoyée avec succès!');
 
