@@ -16,6 +16,23 @@ function utcToLuxembourg(utcTimestamp: string | Date): Date {
   return new Date(luxString);
 }
 
+// Format Date to Luxembourg time ISO string
+function formatLuxembourgTime(date: Date): string {
+  // Format to Luxembourg time and return as ISO-like string
+  const luxString = date.toLocaleString('sv-SE', {
+    timeZone: 'Europe/Luxembourg',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  // sv-SE format is YYYY-MM-DD HH:mm:ss, convert to ISO format
+  return luxString.replace(' ', 'T') + '.000Z';
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -158,7 +175,7 @@ export async function GET(request: Request) {
         symbol: t.symbol,
         memo: t.memo,
         parsedMemo: t.parsed_memo,
-        received_at: t.received_at ? t.received_at.toISOString() : new Date().toISOString(),
+        received_at: t.received_at ? formatLuxembourgTime(t.received_at) : formatLuxembourgTime(new Date()),
       }));
 
       const latestId = result.rows.length ? result.rows[0].id.toString() : lastId;

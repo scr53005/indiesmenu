@@ -8,6 +8,7 @@ import MenuItem from '@/components/MenuItem'; // Import the new MenuItem compone
 import CartItemDisplay from '@/components/CartItemDisplay'; // Import the new CartItemDisplay component
 import Draggable from '@/app/components/Draggable'; // Import the new Draggable component
 import BottomBanner from '@/app/components/BottomBanner'; // Import the new BottomBanner component
+import { getLatestEurUsdRate } from '@/lib/utils'; // Import currency rate utility
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
@@ -167,16 +168,22 @@ export default function MenuPage() {
           clearCart();
 
           console.log('[ACCOUNT CREATED] Success banner shown for account:', credentials.accountName);
+
+          // Remove query params from URL
+          const newUrl = `${window.location.pathname}?table=${table}`;
+          window.history.replaceState({}, '', newUrl);
+
+          // Refresh page after 3 seconds to load mini wallet with stored credentials
+          setTimeout(() => {
+            console.log('[ACCOUNT CREATED] Refreshing page to display mini wallet');
+            window.location.reload();
+          }, 3000);
         } catch (error) {
           console.error('[ACCOUNT CREATED] Error fetching credentials:', error);
         }
       };
 
       fetchCredentials();
-
-      // Remove query params from URL
-      const newUrl = `${window.location.pathname}?table=${table}`;
-      window.history.replaceState({}, '', newUrl);
     }
   }, [searchParams, clearCart, table]);
 
@@ -665,7 +672,7 @@ export default function MenuPage() {
       window.location.href = hiveUrl;
     } catch (error) {
       console.error('Error in handleCallWaiter:', error);
-      alert('Failed to process the request. Please try again.');
+      // alert('Failed to process the request. Please try again.');
     }
   };
 
@@ -685,37 +692,87 @@ export default function MenuPage() {
     if (accountName && activeKey) {
       // NEW FLOW: User has credentials - pay with EURO tokens
       console.log('[WALLET PAYMENT] Customer has credentials, initiating EURO token payment');
-      alert('Paiement avec votre portefeuille...');
+      // alert('Paiement avec votre portefeuille...');
 
       try {
-        alert('Étape 1: Récupération du taux EUR/USD...');
-        // 1. Fetch EUR/USD rate from currency API
-        const currencyResponse = await fetch('/api/currency');
-        if (!currencyResponse.ok) {
-          throw new Error('Failed to fetch EUR/USD rate');
-        }
-        const currencyData = await currencyResponse.json();
-        const eurUsdRate = currencyData.eurToUsdRate;
-        console.log('[WALLET PAYMENT] EUR/USD rate:', eurUsdRate);
+        // 1. Get cart total first
+        const amountEuro = getTotalEurPrice();
+        const amountEuroNum = parseFloat(amountEuro);
 
-        alert('Étape 2: Import des fonctions...');
+        // alert('Étape 1: Vérification du solde EURO...');
+        // 2. Check customer's EURO token balance
+        console.log('[WALLET PAYMENT] Checking EURO balance for:', accountName);
+        const balanceResponse = await fetch('https://api.hive-engine.com/rpc/contracts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'find',
+            params: {
+              contract: 'tokens',
+              table: 'balances',
+              query: {
+                account: accountName,
+                symbol: 'EURO'
+              }
+            },
+            id: 1
+          })
+        });
+
+        const balanceData = await balanceResponse.json();
+        const currentEuroBalance = balanceData.result && balanceData.result.length > 0
+          ? parseFloat(balanceData.result[0].balance)
+          : 0;
+
+        console.log('[WALLET PAYMENT] Current EURO balance:', currentEuroBalance, 'Required:', amountEuroNum);
+
+        // Check if sufficient balance
+        if (currentEuroBalance < amountEuroNum) {
+          const deficit = (amountEuroNum - currentEuroBalance).toFixed(2);
+          // alert(`Solde insuffisant! Vous avez ${currentEuroBalance.toFixed(2)} EURO mais il faut ${amountEuroNum.toFixed(2)} EURO. Redirection vers la page de rechargement...`);
+
+          // Redirect to innopay top-up page
+          let innopayUrl: string;
+          if (window.location.hostname === 'localhost') {
+            innopayUrl = 'http://localhost:3000';
+          } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
+            innopayUrl = 'https://wallet.innopay.lu';
+          } else {
+            innopayUrl = `http://${window.location.hostname}:3000`;
+          }
+
+          window.location.href = `${innopayUrl}?account=${accountName}&topup=${deficit}`;
+          return;
+        }
+
+        // alert('Étape 2: Récupération du taux EUR/USD...');
+        // 3. Fetch EUR/USD rate using the same approach as kitchen backend
+        const today = new Date();
+        const rateData = await getLatestEurUsdRate(today);
+        const eurUsdRate = rateData.conversion_rate;
+
+        console.log('[WALLET PAYMENT] EUR/USD rate data:', rateData);
+        console.log('[WALLET PAYMENT] EUR/USD rate:', eurUsdRate, 'isFresh:', rateData.isFresh);
+        // alert(`DEBUG: Taux EUR/USD récupéré = ${eurUsdRate} (type: ${typeof eurUsdRate}, isFresh: ${rateData.isFresh})`);
+
+        // alert('Étape 3: Import des fonctions...');
         // Import necessary functions (signAndBroadcast is now done server-side)
         const { distriate, createEuroTransferOperation } = await import('@/lib/utils');
 
-        alert('Étape 3: Génération du suffix...');
-        // 2. Generate distriateSuffix ONCE (used for both transfers)
+        // alert('Étape 4: Génération du suffix...');
+        // 4. Generate distriateSuffix ONCE (used for both transfers)
         const suffix = distriate();
         console.log('[WALLET PAYMENT] Generated suffix:', suffix);
 
-        alert('Étape 4: Récupération des détails...');
-        // 3. Get payment details
-        const amountEuro = getTotalEurPrice();
+        // alert('Étape 5: Récupération des détails...');
+        // 5. Get payment details
         const orderMemo = getMemo();
 
         console.log('[WALLET PAYMENT] Payment details:', { amountEuro, orderMemo, suffix, eurUsdRate });
 
-        alert(`Étape 5: Création opération EURO (${amountEuro}€)...`);
-        // 4. Create EURO transfer operation (customer → innopay)
+        // alert(`Étape 6: Création opération EURO (${amountEuro}€)...`);
+        // 6. Create EURO transfer operation (customer → innopay)
         const euroOp = createEuroTransferOperation(
           accountName,
           'innopay',
@@ -723,7 +780,7 @@ export default function MenuPage() {
           suffix  // Only suffix, not full order memo
         );
 
-        alert('Étape 6: Signature et diffusion (serveur)...');
+        // alert('Étape 7: Signature et diffusion (serveur)...');
         console.log('[WALLET PAYMENT] Sending operation to server for signing...');
 
         // 5. Sign and broadcast EURO transfer SERVER-SIDE
@@ -754,9 +811,17 @@ export default function MenuPage() {
         const signResult = await signResponse.json();
         const txId = signResult.txId;
         console.log('[WALLET PAYMENT] EURO transfer successful! TX:', txId);
-        alert(`Étape 7: Transaction réussie! TX: ${txId.substring(0, 8)}...`);
+        // alert(`Étape 8: Transaction réussie! TX: ${txId.substring(0, 8)}...`);
 
-        // 6. Call innopay API to execute HBD/EURO transfer to restaurant
+        // Update mini-wallet balance after successful EURO transfer
+        const newBalance = currentEuroBalance - amountEuroNum;
+        console.log('[WALLET PAYMENT] Updating wallet balance from', currentEuroBalance, 'to', newBalance);
+        setWalletBalance({
+          accountName,
+          euroBalance: parseFloat(newBalance.toFixed(2))
+        });
+
+        // 7. Call innopay API to execute HBD/EURO transfer to restaurant
         // Determine Innopay URL based on environment
         let innopayUrl: string;
         if (window.location.hostname === 'localhost') {
@@ -769,26 +834,35 @@ export default function MenuPage() {
 
         console.log('[WALLET PAYMENT] Calling innopay API...');
 
+        const paymentPayload = {
+          customerAccount: accountName,
+          customerTxId: txId,
+          recipient: process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe',
+          amountEuro: amountEuro,
+          eurUsdRate: eurUsdRate,
+          orderMemo: orderMemo,
+          distriateSuffix: suffix
+        };
+
+        console.log('[WALLET PAYMENT] Payment payload:', paymentPayload);
+        // alert(`DEBUG: Envoi à wallet-payment - eurUsdRate = ${eurUsdRate}, amountEuro = ${amountEuro}`);
+
         const response = await fetch(`${innopayUrl}/api/wallet-payment`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customerAccount: accountName,
-            customerTxId: txId,
-            recipient: process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe',
-            amountEuro: amountEuro,
-            eurUsdRate: eurUsdRate,
-            orderMemo: orderMemo,
-            distriateSuffix: suffix
-          })
+          body: JSON.stringify(paymentPayload)
         });
 
         if (!response.ok) {
-          throw new Error(`API error: ${response.status}`);
+          const errorText = await response.text();
+          // alert(`ERREUR API wallet-payment: Status ${response.status} - ${errorText}`);
+          console.error('[WALLET PAYMENT] API error:', response.status, errorText);
+          return;
         }
 
         const result = await response.json();
         console.log('[WALLET PAYMENT] Payment complete!', result);
+        // alert(`SUCCESS: Paiement traité! Type: ${result.transferType || 'unknown'}`);
 
         // 7. Clear cart and show success
         clearCart();
@@ -796,7 +870,7 @@ export default function MenuPage() {
 
       } catch (error: any) {
         console.error('[WALLET PAYMENT] Error:', error);
-        alert(`Erreur: ${error.message || 'Erreur inconnue'}. Vérifiez la console pour plus de détails.`);
+        // alert(`Erreur: ${error.message || 'Erreur inconnue'}. Vérifiez la console pour plus de détails.`);
       }
 
       return; // Exit early - don't run the hive://sign/ flow
@@ -1300,17 +1374,22 @@ export default function MenuPage() {
       {showWalletBalance && walletBalance && (
         <Draggable
           className="z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 rounded-lg shadow-lg"
+          initialPosition={{
+            x: typeof window !== 'undefined' ? window.innerWidth - 316 : 0, // 300px max-width + 16px margin
+            y: typeof window !== 'undefined' ? window.innerHeight - 170 : 0  // Approximate height + 30px lift
+          }}
           style={{
-            left: 'auto',
-            right: '1rem',
-            bottom: '1rem',
-            top: 'auto',
             minWidth: '200px',
             maxWidth: '300px',
           }}
         >
           <div className="flex items-center justify-between gap-3">
-            <div>
+            {/* Drag handle indicator */}
+            <div className="text-white opacity-50 text-xs flex-shrink-0">
+              ⋮⋮
+            </div>
+
+            <div className="flex-1">
               <p className="text-xs opacity-75 mb-1">Votre portefeuille Innopay</p>
               <div className="flex items-center gap-2">
                 <span className="text-2xl">💰</span>

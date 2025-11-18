@@ -141,8 +141,8 @@ export function createEuroTransferOperation(
   memo: string
 ) {
   return {
-    required_auths: [],
-    required_posting_auths: [from],
+    required_auths: [from],
+    required_posting_auths: [],
     id: 'ssc-mainnet-hive',
     json: JSON.stringify({
       contractName: 'tokens',
