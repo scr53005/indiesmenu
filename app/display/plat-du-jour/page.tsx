@@ -151,7 +151,7 @@ export default function PlatDuJourDisplay() {
                 key={plat.dish_id}
                 className="text-center"
               >
-                <p className={`text-5xl font-bold inline ${plat.sold_out ? 'line-through text-yellow-600' : 'text-yellow-400'}`}>
+                <p className={`text-4xl font-bold inline ${plat.sold_out ? 'line-through text-yellow-600' : 'text-yellow-400'}`}>
                   {plat.name}
                 </p>
                 {' '}

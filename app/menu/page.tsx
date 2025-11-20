@@ -84,6 +84,9 @@ export default function MenuPage() {
     euroBalance: number;
   } | null>(null);
 
+  // State for topup success notification
+  const [showTopupSuccess, setShowTopupSuccess] = useState(false);
+
   // State for header carousel
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const carouselImages = [
@@ -186,6 +189,29 @@ export default function MenuPage() {
       fetchCredentials();
     }
   }, [searchParams, clearCart, table]);
+
+  // Check for topup success return from innopay
+  useEffect(() => {
+    const topupSuccess = searchParams.get('topup_success');
+
+    if (topupSuccess === 'true') {
+      console.log('[TOPUP RETURN] User returned from successful topup');
+
+      // Show success banner
+      setShowTopupSuccess(true);
+
+      // Clear the topup_success param from URL
+      const newUrl = `${window.location.pathname}?table=${table}`;
+      window.history.replaceState({}, '', newUrl);
+
+      // Reload page after 2 seconds to refresh wallet balance
+      // This will update the balance and allow user to retry payment
+      setTimeout(() => {
+        console.log('[TOPUP RETURN] Reloading page to refresh wallet balance');
+        window.location.reload();
+      }, 2000);
+    }
+  }, [searchParams, table]);
 
   // Check for existing wallet credentials on mount
   useEffect(() => {
@@ -742,7 +768,7 @@ export default function MenuPage() {
             innopayUrl = `http://${window.location.hostname}:3000`;
           }
 
-          window.location.href = `${innopayUrl}?account=${accountName}&topup=${deficit}`;
+          window.location.href = `${innopayUrl}?account=${accountName}&topup=${deficit}&table=${table}`;
           return;
         }
 
@@ -1306,6 +1332,25 @@ export default function MenuPage() {
             >
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Topup Success Banner */}
+      {showTopupSuccess && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">✓</span>
+              <div>
+                <p className="font-semibold text-base md:text-lg">
+                  Rechargement réussi!
+                </p>
+                <p className="text-sm opacity-90">
+                  Mise à jour du solde en cours...
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
