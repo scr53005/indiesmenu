@@ -87,12 +87,34 @@ export default function MenuPage() {
   // State for topup success notification
   const [showTopupSuccess, setShowTopupSuccess] = useState(false);
 
+  // State for import account modal
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importEmail, setImportEmail] = useState('');
+  const [importError, setImportError] = useState('');
+  const [importAttempts, setImportAttempts] = useState(5);
+  const [importDisabled, setImportDisabled] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+
+  // State for order processing timer
+  const [orderProcessing, setOrderProcessing] = useState(false);
+  const [orderElapsedSeconds, setOrderElapsedSeconds] = useState(0);
+  const orderTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // State for header carousel
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const carouselImages = [
     '/images/indiesInt1600x878.jpg',
     '/images/indiesExt1600x878.jpg'
   ];
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (orderTimerRef.current) {
+        clearInterval(orderTimerRef.current);
+      }
+    };
+  }, []);
 
   // Check for payment success on mount
   useEffect(() => {
@@ -189,6 +211,18 @@ export default function MenuPage() {
       fetchCredentials();
     }
   }, [searchParams, clearCart, table]);
+
+  // Load import attempts counter from localStorage
+  useEffect(() => {
+    const storedAttempts = localStorage.getItem('innopay_import_attempts');
+    if (storedAttempts) {
+      const attempts = parseInt(storedAttempts, 10);
+      setImportAttempts(attempts);
+      if (attempts <= 0) {
+        setImportDisabled(true);
+      }
+    }
+  }, []);
 
   // Check for topup success return from innopay
   useEffect(() => {
@@ -712,13 +746,24 @@ export default function MenuPage() {
     // Check if user has wallet credentials in localStorage
     const accountName = localStorage.getItem('innopay_accountName');
     const activeKey = localStorage.getItem('innopay_activePrivate');
+    const masterPassword = localStorage.getItem('innopay_masterPassword');
 
-    console.log('[WALLET PAYMENT] Checking credentials:', { hasAccount: !!accountName, hasKey: !!activeKey });
+    console.log('[WALLET PAYMENT] Checking credentials:', {
+      hasAccount: !!accountName,
+      hasActiveKey: !!activeKey,
+      hasMasterPassword: !!masterPassword
+    });
 
-    if (accountName && activeKey) {
+    if (accountName && (activeKey || masterPassword)) {
       // NEW FLOW: User has credentials - pay with EURO tokens
       console.log('[WALLET PAYMENT] Customer has credentials, initiating EURO token payment');
-      // alert('Paiement avec votre portefeuille...');
+
+      // Start timer
+      setOrderProcessing(true);
+      setOrderElapsedSeconds(0);
+      orderTimerRef.current = setInterval(() => {
+        setOrderElapsedSeconds(prev => prev + 1);
+      }, 1000);
 
       try {
         // 1. Get cart total first
@@ -768,7 +813,17 @@ export default function MenuPage() {
             innopayUrl = `http://${window.location.hostname}:3000`;
           }
 
-          window.location.href = `${innopayUrl}?account=${accountName}&topup=${deficit}&table=${table}`;
+          // Stop timer before redirect
+          if (orderTimerRef.current) {
+            clearInterval(orderTimerRef.current);
+            orderTimerRef.current = null;
+          }
+          setOrderProcessing(false);
+
+          // Generate order memo to pass to innopay
+          const orderMemo = getMemo();
+
+          window.location.href = `${innopayUrl}?account=${accountName}&topup=${deficit}&table=${table}&order_amount=${amountEuroNum.toFixed(2)}&order_memo=${encodeURIComponent(orderMemo)}`;
           return;
         }
 
@@ -820,13 +875,22 @@ export default function MenuPage() {
           innopaySignUrl = `http://${window.location.hostname}:3000`;
         }
 
+        // Send either activeKey or masterPassword to server for signing
+        const signPayload: any = {
+          operation: euroOp,
+        };
+
+        if (activeKey) {
+          signPayload.activePrivateKey = activeKey;
+        } else if (masterPassword) {
+          signPayload.masterPassword = masterPassword;
+          signPayload.accountName = accountName;
+        }
+
         const signResponse = await fetch(`${innopaySignUrl}/api/sign-and-broadcast`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            operation: euroOp,
-            activePrivateKey: activeKey
-          })
+          body: JSON.stringify(signPayload)
         });
 
         if (!signResponse.ok) {
@@ -883,12 +947,26 @@ export default function MenuPage() {
           const errorText = await response.text();
           // alert(`ERREUR API wallet-payment: Status ${response.status} - ${errorText}`);
           console.error('[WALLET PAYMENT] API error:', response.status, errorText);
+
+          // Stop timer on API error
+          if (orderTimerRef.current) {
+            clearInterval(orderTimerRef.current);
+            orderTimerRef.current = null;
+          }
+          setOrderProcessing(false);
           return;
         }
 
         const result = await response.json();
         console.log('[WALLET PAYMENT] Payment complete!', result);
         // alert(`SUCCESS: Paiement traité! Type: ${result.transferType || 'unknown'}`);
+
+        // Stop timer
+        if (orderTimerRef.current) {
+          clearInterval(orderTimerRef.current);
+          orderTimerRef.current = null;
+        }
+        setOrderProcessing(false);
 
         // 7. Clear cart and show success
         clearCart();
@@ -897,6 +975,13 @@ export default function MenuPage() {
       } catch (error: any) {
         console.error('[WALLET PAYMENT] Error:', error);
         // alert(`Erreur: ${error.message || 'Erreur inconnue'}. Vérifiez la console pour plus de détails.`);
+
+        // Stop timer on error
+        if (orderTimerRef.current) {
+          clearInterval(orderTimerRef.current);
+          orderTimerRef.current = null;
+        }
+        setOrderProcessing(false);
       }
 
       return; // Exit early - don't run the hive://sign/ flow
@@ -966,6 +1051,126 @@ export default function MenuPage() {
     // Show warning modal first
     setShowGuestWarningModal(true);
   }, [cart.length]);
+
+  // Handle import account button click
+  const handleImportAccount = useCallback(() => {
+    if (importDisabled) return;
+    setShowImportModal(true);
+    setImportEmail('');
+    setImportError('');
+  }, [importDisabled]);
+
+  // Handle import account submission
+  const handleImportSubmit = useCallback(async () => {
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const sanitizedEmail = importEmail.trim().toLowerCase();
+
+    if (!emailRegex.test(sanitizedEmail)) {
+      setImportError('Format d\'email invalide');
+      setTimeout(() => setImportError(''), 3000);
+      return;
+    }
+
+    setImportLoading(true);
+    setImportError('');
+
+    try {
+      // Determine Innopay URL
+      let innopayUrl: string;
+      if (window.location.hostname === 'localhost') {
+        innopayUrl = 'http://localhost:3000';
+      } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
+        innopayUrl = 'https://wallet.innopay.lu';
+      } else {
+        innopayUrl = `http://${window.location.hostname}:3000`;
+      }
+
+      console.log('[IMPORT ACCOUNT] Calling innopay API:', `${innopayUrl}/api/account/retrieve`);
+
+      const response = await fetch(`${innopayUrl}/api/account/retrieve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: sanitizedEmail })
+      });
+
+      // Parse response regardless of status
+      const data = await response.json();
+      console.log('[IMPORT ACCOUNT] API response:', { status: response.status, data });
+
+      // Check if account was found
+      if (data.found === true) {
+        console.log('[IMPORT ACCOUNT] Account found:', data.accountName);
+
+        // Save to localStorage
+        localStorage.setItem('innopay_accountName', data.accountName);
+        localStorage.setItem('innopay_masterPassword', data.masterPassword);
+
+        // Save keys if available
+        if (data.keys) {
+          localStorage.setItem('innopay_activePrivate', data.keys.active);
+          localStorage.setItem('innopay_postingPrivate', data.keys.posting);
+          localStorage.setItem('innopay_memoPrivate', data.keys.memo);
+          console.log('[IMPORT ACCOUNT] Saved account with all keys');
+        } else {
+          console.log('[IMPORT ACCOUNT] Saved account (keys not available)');
+        }
+
+        // Close modal and refresh page
+        setShowImportModal(false);
+        console.log('[IMPORT ACCOUNT] Reloading page to activate account');
+        window.location.reload();
+
+      } else if (data.found === false) {
+        // Account not found - this is expected behavior, not an error
+        console.log('[IMPORT ACCOUNT] Account not found for email:', sanitizedEmail);
+
+        // Decrement attempts FIRST
+        const newAttempts = importAttempts - 1;
+        setImportAttempts(newAttempts);
+        localStorage.setItem('innopay_import_attempts', newAttempts.toString());
+        console.log('[IMPORT ACCOUNT] Attempts remaining:', newAttempts);
+
+        // Check if out of attempts
+        if (newAttempts <= 0) {
+          // Final attempt used
+          setImportError('Rien dans la base de données, désolé!');
+          setImportDisabled(true);
+
+          // Close modal after 2 seconds
+          setTimeout(() => {
+            setShowImportModal(false);
+          }, 2000);
+        } else {
+          // Still have attempts remaining
+          setImportError('Vous avez peut-être utilisé une adresse mail différente');
+
+          // Clear error after 3 seconds to allow retry
+          setTimeout(() => {
+            setImportError('');
+            setImportLoading(false);
+          }, 3000);
+        }
+
+      } else {
+        // Unexpected response format
+        console.error('[IMPORT ACCOUNT] Unexpected response format:', data);
+        setImportError('Erreur de réponse du serveur');
+        setTimeout(() => {
+          setImportError('');
+          setImportLoading(false);
+        }, 3000);
+      }
+
+    } catch (error) {
+      console.error('[IMPORT ACCOUNT] Network or parsing error:', error);
+      setImportError('Erreur de connexion au serveur');
+      setTimeout(() => {
+        setImportError('');
+        setImportLoading(false);
+      }, 3000);
+    }
+  }, [importEmail, importAttempts]);
 
   const proceedWithGuestCheckout = useCallback(async () => {
     try {
@@ -1131,6 +1336,22 @@ export default function MenuPage() {
 
             {/* Center zone: Buttons stacked */}
             <div className="flex flex-col items-center gap-2 flex-shrink-0">
+              {/* Import Account Button */}
+              <button
+                onClick={handleImportAccount}
+                disabled={importDisabled}
+                className={`px-3 py-1.5 rounded-lg font-normal text-xs transition-colors w-[120px] text-center ${
+                  importDisabled
+                    ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                    : 'bg-sky-200 text-gray-800 hover:bg-sky-300'
+                }`}
+                style={{ whiteSpace: 'normal', lineHeight: '1.3' }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                Importer un compte
+              </button>
+
               <button
                 onClick={() => {
                   // Build base URL based on environment
@@ -1336,6 +1557,37 @@ export default function MenuPage() {
         </div>
       )}
 
+      {/* DEV ONLY: Clear localStorage button */}
+      {(window.location.hostname === 'localhost' ||
+        window.location.hostname.includes('127.0.0.1') ||
+        window.location.hostname.startsWith('192.168.')) && (
+        <div className="fixed top-2 right-2 z-[10001]">
+          <button
+            onClick={() => {
+              if (confirm('Clear all localStorage (dev only)?')) {
+                // Clear all innopay-related items
+                localStorage.removeItem('innopay_accountName');
+                localStorage.removeItem('innopay_masterPassword');
+                localStorage.removeItem('innopay_activePrivate');
+                localStorage.removeItem('innopay_postingPrivate');
+                localStorage.removeItem('innopay_memoPrivate');
+                localStorage.removeItem('innopay_import_attempts');
+                localStorage.removeItem('innopay_accounts');
+                localStorage.removeItem('innopay_wallet_credentials');
+
+                console.log('[DEV] localStorage cleared');
+                alert('localStorage cleared! Reloading...');
+                window.location.reload();
+              }
+            }}
+            className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1 rounded shadow-lg font-mono"
+            title="Development only: Clear localStorage"
+          >
+            🧹 Clear LS
+          </button>
+        </div>
+      )}
+
       {/* Topup Success Banner */}
       {showTopupSuccess && (
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
@@ -1459,6 +1711,61 @@ export default function MenuPage() {
         </Draggable>
       )}
 
+      {/* Import Account Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-60">
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl relative">
+            {/* Close button */}
+            <button
+              onClick={() => setShowImportModal(false)}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+            >
+              ×
+            </button>
+
+            <h3 className="text-xl font-bold mb-4 text-gray-800 text-center">Importer un compte</h3>
+
+            {!importError ? (
+              <>
+                <p className="text-sm text-gray-600 mb-4 text-center">
+                  Entrez l'adresse email que vous avez utilisé pour créer le compte
+                </p>
+
+                <input
+                  type="email"
+                  value={importEmail}
+                  onChange={(e) => setImportEmail(e.target.value)}
+                  placeholder="votre@email.com"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg mb-4 focus:outline-none focus:border-blue-500 text-gray-800"
+                  disabled={importLoading}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !importLoading) {
+                      handleImportSubmit();
+                    }
+                  }}
+                />
+
+                <p className="text-xs text-gray-500 mb-4 text-center">
+                  {importAttempts} tentative{importAttempts > 1 ? 's' : ''} restante{importAttempts > 1 ? 's' : ''}
+                </p>
+
+                <button
+                  onClick={handleImportSubmit}
+                  disabled={importLoading || !importEmail}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {importLoading ? 'Recherche...' : 'Récupérer'}
+                </button>
+              </>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-red-600 font-semibold text-lg">{importError}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Guest Checkout Warning Modal */}
       {showGuestWarningModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-60">
@@ -1548,8 +1855,8 @@ export default function MenuPage() {
             <button onClick={handleCallWaiter} className="call-waiter-button">
               Serveur&nbsp;!
             </button>
-            <button onClick={handleOrder} className="order-now-button">
-              Commandez
+            <button onClick={handleOrder} className="order-now-button" disabled={orderProcessing}>
+              {orderProcessing ? `${orderElapsedSeconds}s` : 'Commandez'}
             </button>
           </div>
         </div>
