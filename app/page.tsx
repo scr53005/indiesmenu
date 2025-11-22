@@ -530,6 +530,11 @@ export default function Home() {
       ) : (
         <ul>
           {transfers.map(tx => {
+          // Debug: Log the raw timestamp
+          if (tx.symbol === 'EURO') {
+            console.log('[DEBUG] EURO transfer timestamp:', tx.id, tx.received_at, 'Type:', typeof tx.received_at);
+          }
+
           // Format received_at as CEST
           const receivedDateTime = new Date(tx.received_at).toLocaleString('en-GB', {
             timeZone: 'Europe/Paris',

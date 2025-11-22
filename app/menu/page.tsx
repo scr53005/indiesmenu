@@ -67,6 +67,7 @@ export default function MenuPage() {
 
   // State for guest checkout warning modal
   const [showGuestWarningModal, setShowGuestWarningModal] = useState(false);
+  const [guestCheckoutStarted, setGuestCheckoutStarted] = useState(false);
 
   // State for account creation success notification
   const [showAccountCreated, setShowAccountCreated] = useState(false);
@@ -1174,6 +1175,9 @@ export default function MenuPage() {
 
   const proceedWithGuestCheckout = useCallback(async () => {
     try {
+      // Hide wallet notification banner when guest checkout starts
+      setGuestCheckoutStarted(true);
+
       // Use no-discount price + 5% processing fee
       const amountEuroNoDiscount = parseFloat(getTotalEurPriceNoDiscount());
       const amountEuroWithFee = amountEuroNoDiscount * 1.05;
@@ -1302,7 +1306,7 @@ export default function MenuPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Wallet Notification Banner */}
-      {showWalletNotification && !walletCredentials && (
+      {showWalletNotification && !walletCredentials && !guestCheckoutStarted && !showPaymentSuccess && (
         <Draggable
           className="z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg rounded-lg"
           style={{

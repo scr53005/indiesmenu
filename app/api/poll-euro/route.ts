@@ -8,31 +8,6 @@ const hafPool = new Pool({
   query_timeout: 30000,
 });
 
-// Convert UTC timestamp to Luxembourg/Paris timezone
-function utcToLuxembourg(utcTimestamp: string | Date): Date {
-  const date = new Date(utcTimestamp);
-  // Use sv-SE locale for unambiguous YYYY-MM-DD HH:mm:ss format
-  const luxString = date.toLocaleString('sv-SE', { timeZone: 'Europe/Luxembourg' });
-  return new Date(luxString);
-}
-
-// Format Date to Luxembourg time ISO string
-function formatLuxembourgTime(date: Date): string {
-  // Format to Luxembourg time and return as ISO-like string
-  const luxString = date.toLocaleString('sv-SE', {
-    timeZone: 'Europe/Luxembourg',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-  // sv-SE format is YYYY-MM-DD HH:mm:ss, convert to ISO format
-  return luxString.replace(' ', 'T') + '.000Z';
-}
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -45,8 +20,9 @@ export async function GET(request: Request) {
     const client = await hafPool.connect();
 
     try {
-      // Set statement timeout at the session level
+      // Set statement timeout and timezone at the session level
       await client.query('SET statement_timeout = 30000'); // 30 seconds for polling
+      await client.query("SET timezone = 'UTC'"); // Ensure timestamps are in UTC
 
       // Query the latest block number
       const blockQuery = await client.query(`
@@ -62,7 +38,7 @@ export async function GET(request: Request) {
       const result = await client.query(
         `SELECT
           id,
-          timestamp,
+          timestamp AT TIME ZONE 'UTC' as timestamp,
           required_auths,
           json,
           block_num
@@ -131,6 +107,8 @@ export async function GET(request: Request) {
         const exists = await prisma.transfers.findUnique({ where: { id: BigInt(transfer.id) } });
         if (!exists) {
           console.log('Inserting EURO transfer:', transfer.id);
+          console.log('[DEBUG] HAF timestamp:', row.timestamp, 'Type:', typeof row.timestamp);
+          console.log('[DEBUG] Parsed as Date:', new Date(transfer.timestamp).toISOString());
           await prisma.transfers.create({
             data: {
               id: BigInt(transfer.id),
@@ -140,7 +118,7 @@ export async function GET(request: Request) {
               memo: transfer.memo,
               parsed_memo: transfer.parsedMemo,
               fulfilled: false,
-              received_at: utcToLuxembourg(transfer.timestamp),
+              received_at: new Date(transfer.timestamp), // Store as UTC
             },
           });
           console.log('Inserted EURO transfer to back-end DB:', transfer.id);
@@ -175,7 +153,7 @@ export async function GET(request: Request) {
         symbol: t.symbol,
         memo: t.memo,
         parsedMemo: t.parsed_memo,
-        received_at: t.received_at ? formatLuxembourgTime(t.received_at) : formatLuxembourgTime(new Date()),
+        received_at: t.received_at ? t.received_at.toISOString() : new Date().toISOString(), // Send as UTC ISO string
       }));
 
       const latestId = result.rows.length ? result.rows[0].id.toString() : lastId;
