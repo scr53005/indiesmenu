@@ -507,13 +507,17 @@ export default function MenuPage() {
       }
     } else {
       // Detect Safari/iOS and show wallet notification proactively
+      // BUT only if no account exists in localStorage
       const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const hasAccount = !!localStorage.getItem('innopay_accountName');
 
-      if (isSafari || isIOS) {
-        console.log('Safari/iOS detected - showing wallet notification proactively');
+      if ((isSafari || isIOS) && !hasAccount) {
+        console.log('Safari/iOS detected (no account) - showing wallet notification proactively');
         setShowWalletNotification(true);
         setIsSafariBanner(true);
+      } else if (hasAccount) {
+        console.log('Safari/iOS detected but account exists - skipping banner');
       }
     }
   }, []);
