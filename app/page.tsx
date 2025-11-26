@@ -68,6 +68,7 @@ export default function Home() {
   const canPlayAudioRef = useRef(canPlayAudio); // Add ref for canPlayAudio
   const isPollingHbdActiveRef = useRef(false); // To prevent concurrent HBD poll executions
   const isPollingEuroActiveRef = useRef(false); // To prevent concurrent EURO poll executions
+  const reminderIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map()); // Track reminder intervals for each order
 
   // Update refs whenever the corresponding state changes
   useEffect(() => { lastIdHbdRef.current = lastIdHbd; }, [lastIdHbd]);
@@ -79,9 +80,9 @@ export default function Home() {
   // Initialize audio elements once
   useEffect(() => {
     if (typeof window !== 'undefined') {
-        bell1Ref.current = new Audio('/sounds/doorbell.mp3');
+        bell1Ref.current = new Audio('/sounds/police-siren.mp3');
         bell1Ref.current.load();
-        console.log('Doorbell file preloaded');
+        console.log('Police siren file preloaded');
         // Preload the second bell sound
         bell2Ref.current = new Audio('/sounds/chime-2.mp3');
         bell2Ref.current.load();
@@ -219,6 +220,18 @@ export default function Home() {
             if (canPlayAudioRef.current) {
               console.log('Trying to play bell sounds for new transfers');
               playBellSounds();
+
+              // Start 30-second reminder intervals for each new transfer
+              newTransfersToDisplay.forEach(tx => {
+                const intervalId = setInterval(() => {
+                  if (canPlayAudioRef.current) {
+                    playBellSounds();
+                    console.log(`Reminder bell for order ${tx.id}`);
+                  }
+                }, 30000); // 30 seconds
+                reminderIntervalsRef.current.set(tx.id, intervalId);
+                console.log(`Started reminder interval for order ${tx.id}`);
+              });
             } else {
               console.log('New transfer seen but canPlayAudio is ' + canPlayAudioRef.current + ', not playing sounds');
             }
@@ -326,6 +339,18 @@ export default function Home() {
             if (canPlayAudioRef.current) {
               console.log('Trying to play bell sounds for new EURO transfers');
               playBellSounds();
+
+              // Start 30-second reminder intervals for each new EURO transfer
+              newTransfersToDisplay.forEach(tx => {
+                const intervalId = setInterval(() => {
+                  if (canPlayAudioRef.current) {
+                    playBellSounds();
+                    console.log(`Reminder bell for EURO order ${tx.id}`);
+                  }
+                }, 30000); // 30 seconds
+                reminderIntervalsRef.current.set(tx.id, intervalId);
+                console.log(`Started reminder interval for EURO order ${tx.id}`);
+              });
             } else {
               console.log('New EURO transfer seen but canPlayAudio is ' + canPlayAudioRef.current + ', not playing sounds');
             }
@@ -419,7 +444,15 @@ export default function Home() {
     setLoading(false); // Set loading to false once polling is initiated
 
     // Cleanup function: Clear the interval when the component unmounts
-    return () => clearInterval(intervalId);
+    return () => {
+      clearInterval(intervalId);
+      // Also clear all reminder intervals to prevent memory leaks
+      reminderIntervalsRef.current.forEach((intervalId) => {
+        clearInterval(intervalId);
+      });
+      reminderIntervalsRef.current.clear();
+      console.log('Cleared all reminder intervals on unmount');
+    };
   }, [pollHbd, pollEuro]); // Dependencies: both polling functions are stable because of useCallback
 
  
@@ -453,6 +486,14 @@ export default function Home() {
       });
       const data = await res.json();
       if (res.ok) {
+        // Clear reminder interval for this order
+        const intervalId = reminderIntervalsRef.current.get(id);
+        if (intervalId) {
+          clearInterval(intervalId);
+          reminderIntervalsRef.current.delete(id);
+          console.log(`Cleared reminder interval for order ${id}`);
+        }
+
         setTransfers(prev => prev.filter(tx => tx.id !== id));
         // Remove fulfilled transfer from seen IDs to allow re-toast if re-added
         setSeenTransferIds(prev => {

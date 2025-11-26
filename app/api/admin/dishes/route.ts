@@ -3,30 +3,38 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// GET - Fetch dishes by category
+// GET - Fetch dishes (optionally by category)
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const category = searchParams.get('category');
 
-    if (!category) {
-      return NextResponse.json({ error: 'Category parameter required' }, { status: 400 });
-    }
+    let dishes;
 
-    const dishes = await prisma.dishes.findMany({
-      where: {
-        categories_dishes: {
-          some: {
-            categories: {
-              name: category,
+    if (category) {
+      // Fetch dishes in specific category
+      dishes = await prisma.dishes.findMany({
+        where: {
+          categories_dishes: {
+            some: {
+              categories: {
+                name: category,
+              },
             },
           },
         },
-      },
-      orderBy: {
-        position: 'asc',
-      },
-    });
+        orderBy: {
+          position: 'asc',
+        },
+      });
+    } else {
+      // Fetch all dishes
+      dishes = await prisma.dishes.findMany({
+        orderBy: {
+          name: 'asc',
+        },
+      });
+    }
 
     return NextResponse.json(dishes);
   } catch (error) {
