@@ -4,11 +4,12 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useCart } from '@/app/context/CartContext';
-import MenuItem from '@/components/MenuItem'; // Import the new MenuItem component
-import CartItemDisplay from '@/components/CartItemDisplay'; // Import the new CartItemDisplay component
-import Draggable from '@/app/components/Draggable'; // Import the new Draggable component
-import BottomBanner from '@/app/components/BottomBanner'; // Import the new BottomBanner component
-import { getLatestEurUsdRate } from '@/lib/utils'; // Import currency rate utility
+import MenuItem from '@/components/menu/MenuItem';
+import CartItemDisplay from '@/components/menu/CartItemDisplay';
+import MiniWallet, { WalletReopenButton } from '@/components/ui/MiniWallet';
+import Draggable from '@/components/ui/Draggable';
+import BottomBanner from '@/components/ui/BottomBanner';
+import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation } from '@/lib/utils'; // Import currency rate and innopay URL utilities
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
@@ -47,6 +48,7 @@ export default function MenuPage() {
 
   // Refs for dynamic height calculation
   const cartRef = useRef<HTMLDivElement>(null);
+  const cartItemsListRef = useRef<HTMLDivElement>(null); // Ref for scrollable cart items list
   const menuSelectorRef = useRef<HTMLDivElement>(null);
   const welcomeCarouselRef = useRef<HTMLDivElement>(null);
   const [cartHeight, setCartHeight] = useState(0);
@@ -56,6 +58,7 @@ export default function MenuPage() {
   // State for wallet notification
   const [showWalletNotification, setShowWalletNotification] = useState(false);
   const [isSafariBanner, setIsSafariBanner] = useState(false); // Track if banner is shown for Safari
+  const [isCallWaiterFlow, setIsCallWaiterFlow] = useState(false); // Track if banner is for call waiter
   const [walletCredentials, setWalletCredentials] = useState<{username: string, activeKey: string} | null>(null);
 
   // State for payment success notification
@@ -84,17 +87,31 @@ export default function MenuPage() {
     accountName: string;
     euroBalance: number;
   } | null>(null);
+  const [refreshBalanceTrigger, setRefreshBalanceTrigger] = useState(0); // Increment to trigger balance refresh
 
   // State for topup success notification
   const [showTopupSuccess, setShowTopupSuccess] = useState(false);
 
-  // State for import account modal
+  // Flow-specific success states (explicitly named for code readability)
+  const [flow4Success, setFlow4Success] = useState(false); // create_account_only
+  const [flow5Success, setFlow5Success] = useState(false); // create_account_and_pay
+  const [flow6Success, setFlow6Success] = useState(false); // pay_with_account
+  const [flow7Success, setFlow7Success] = useState(false); // pay_with_topup
+
+  // State for import account modal (email verification system)
   const [showImportModal, setShowImportModal] = useState(false);
   const [importEmail, setImportEmail] = useState('');
   const [importError, setImportError] = useState('');
   const [importAttempts, setImportAttempts] = useState(5);
   const [importDisabled, setImportDisabled] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
+  const [importStep, setImportStep] = useState<'email' | 'code' | 'select'>('email');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [multipleAccounts, setMultipleAccounts] = useState<Array<{
+    accountName: string;
+    creationDate: string;
+    euroBalance: number;
+  }>>([]);
 
   // State for order processing timer
   const [orderProcessing, setOrderProcessing] = useState(false);
@@ -107,6 +124,22 @@ export default function MenuPage() {
     '/images/indiesInt1600x878.jpg',
     '/images/indiesExt1600x878.jpg'
   ];
+
+  // Flow-specific success handlers - defined early to avoid hoisting issues
+  const handleFlow5Success = useCallback(() => {
+    console.log('[FLOW 5] create_account_and_pay success');
+    setFlow5Success(true);
+  }, []);
+
+  const handleFlow6Success = useCallback(() => {
+    console.log('[FLOW 6] pay_with_account success');
+    setFlow6Success(true);
+  }, []);
+
+  const handleFlow7Success = useCallback(() => {
+    console.log('[FLOW 7] pay_with_topup success');
+    setFlow7Success(true);
+  }, []);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -139,31 +172,51 @@ export default function MenuPage() {
     }
   }, [searchParams, clearCart, table]);
 
-  // Check for account creation success on mount
+  // Check for account creation success OR existing account (Flow 5) OR order success (Flow 7) on mount
   useEffect(() => {
     const accountCreated = searchParams.get('account_created');
+    const existingAccount = searchParams.get('existing_account');
+    const orderSuccess = searchParams.get('order_success');
     const credentialToken = searchParams.get('credential_token');
-    console.log('[ACCOUNT CREATED CHECK] accountCreated:', accountCreated, 'credentialToken:', credentialToken);
+    const sessionId = searchParams.get('session_id'); // Flow 7 uses Stripe session_id
+    const balance = searchParams.get('balance');
 
-    if (accountCreated === 'true' && credentialToken) {
+    // 🔧 DEBUG: Log URL params to localStorage to persist across page reload
+    const flowMarker = localStorage.getItem('innopay_flow_pending');
+    const debugLog = {
+      timestamp: new Date().toISOString(),
+      url: window.location.href,
+      accountCreated,
+      existingAccount,
+      orderSuccess,
+      credentialToken,
+      sessionId,
+      flowMarker
+    };
+    localStorage.setItem('innopay_debug_last_params', JSON.stringify(debugLog));
+    console.log('[CREDENTIAL CHECK] 🔧 DEBUG LOG:', debugLog);
+    console.log('[CREDENTIAL CHECK] accountCreated:', accountCreated, 'existingAccount:', existingAccount, 'orderSuccess:', orderSuccess, 'credentialToken:', credentialToken, 'sessionId:', sessionId, 'flowMarker:', flowMarker);
+
+    // For Flow 7, we get order_success=true and session_id from Stripe redirect
+    // For Flow 5, we get credential_token from webhook
+    const hasCredentials = credentialToken || sessionId;
+
+    if ((accountCreated === 'true' || existingAccount === 'true' || orderSuccess === 'true') && hasCredentials) {
       // Retrieve credentials from innopay API using the token
       const fetchCredentials = async () => {
         try {
-          // Determine Innopay URL
-          let innopayUrl: string;
-          if (window.location.hostname === 'localhost') {
-            innopayUrl = 'http://localhost:3000';
-          } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
-            innopayUrl = 'https://wallet.innopay.lu';
-          } else {
-            innopayUrl = `http://${window.location.hostname}:3000`;
-          }
+          const innopayUrl = getInnopayUrl();
 
-          console.log('[ACCOUNT CREATED] Fetching credentials from innopay with token');
+          console.log('[ACCOUNT CREATED] Fetching credentials from innopay');
+          console.log('[ACCOUNT CREATED] Using:', credentialToken ? `credentialToken: ${credentialToken}` : `sessionId: ${sessionId}`);
+
           const response = await fetch(`${innopayUrl}/api/account/credentials`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credentialToken })
+            body: JSON.stringify({
+              ...(credentialToken && { credentialToken }),
+              ...(sessionId && { sessionId })
+            })
           });
 
           if (!response.ok) {
@@ -181,29 +234,152 @@ export default function MenuPage() {
           localStorage.setItem('innopay_postingPrivate', credentials.keys.posting.privateKey);
           localStorage.setItem('innopay_memoPrivate', credentials.keys.memo.privateKey);
 
-          // Show success banner
-          setNewAccountCredentials({
-            accountName: credentials.accountName,
-            masterPassword: credentials.masterPassword,
-            euroBalance: credentials.euroBalance,
-          });
-          setShowAccountCreated(true);
-          setAccountCreationComplete(true); // Mark as complete immediately (blockchain already done)
+          // Determine flow from explicit marker (more reliable than URL params)
+          const currentFlow = flowMarker; // Read from closure variable set above
+          console.log('[FLOW DETECTION] Current flow marker:', currentFlow);
 
-          // Clear cart since account was created with payment
-          clearCart();
+          // Store balance to localStorage ONLY if NOT Flow 7 (Flow 7 will fetch real balance)
+          if (currentFlow !== 'flow7_topup_and_pay') {
+            localStorage.setItem('innopay_lastBalance', (credentials.euroBalance || 0).toString());
+            console.log('[ACCOUNT CREATED] Stored balance to localStorage:', credentials.euroBalance);
+          } else {
+            console.log('[FLOW 7] Skipping balance storage - will fetch real balance from blockchain');
+          }
 
-          console.log('[ACCOUNT CREATED] Success banner shown for account:', credentials.accountName);
+          // Handle differently based on flow
+          if (existingAccount === 'true') {
+            // FLOW 5 EXISTING ACCOUNT: Check balance and trigger payment
+            console.log('[EXISTING ACCOUNT] Retrieved credentials for existing account:', credentials.accountName);
+            console.log('[EXISTING ACCOUNT] Balance:', credentials.euroBalance);
 
-          // Remove query params from URL
-          const newUrl = `${window.location.pathname}?table=${table}`;
-          window.history.replaceState({}, '', newUrl);
+            // Update wallet balance state
+            setWalletBalance({
+              accountName: credentials.accountName,
+              euroBalance: credentials.euroBalance
+            });
 
-          // Refresh page after 3 seconds to load mini wallet with stored credentials
-          setTimeout(() => {
-            console.log('[ACCOUNT CREATED] Refreshing page to display mini wallet');
-            window.location.reload();
-          }, 3000);
+            // Remove query params from URL
+            const newUrl = `${window.location.pathname}?table=${table}`;
+            window.history.replaceState({}, '', newUrl);
+
+            // Check if Flow 5 marker exists, update to handover
+            if (currentFlow === 'flow5_create_and_pay') {
+              localStorage.setItem('innopay_flow_pending', 'flow5_existing_account_handover');
+              console.log('[FLOW 5] Marker updated: flow5_create_and_pay -> flow5_existing_account_handover');
+            }
+
+            // Auto-trigger payment check after a brief delay to let state update
+            setTimeout(() => {
+              const cartTotal = parseFloat(getTotalEurPrice());
+              console.log('[EXISTING ACCOUNT] Cart total:', cartTotal);
+
+              if (credentials.euroBalance >= cartTotal) {
+                // Sufficient balance - trigger Flow 6 (pay_with_account)
+                console.log('[EXISTING ACCOUNT] Sufficient balance - triggering Flow 6 payment');
+                handleOrder();
+              } else {
+                // Insufficient balance - trigger Flow 7 (pay_with_topup)
+                console.log('[EXISTING ACCOUNT] Insufficient balance - triggering Flow 7');
+                // Flow 7 will be triggered by the normal checkout button logic
+                // which detects insufficient balance
+                alert('Balance insuffisant. Redirection vers le rechargement...');
+                // The user will need to click Commander again, which will trigger Flow 7
+              }
+            }, 500);
+          } else {
+            // Use explicit flow marker for reliable flow detection
+            if (currentFlow === 'flow7_topup_and_pay') {
+              // FLOW 7: Topup with order payment (unified webhook)
+              console.log('[FLOW 7 SUCCESS] Order completed via unified webhook approach');
+              console.log('[FLOW 7 SUCCESS] Account:', credentials.accountName, 'Balance:', credentials.euroBalance);
+
+              // Update wallet balance state with optimistic balance from webhook
+              setWalletBalance({
+                accountName: credentials.accountName,
+                euroBalance: credentials.euroBalance // Will be replaced by real balance from API
+              });
+
+              // Store balance with timestamp to prevent stale cache overwrites
+              localStorage.setItem('innopay_lastBalance', credentials.euroBalance.toString());
+              localStorage.setItem('innopay_lastBalance_timestamp', Date.now().toString());
+
+              // Clear cart - order has been paid
+              clearCart();
+
+              // Clear flow marker - flow is complete
+              localStorage.removeItem('innopay_flow_pending');
+              console.log('[FLOW 7 SUCCESS] Cleared flow marker');
+
+              // Remove query params from URL
+              const newUrl = `${window.location.pathname}?table=${table}`;
+              window.history.replaceState({}, '', newUrl);
+
+              // Show success banner
+              handleFlow7Success();
+              console.log('[FLOW 7 SUCCESS] Order paid successfully - cart cleared, balance updated, banner shown');
+
+              // Trigger balance refresh AFTER all state updates and localStorage writes complete
+              // Increased from 3 to 5 seconds to allow Hive-Engine cache to update
+              setTimeout(() => {
+                console.log('[FLOW 7] Triggering balance refresh to fetch real on-chain balance');
+                setRefreshBalanceTrigger(prev => prev + 1);
+              }, 5000); // 5 seconds to allow Hive-Engine cache to catch up
+
+            } else if (currentFlow === 'flow5_create_and_pay') {
+              // FLOW 5: Create new account with order payment
+              console.log('[FLOW 5 NEW ACCOUNT] Account created - webhook already paid restaurant');
+
+              // Update wallet balance state
+              setWalletBalance({
+                accountName: credentials.accountName,
+                euroBalance: credentials.euroBalance
+              });
+
+              // Clear cart - order was already paid by webhook
+              clearCart();
+
+              // Clear flow marker - flow is complete
+              localStorage.removeItem('innopay_flow_pending');
+              console.log('[FLOW 5 NEW ACCOUNT] Cart cleared, flow marker removed - order complete');
+
+              // Remove query params from URL
+              const newUrl = `${window.location.pathname}?table=${table}`;
+              window.history.replaceState({}, '', newUrl);
+
+              // Show success banner for Flow 5 (create_account_and_pay)
+              setNewAccountCredentials({
+                accountName: credentials.accountName,
+                masterPassword: credentials.masterPassword,
+                euroBalance: credentials.euroBalance,
+              });
+              handleFlow5Success();
+
+            } else {
+              // Normal account creation without order (no Flow 5 marker)
+              setNewAccountCredentials({
+                accountName: credentials.accountName,
+                masterPassword: credentials.masterPassword,
+                euroBalance: credentials.euroBalance,
+              });
+              setShowAccountCreated(true);
+              setAccountCreationComplete(true); // Mark as complete immediately (blockchain already done)
+
+              // Clear cart since account was created with payment
+              clearCart();
+
+              console.log('[ACCOUNT CREATED] Success banner shown for account:', credentials.accountName);
+
+              // Remove query params from URL
+              const newUrl = `${window.location.pathname}?table=${table}`;
+              window.history.replaceState({}, '', newUrl);
+
+              // Refresh page after 3 seconds to load mini wallet with stored credentials
+              setTimeout(() => {
+                console.log('[ACCOUNT CREATED] Refreshing page to display mini wallet');
+                window.location.reload();
+              }, 3000);
+            }
+          }
         } catch (error) {
           console.error('[ACCOUNT CREATED] Error fetching credentials:', error);
         }
@@ -211,7 +387,40 @@ export default function MenuPage() {
 
       fetchCredentials();
     }
-  }, [searchParams, clearCart, table]);
+  }, [searchParams, clearCart, table, handleFlow5Success, handleFlow7Success]);
+
+  // 🔧 DEBUG: Display last URL params from localStorage (persists across page reload)
+  useEffect(() => {
+    const debugLog = localStorage.getItem('innopay_debug_last_params');
+    if (debugLog) {
+      try {
+        const parsed = JSON.parse(debugLog);
+        console.log('🔧 [DEBUG RESTORE] Last URL params before any reload:', parsed);
+      } catch (e) {
+        console.error('🔧 [DEBUG RESTORE] Failed to parse debug log:', e);
+      }
+    }
+  }, []);
+
+  // 🔧 DEBUG: Load Eruda for mobile debugging
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+    script.onload = () => {
+      if ((window as any).eruda) {
+        (window as any).eruda.init();
+        console.log('🔧 Eruda mobile debugger loaded - tap floating button to open console');
+      }
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      // Cleanup on unmount
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    };
+  }, []);
 
   // Load import attempts counter from localStorage
   useEffect(() => {
@@ -225,91 +434,267 @@ export default function MenuPage() {
     }
   }, []);
 
-  // Check for topup success return from innopay
+  // Check for topup success return from innopay (Flow 2 - pure topup without order)
   useEffect(() => {
     const topupSuccess = searchParams.get('topup_success');
+    const sessionId = searchParams.get('session_id');
+    const amountParam = searchParams.get('amount');
+
+    console.log('[TOPUP RETURN] Check:', {
+      topupSuccess,
+      sessionId,
+      amountParam,
+      cartLength: cart.length
+    });
 
     if (topupSuccess === 'true') {
-      console.log('[TOPUP RETURN] User returned from successful topup');
+      console.log('[TOPUP RETURN] User returned from successful topup', {
+        hasSessionId: !!sessionId,
+        hasAmount: !!amountParam
+      });
 
-      // Show success banner
-      setShowTopupSuccess(true);
+      // If session_id is present, this is create_account_and_pay flow
+      // Fetch credentials and set optimistic balance
+      if (sessionId) {
+        console.log('[TOPUP RETURN] create_account_and_pay flow detected, fetching credentials');
 
-      // Clear the topup_success param from URL
-      const newUrl = `${window.location.pathname}?table=${table}`;
-      window.history.replaceState({}, '', newUrl);
+        const fetchCredentialsAndClearCart = async () => {
+          try {
+            const innopayUrl = getInnopayUrl();
 
-      // Reload page after 2 seconds to refresh wallet balance
-      // This will update the balance and allow user to retry payment
-      setTimeout(() => {
-        console.log('[TOPUP RETURN] Reloading page to refresh wallet balance');
-        window.location.reload();
-      }, 2000);
+            console.log('[TOPUP RETURN] Fetching credentials with session_id:', sessionId);
+            const response = await fetch(`${innopayUrl}/api/account/credentials`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId })
+            });
+
+            if (!response.ok) {
+              console.error('[TOPUP RETURN] Failed to fetch credentials:', response.status);
+              return;
+            }
+
+            const credentials = await response.json();
+            console.log('[TOPUP RETURN] Credentials fetched:', credentials.accountName);
+
+            // Store credentials in localStorage
+            localStorage.setItem('innopay_accountName', credentials.accountName);
+            if (credentials.masterPassword) {
+              localStorage.setItem('innopay_masterPassword', credentials.masterPassword);
+            }
+            if (credentials.keys?.active?.privateKey) {
+              localStorage.setItem('innopay_activePrivate', credentials.keys.active.privateKey);
+            }
+            if (credentials.keys?.posting?.privateKey) {
+              localStorage.setItem('innopay_postingPrivate', credentials.keys.posting.privateKey);
+            }
+            if (credentials.keys?.memo?.privateKey) {
+              localStorage.setItem('innopay_memoPrivate', credentials.keys.memo.privateKey);
+            }
+
+            // Set optimistic balance if amount provided
+            if (amountParam) {
+              const optimisticBalance = parseFloat(amountParam);
+              console.log('[TOPUP RETURN] Setting optimistic balance:', optimisticBalance);
+              // Save to localStorage for persistence
+              localStorage.setItem('innopay_lastBalance', optimisticBalance.toString());
+              setWalletBalance({
+                accountName: credentials.accountName,
+                euroBalance: optimisticBalance
+              });
+            } else {
+              // FLOW 4: create_account_only - fetch actual balance from API
+              console.log('[FLOW 4] create_account_only flow - setting balance from credentials');
+              // Save credentials balance to localStorage
+              localStorage.setItem('innopay_lastBalance', (credentials.euroBalance || 0).toString());
+              setWalletBalance({
+                accountName: credentials.accountName,
+                euroBalance: credentials.euroBalance || 0
+              });
+              // Show MiniWallet for new users (Bug fix #3)
+              setShowWalletBalance(true);
+            }
+
+            // Clear cart only if this was create_account_and_pay (has amount param)
+            if (amountParam) {
+              console.log('[TOPUP RETURN] Clearing cart after successful create_account_and_pay');
+              clearCart();
+            } else {
+              console.log('[FLOW 4] create_account_only - keeping cart intact');
+            }
+
+            // Show success banner (Flow 4 vs others)
+            if (amountParam) {
+              setShowTopupSuccess(true);
+            } else {
+              // FLOW 4: Create account only (no order)
+              setFlow4Success(true);
+              console.log('[FLOW 4] Account created successfully, showing Flow 4 success banner');
+            }
+
+            // Clear params from URL
+            const newUrl = `${window.location.pathname}?table=${table}`;
+            window.history.replaceState({}, '', newUrl);
+
+            // Reload after 3 seconds to fetch real balance
+            setTimeout(() => {
+              console.log('[TOPUP RETURN] Reloading to fetch real balance');
+              window.location.reload();
+            }, 3000);
+
+          } catch (error) {
+            console.error('[TOPUP RETURN] Error fetching credentials:', error);
+          }
+        };
+
+        fetchCredentialsAndClearCart();
+
+      } else {
+        // ───────────────────────────────────────────────────────────────────────────────
+        // FLOW 7 RETURN: Topup successful, reload to trigger Flow 6 payment
+        // Reference: FLOWS.md lines 197-244 - Step B Auto-pay
+        // Flow 7 marker is already set in sessionStorage before redirect
+        // After reload, the Flow 7 completion useEffect will check conditions and trigger Flow 6
+        // ───────────────────────────────────────────────────────────────────────────────
+        console.log('[TOPUP RETURN] Topup successful - updating balance and reloading');
+
+        // Update optimistic balance from topup
+        if (amountParam) {
+          const topupAmount = parseFloat(amountParam);
+          const currentBalance = parseFloat(localStorage.getItem('innopay_lastBalance') || '0');
+          const newBalance = currentBalance + topupAmount;
+          console.log('[TOPUP RETURN] Updated balance:', {
+            before: currentBalance,
+            topupAmount,
+            after: newBalance
+          });
+          localStorage.setItem('innopay_lastBalance', newBalance.toFixed(2));
+        }
+
+        // Standard topup without pending order (cart will be checked after reload)
+        console.log('[TOPUP RETURN] Reloading page - Flow 7 completion check will run on mount');
+
+        // Show success banner
+        setShowTopupSuccess(true);
+
+        // Clear params from URL
+        const newUrl = `${window.location.pathname}?table=${table}`;
+        window.history.replaceState({}, '', newUrl);
+
+        // Reload page after 2 seconds to refresh wallet balance
+        setTimeout(() => {
+          console.log('[TOPUP RETURN] Reloading page to refresh wallet balance');
+          window.location.reload();
+        }, 2000);
+      }
     }
-  }, [searchParams, table]);
+  }, [searchParams, table, clearCart]);
 
   // Check for existing wallet credentials on mount
   useEffect(() => {
     const checkWalletBalance = async () => {
-      const accountName = localStorage.getItem('innopay_accountName');
-
-      if (!accountName) {
-        console.log('[WALLET BALANCE] No credentials found in localStorage');
+      // Safety check: only run in browser context
+      if (typeof window === 'undefined') {
+        console.log('[WALLET BALANCE] Skipping - not in browser context');
         return;
       }
 
-      console.log('[WALLET BALANCE] Found credentials for:', accountName);
+      const accountName = localStorage.getItem('innopay_accountName');
 
-      try {
-        // Fetch EURO token balance from Hive-Engine
-        const response = await fetch('https://api.hive-engine.com/rpc/contracts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'find',
-            params: {
-              contract: 'tokens',
-              table: 'balances',
-              query: {
-                account: accountName,
-                symbol: 'EURO'
-              }
-            },
-            id: 1
-          })
+      if (!accountName) {
+        console.warn('[WALLET BALANCE] No credentials found in localStorage');
+        return;
+      }
+
+      console.warn('[WALLET BALANCE] Found credentials for:', accountName);
+
+      // First, check for cached/optimistic balance in localStorage
+      const cachedBalance = localStorage.getItem('innopay_lastBalance');
+      if (cachedBalance) {
+        const balance = parseFloat(cachedBalance);
+        console.log('[WALLET BALANCE] Using cached balance from localStorage:', balance);
+        setWalletBalance({
+          accountName,
+          euroBalance: balance
         });
+        setShowWalletBalance(true);
+      }
 
-        const data = await response.json();
-
-        if (data.result && data.result.length > 0) {
-          // EURO token balance (no conversion needed - EURO is EURO)
-          const euroBalance = parseFloat(data.result[0].balance);
-
-          console.log('[WALLET BALANCE] EURO token balance retrieved:', euroBalance);
-
-          setWalletBalance({
-            accountName,
-            euroBalance: parseFloat(euroBalance.toFixed(2))
-          });
-          setShowWalletBalance(true);
-        } else {
-          console.log('[WALLET BALANCE] No EURO tokens found for account:', accountName);
-          // Account exists but has 0 EURO tokens, still show the indicator
+      // Skip blockchain fetch for mock accounts (they don't exist on-chain)
+      if (accountName.startsWith('mockaccount')) {
+        console.log('[WALLET BALANCE] Mock account detected - skipping blockchain fetch');
+        // If no cached balance, show 0 for mock account
+        if (!cachedBalance) {
           setWalletBalance({
             accountName,
             euroBalance: 0
           });
           setShowWalletBalance(true);
         }
-      } catch (error) {
-        console.error('[WALLET BALANCE] Error fetching EURO balance from Hive-Engine:', error);
+        return;
+      }
+
+      try {
+        // Fetch EURO balance using robust API strategy
+        console.log('[WALLET BALANCE] Calling API to fetch real balance for:', accountName);
+        const response = await fetch(`/api/balance/euro?account=${encodeURIComponent(accountName)}`);
+
+        if (response.ok) {
+          const data = await response.json();
+          const euroBalance = data.balance;
+
+          console.log('[WALLET BALANCE] Real EURO token balance retrieved:', euroBalance, 'from', data.source);
+
+          // CRITICAL: Prevent stale Hive-Engine cache from overwriting fresh data
+          // Only update if new balance is >= current balance OR if current balance is very old (60+ seconds)
+          const currentBalance = parseFloat(localStorage.getItem('innopay_lastBalance') || '0');
+          const balanceTimestamp = parseInt(localStorage.getItem('innopay_lastBalance_timestamp') || '0');
+          const now = Date.now();
+          const isStale = (now - balanceTimestamp) > 60000; // 60 seconds
+
+          if (euroBalance >= currentBalance || isStale) {
+            console.log('[WALLET BALANCE] ✓ Updating balance:', currentBalance, '→', euroBalance, isStale ? '(stale)' : '(higher)');
+
+            // Update with real balance
+            setWalletBalance({
+              accountName,
+              euroBalance: parseFloat(euroBalance.toFixed(2))
+            });
+            // Update localStorage with real balance and timestamp
+            localStorage.setItem('innopay_lastBalance', euroBalance.toFixed(2));
+            localStorage.setItem('innopay_lastBalance_timestamp', now.toString());
+            setShowWalletBalance(true);
+          } else {
+            console.warn('[WALLET BALANCE] ⚠️ Ignoring stale balance from cache:', euroBalance, '< current:', currentBalance);
+            console.warn('[WALLET BALANCE] This is likely Hive-Engine cache lag - keeping current balance');
+
+            // Retry after 5 seconds to get fresh data
+            console.log('[WALLET BALANCE] Scheduling retry in 5 seconds...');
+            setTimeout(() => {
+              console.log('[WALLET BALANCE] Retrying balance fetch to get fresh data');
+              setRefreshBalanceTrigger(prev => prev + 1);
+            }, 5000);
+          }
+        } else {
+          console.warn('[WALLET BALANCE] API returned error:', response.status);
+          // Keep the cached balance we set above
+        }
+      } catch (error: any) {
+        console.error('[WALLET BALANCE] Error fetching EURO balance from API (will use cached):', error);
+        // Keep the cached balance we set above, don't override with 0
       }
     };
 
-    // Check on mount (no dependency on conversion rate - EURO tokens don't need conversion)
+    // Check on mount AND when refresh is triggered
+    // This ensures the real balance is fetched after Flow 7 updates the state
     checkWalletBalance();
-  }, []);
+  }, [refreshBalanceTrigger]); // Re-fetch when trigger increments
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // FLOW 7: REMOVED - Now using unified webhook approach
+  // Old flow: topup → return → trigger Flow 6 (ping-pong)
+  // New flow: topup → webhook does everything → return with order_success=true
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   // Poll for blockchain transaction completion
   useEffect(() => {
@@ -322,18 +707,10 @@ export default function MenuPage() {
 
     const pollInterval = setInterval(async () => {
       pollCount++;
-      console.log(`[BLOCKCHAIN POLL] Attempt ${pollCount}/${maxPolls} for session ${currentSessionId}`);
+      console.warn(`[BLOCKCHAIN POLL] Attempt ${pollCount}/${maxPolls} for session ${currentSessionId}`);
 
       try {
-        // Determine Innopay URL
-        let innopayUrl: string;
-        if (window.location.hostname === 'localhost') {
-          innopayUrl = 'http://localhost:3000';
-        } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
-          innopayUrl = 'https://wallet.innopay.lu';
-        } else {
-          innopayUrl = `http://${window.location.hostname}:3000`;
-        }
+        const innopayUrl = getInnopayUrl();
 
         const response = await fetch(`${innopayUrl}/api/checkout/status?session_id=${currentSessionId}`);
 
@@ -343,19 +720,19 @@ export default function MenuPage() {
         }
 
         const data = await response.json();
-        console.log('[BLOCKCHAIN POLL] Status:', data);
+        console.warn('[BLOCKCHAIN POLL] Status:', data);
 
         if (data.isComplete) {
-          console.log('[BLOCKCHAIN POLL] ✓ Blockchain transactions complete!');
-          setBlockchainComplete(true);
+          console.warn('[BLOCKCHAIN POLL] ✓ Blockchain transactions complete - Flow 6 success!');
+          handleFlow6Success(); // Flow 6: pay_with_account
           clearCart(); // Clear cart only on successful blockchain completion
           clearInterval(pollInterval);
 
           // Auto-hide banner after 10 seconds once blockchain is complete
           setTimeout(() => {
-            console.log('[PAYMENT SUCCESS] Auto-hiding banner after blockchain completion');
+            console.warn('[PAYMENT SUCCESS] Auto-hiding banner after blockchain completion');
             setShowPaymentSuccess(false);
-          }, 15000);
+          }, 10000);
         }
 
       } catch (error) {
@@ -369,10 +746,10 @@ export default function MenuPage() {
         // Set transmission error flag
         setTransmissionError(true);
       }
-    }, 1500); // Poll every 1.5 second
+    }, 10000); // Poll every 10 seconds
 
     return () => clearInterval(pollInterval);
-  }, [showPaymentSuccess, currentSessionId, blockchainComplete]);
+  }, [showPaymentSuccess, currentSessionId, blockchainComplete, handleFlow6Success]);
 
   useEffect(() => {
     // Set the table number in the cart context
@@ -641,6 +1018,34 @@ export default function MenuPage() {
     };
   }, [cart.length, cart]);
 
+  // Auto-scroll cart to bottom when items are added and show gradient indicator when scrollable
+  useEffect(() => {
+    if (cartItemsListRef.current && cart.length > 0) {
+      const cartItemsList = cartItemsListRef.current;
+
+      // Smooth scroll to bottom to show newly added item
+      cartItemsList.scrollTo({
+        top: cartItemsList.scrollHeight,
+        behavior: 'smooth'
+      });
+
+      // Check if content is scrollable and toggle gradient indicator
+      const checkScrollable = () => {
+        if (cartItemsList.scrollHeight > cartItemsList.clientHeight) {
+          // Content is scrollable, show gradient indicator
+          cartItemsList.style.setProperty('--show-gradient', '1');
+        } else {
+          // Content fits without scrolling, hide gradient
+          cartItemsList.style.setProperty('--show-gradient', '0');
+        }
+      };
+
+      // Check immediately and after a short delay (for animations)
+      checkScrollable();
+      setTimeout(checkScrollable, 300);
+    }
+  }, [cart.length]);
+
   // Memoized callbacks
   const handleSizeChange = useCallback((drinkId: string, size: string) => {
     setSelectedSizes(prev => ({ ...prev, [drinkId]: size }));
@@ -730,16 +1135,196 @@ export default function MenuPage() {
     }, 1000);
   };
 
-  const handleCallWaiter = () => {
-    try {
-      const hiveUrl = callWaiter();
-      fallBackNoKeychain();
-      window.location.href = hiveUrl;
-    } catch (error) {
-      console.error('Error in handleCallWaiter:', error);
-      // alert('Failed to process the request. Please try again.');
+  const handleCallWaiter = useCallback(async () => {
+    console.log('[CALL WAITER] Initiating call waiter flow');
+
+    // Check if user has wallet credentials in localStorage
+    const accountName = localStorage.getItem('innopay_accountName');
+    const activeKey = localStorage.getItem('innopay_activePrivate');
+    const masterPassword = localStorage.getItem('innopay_masterPassword');
+
+    // Call waiter parameters (0.02 EURO tokens, special memo)
+    const callWaiterAmount = 0.02;
+    const callWaiterMemo = 'Un serveur est appelé ' + (table ? `TABLE ${table}` : '');
+
+    console.log('[CALL WAITER] Order details:', {
+      hasAccount: !!accountName,
+      hasActiveKey: !!activeKey,
+      hasMasterPassword: !!masterPassword,
+      amount: callWaiterAmount,
+      memo: callWaiterMemo
+    });
+
+    if (accountName && (activeKey || masterPassword)) {
+      // User has credentials - pay with EURO tokens (pay_with_account or pay_with_topup flow)
+      console.log('[CALL WAITER] Customer has credentials, initiating EURO token payment');
+
+      // Start timer
+      setOrderProcessing(true);
+      setOrderElapsedSeconds(0);
+      orderTimerRef.current = setInterval(() => {
+        setOrderElapsedSeconds(prev => prev + 1);
+      }, 1000);
+
+      try {
+        // Check customer's EURO token balance using robust API strategy
+        console.log('[CALL WAITER] Checking EURO balance for:', accountName);
+
+        // Get optimistic balance from localStorage
+        let euroBalance = 0;
+        const optimisticBalanceStr = localStorage.getItem('innopay_lastBalance');
+        if (optimisticBalanceStr) {
+          euroBalance = parseFloat(optimisticBalanceStr);
+          console.log('[CALL WAITER] Optimistic balance:', euroBalance);
+        }
+
+        // Try to get real balance from API
+        try {
+          const response = await fetch(`/api/balance/euro?account=${encodeURIComponent(accountName)}`);
+          if (response.ok) {
+            const data = await response.json();
+            const apiBalance = data.balance;
+
+            // Validate against optimistic balance (±1 EUR tolerance)
+            if (optimisticBalanceStr) {
+              const roundedApi = Math.round(apiBalance);
+              const roundedOptimistic = Math.round(euroBalance);
+              if (Math.abs(roundedApi - roundedOptimistic) <= 1) {
+                console.log('[CALL WAITER] API balance validates optimistic balance');
+              } else {
+                euroBalance = apiBalance;
+                console.log('[CALL WAITER] Updated to API balance:', euroBalance);
+              }
+            } else {
+              euroBalance = apiBalance;
+              console.log('[CALL WAITER] Using API balance:', euroBalance);
+            }
+
+            // Update localStorage
+            localStorage.setItem('innopay_lastBalance', euroBalance.toFixed(2));
+          }
+        } catch (apiError) {
+          console.warn('[CALL WAITER] API fetch failed, using optimistic balance:', apiError);
+        }
+
+        console.log('[CALL WAITER] Customer EURO balance:', euroBalance);
+
+        if (euroBalance >= callWaiterAmount) {
+          // pay_with_account flow - sufficient balance
+          console.log('[CALL WAITER] Sufficient balance, paying with account');
+
+          const transferResponse = await fetch('/api/transfer-from-customer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              accountName,
+              activeKey: activeKey || undefined,
+              masterPassword: masterPassword || undefined,
+              amountEuro: callWaiterAmount,
+              memo: callWaiterMemo
+            })
+          });
+
+          if (!transferResponse.ok) {
+            throw new Error('Transfer failed');
+          }
+
+          const transferData = await transferResponse.json();
+          console.log('[CALL WAITER] Transfer successful:', transferData.txId);
+
+          // Stop timer and show success
+          if (orderTimerRef.current) {
+            clearInterval(orderTimerRef.current);
+          }
+          setOrderProcessing(false);
+          setBlockchainComplete(true);
+          setShowPaymentSuccess(true);
+
+          // Hide after 5 seconds
+          setTimeout(() => {
+            setShowPaymentSuccess(false);
+            setBlockchainComplete(false);
+          }, 5000);
+
+        } else {
+          // ───────────────────────────────────────────────────────────────────────────────
+          // CALL WAITER: Insufficient balance → redirect to topup (TO BE REFACTORED LATER)
+          // Note: This is NOT the main pay_with_topup flow (that's at line 1121)
+          // TODO: Refactor to use consistent API approach like main checkout flow
+          // ───────────────────────────────────────────────────────────────────────────────
+          console.log('[CALL WAITER] Insufficient balance, redirecting to top-up');
+
+          // Stop timer
+          if (orderTimerRef.current) {
+            clearInterval(orderTimerRef.current);
+          }
+          setOrderProcessing(false);
+
+          // Calculate top-up amount needed
+          const topupNeeded = callWaiterAmount - euroBalance;
+          console.log('[CALL WAITER] Top-up needed:', topupNeeded);
+
+          // Redirect to Innopay for top-up with order details
+          const innopayUrl = getInnopayUrl();
+          const params = new URLSearchParams();
+          params.set('table', table);
+          params.set('order_amount', callWaiterAmount.toString());
+          params.set('memo', callWaiterMemo);
+
+          window.location.href = `${innopayUrl}/?${params.toString()}`;
+        }
+
+      } catch (error) {
+        console.error('[CALL WAITER] Error:', error);
+
+        // Stop timer
+        if (orderTimerRef.current) {
+          clearInterval(orderTimerRef.current);
+        }
+        setOrderProcessing(false);
+
+        alert('Erreur lors du paiement. Veuillez réessayer.');
+      }
+
+    } else {
+      // No credentials - show wallet notification (create_account_and_pay flow)
+      console.log('[CALL WAITER] No credentials, showing wallet notification');
+
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+      if (isSafari || isIOS) {
+        // Safari/iOS: Skip protocol handler, show wallet notification immediately
+        console.log('[CALL WAITER] Safari/iOS detected - showing wallet notification');
+        setIsCallWaiterFlow(true);
+        setShowWalletNotification(true);
+        setIsSafariBanner(false);
+      } else {
+        // Try protocol handler first for non-Safari browsers
+        try {
+          const hiveUrl = callWaiter();
+          window.location.href = hiveUrl;
+
+          // Check if protocol handler worked
+          setTimeout(() => {
+            const protocolHandlerWorked = document.hidden;
+
+            if (!protocolHandlerWorked && !walletCredentials) {
+              console.log('[CALL WAITER] Protocol handler did not work - showing wallet notification');
+              setIsCallWaiterFlow(true);
+              setShowWalletNotification(true);
+              setIsSafariBanner(false);
+            }
+          }, 3000);
+        } catch (error) {
+          console.error('[CALL WAITER] Error with protocol handler:', error);
+          setIsCallWaiterFlow(true);
+          setShowWalletNotification(true);
+          setIsSafariBanner(false);
+        }
+      }
     }
-  };
+  }, [table, callWaiter, walletCredentials, getInnopayUrl]);
 
   const handleOrder = useCallback(async () => {
     if (cart.length === 0) {
@@ -760,7 +1345,11 @@ export default function MenuPage() {
     });
 
     if (accountName && (activeKey || masterPassword)) {
-      // NEW FLOW: User has credentials - pay with EURO tokens
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // FLOW 6 & 7: pay_with_account | pay_with_topup
+      // Reference: lib/flows.ts, FLOWS.md lines 148-244
+      // Description: Pay with existing account (or redirect to topup if insufficient balance)
+      // ═══════════════════════════════════════════════════════════════════════════════
       console.log('[WALLET PAYMENT] Customer has credentials, initiating EURO token payment');
 
       // Start timer
@@ -776,47 +1365,73 @@ export default function MenuPage() {
         const amountEuroNum = parseFloat(amountEuro);
 
         // alert('Étape 1: Vérification du solde EURO...');
-        // 2. Check customer's EURO token balance
+        // 2. Check customer's EURO token balance using robust API strategy
         console.log('[WALLET PAYMENT] Checking EURO balance for:', accountName);
-        const balanceResponse = await fetch('https://api.hive-engine.com/rpc/contracts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'find',
-            params: {
-              contract: 'tokens',
-              table: 'balances',
-              query: {
-                account: accountName,
-                symbol: 'EURO'
+
+        // Get optimistic balance from localStorage
+        let currentEuroBalance = 0;
+        const optimisticBalanceStr = localStorage.getItem('innopay_lastBalance');
+        if (optimisticBalanceStr) {
+          currentEuroBalance = parseFloat(optimisticBalanceStr);
+          console.log('[WALLET PAYMENT] Optimistic balance:', currentEuroBalance);
+        }
+
+        // Try to get real balance from API
+        try {
+          const response = await fetch(`/api/balance/euro?account=${encodeURIComponent(accountName)}`);
+          if (response.ok) {
+            const data = await response.json();
+            const apiBalance = data.balance;
+
+            // Validate against optimistic balance (±1 EUR tolerance)
+            if (optimisticBalanceStr) {
+              const roundedApi = Math.round(apiBalance);
+              const roundedOptimistic = Math.round(currentEuroBalance);
+              if (Math.abs(roundedApi - roundedOptimistic) <= 1) {
+                console.log('[WALLET PAYMENT] API balance validates optimistic balance');
+              } else {
+                currentEuroBalance = apiBalance;
+                console.log('[WALLET PAYMENT] Updated to API balance:', currentEuroBalance);
               }
-            },
-            id: 1
-          })
-        });
+            } else {
+              currentEuroBalance = apiBalance;
+              console.log('[WALLET PAYMENT] Using API balance:', currentEuroBalance);
+            }
 
-        const balanceData = await balanceResponse.json();
-        const currentEuroBalance = balanceData.result && balanceData.result.length > 0
-          ? parseFloat(balanceData.result[0].balance)
-          : 0;
+            // Update localStorage
+            localStorage.setItem('innopay_lastBalance', currentEuroBalance.toFixed(2));
+          }
+        } catch (apiError) {
+          console.warn('[WALLET PAYMENT] API fetch failed, using optimistic balance:', apiError);
+          // Continue with optimistic balance if we have one
+          if (!optimisticBalanceStr) {
+            // Stop timer
+            if (orderTimerRef.current) {
+              clearInterval(orderTimerRef.current);
+              orderTimerRef.current = null;
+            }
+            setOrderProcessing(false);
 
-        console.log('[WALLET PAYMENT] Current EURO balance:', currentEuroBalance, 'Required:', amountEuroNum);
+            alert('Nous rencontrons actuellement des problèmes techniques, veuillez nous en excuser');
+            return;
+          }
+        }
 
+        console.log('[WALLET PAYMENT] Final EURO balance:', currentEuroBalance, 'Required:', amountEuroNum);
+
+        // ───────────────────────────────────────────────────────────────────────────────
+        // FLOW 7 DECISION POINT: Insufficient balance → pay_with_topup
+        // Reference: lib/flows.ts detectFlow(), FLOWS.md lines 197-244
+        // ───────────────────────────────────────────────────────────────────────────────
         // Check if sufficient balance
         if (currentEuroBalance < amountEuroNum) {
-          const deficit = (amountEuroNum - currentEuroBalance).toFixed(2);
+          // Round UP deficit to nearest cent to avoid rounding errors
+          const deficitRaw = amountEuroNum - currentEuroBalance;
+          const deficit = (Math.ceil(deficitRaw * 100) / 100).toFixed(2);
           // alert(`Solde insuffisant! Vous avez ${currentEuroBalance.toFixed(2)} EURO mais il faut ${amountEuroNum.toFixed(2)} EURO. Redirection vers la page de rechargement...`);
 
           // Redirect to innopay top-up page
-          let innopayUrl: string;
-          if (window.location.hostname === 'localhost') {
-            innopayUrl = 'http://localhost:3000';
-          } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
-            innopayUrl = 'https://wallet.innopay.lu';
-          } else {
-            innopayUrl = `http://${window.location.hostname}:3000`;
-          }
+          const innopayUrl = getInnopayUrl();
 
           // Stop timer before redirect
           if (orderTimerRef.current) {
@@ -825,12 +1440,53 @@ export default function MenuPage() {
           }
           setOrderProcessing(false);
 
-          // Generate order memo to pass to innopay
+          // ⚠️ FLOW 7: pay_with_topup - PROPER IMPLEMENTATION (Flow 2 + Flow 6)
+          // Reference: FLOWS.md lines 197-244
+          // Redirect to innopay UI with full context for proper topup experience
+          // NOTE: Cart persists in localStorage automatically - no need to store separately!
+
+          // Generate order memo for context
           const orderMemo = getMemo();
 
-          window.location.href = `${innopayUrl}?account=${accountName}&topup=${deficit}&table=${table}&order_amount=${amountEuroNum.toFixed(2)}&order_memo=${encodeURIComponent(orderMemo)}`;
+          // Redirect to innopay client UI with context
+          const returnUrl = `${window.location.origin}/menu?table=${table}`;
+          const params = new URLSearchParams({
+            topup_for: 'order',                              // Flag: topup for restaurant order
+            source: 'indiesmenu',                            // Source application
+            table: table,                                     // Table number
+            order_amount: amountEuroNum.toFixed(2),          // Order total
+            order_memo: encodeURIComponent(orderMemo),       // Order details
+            deficit: deficit,                                 // Amount needed
+            account: accountName,                             // Account name (for MiniWallet display)
+            balance: currentEuroBalance.toFixed(2),          // Current balance
+            return_url: encodeURIComponent(returnUrl)        // Return after success
+          });
+
+          // Set Flow 7 marker before redirect
+          localStorage.setItem('innopay_flow_pending', 'flow7_topup_and_pay');
+          console.log('[FLOW 7] Set flow marker: flow7_topup_and_pay');
+
+          // Clear old balance before redirect - Flow 7 will fetch fresh balance after return
+          localStorage.removeItem('innopay_lastBalance');
+          console.log('[FLOW 7] Cleared old balance - will fetch fresh after topup');
+
+          console.log('[FLOW 7] Redirecting to innopay UI with unified webhook approach');
+          console.log('[FLOW 7] Context params:', Object.fromEntries(params));
+
+          // Redirect to innopay client page (not API)
+          // NEW FLOW 7: Webhook will handle everything (topup + order payment + change)
+          // and return with order_success=true&session_id=XXX
+          window.location.href = `${innopayUrl}?${params.toString()}`;
           return;
         }
+
+        // ───────────────────────────────────────────────────────────────────────────────
+        // FLOW 6: pay_with_account - Working implementation (DO NOT BREAK)
+        // Reference: lib/flows.ts detectFlow(), FLOWS.md lines 148-196
+        // Structure: Two-leg dual-currency payment (HBD attempt + EURO collateral + debt)
+        //   Leg 1: Customer → innopay (lines 1122-1196)
+        //   Leg 2: innopay → restaurant (lines 1197-1248, via API)
+        // ───────────────────────────────────────────────────────────────────────────────
 
         // alert('Étape 2: Récupération du taux EUR/USD...');
         // 3. Fetch EUR/USD rate using the same approach as kitchen backend
@@ -869,27 +1525,22 @@ export default function MenuPage() {
         // alert('Étape 7: Signature et diffusion (serveur)...');
         console.log('[WALLET PAYMENT] Sending operation to server for signing...');
 
-        // 5. Sign and broadcast EURO transfer SERVER-SIDE
-        // Determine Innopay URL
-        let innopaySignUrl: string;
-        if (window.location.hostname === 'localhost') {
-          innopaySignUrl = 'http://localhost:3000';
-        } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
-          innopaySignUrl = 'https://wallet.innopay.lu';
-        } else {
-          innopaySignUrl = `http://${window.location.hostname}:3000`;
-        }
+        // 5. Sign and broadcast EURO transfer SERVER-SIDE with cascade fallback
+        const innopaySignUrl = getInnopayUrl();
 
         // Send either activeKey or masterPassword to server for signing
+        // Server will try user's key first, fallback to innopay authority if needed
         const signPayload: any = {
           operation: euroOp,
         };
 
         if (activeKey) {
           signPayload.activePrivateKey = activeKey;
+          console.log('[WALLET PAYMENT] Sending active key (with fallback to innopay authority)');
         } else if (masterPassword) {
           signPayload.masterPassword = masterPassword;
           signPayload.accountName = accountName;
+          console.log('[WALLET PAYMENT] Sending master password (with fallback to innopay authority)');
         }
 
         const signResponse = await fetch(`${innopaySignUrl}/api/sign-and-broadcast`, {
@@ -905,7 +1556,13 @@ export default function MenuPage() {
 
         const signResult = await signResponse.json();
         const txId = signResult.txId;
-        console.log('[WALLET PAYMENT] EURO transfer successful! TX:', txId);
+        const usedFallback = signResult.usedFallback;
+
+        if (usedFallback) {
+          console.log('[WALLET PAYMENT] EURO transfer successful using innopay authority (fallback)! TX:', txId);
+        } else {
+          console.log('[WALLET PAYMENT] EURO transfer successful with user key! TX:', txId);
+        }
         // alert(`Étape 8: Transaction réussie! TX: ${txId.substring(0, 8)}...`);
 
         // Update mini-wallet balance after successful EURO transfer
@@ -917,15 +1574,7 @@ export default function MenuPage() {
         });
 
         // 7. Call innopay API to execute HBD/EURO transfer to restaurant
-        // Determine Innopay URL based on environment
-        let innopayUrl: string;
-        if (window.location.hostname === 'localhost') {
-          innopayUrl = 'http://localhost:3000';
-        } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
-          innopayUrl = 'https://wallet.innopay.lu';
-        } else {
-          innopayUrl = `http://${window.location.hostname}:3000`;
-        }
+        const innopayUrl = getInnopayUrl();
 
         console.log('[WALLET PAYMENT] Calling innopay API...');
 
@@ -975,6 +1624,14 @@ export default function MenuPage() {
 
         // 7. Clear cart and show success
         clearCart();
+
+        // Clear Flow 5 handover marker if this was part of Flow 5
+        const flowState = localStorage.getItem('innopay_flow_pending');
+        if (flowState === 'flow5_existing_account_handover') {
+          console.log('[FLOW 5] Flow 6 payment successful - clearing flow marker');
+          localStorage.removeItem('innopay_flow_pending');
+        }
+
         alert('Commande envoyée avec succès!');
 
       } catch (error: any) {
@@ -995,7 +1652,19 @@ export default function MenuPage() {
     // If we reach here, no credentials found
     console.log('[WALLET PAYMENT] No credentials found, using hive://sign/ flow');
 
-    // EXISTING FLOW: No credentials - use hive://sign/ protocol handler
+    // Detect Safari to avoid "cannot open the page" error
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+    if (isSafari || isIOS) {
+      // Safari/iOS: Skip protocol handler, show wallet notification immediately
+      console.log('[WALLET PAYMENT] Safari/iOS detected - skipping protocol handler, showing wallet notification');
+      setShowWalletNotification(true);
+      setIsSafariBanner(false);
+      return;
+    }
+
+    // EXISTING FLOW: Non-Safari browsers - use hive://sign/ protocol handler
     const hiveOpUrl = orderNow();
 
     // Set a flag to detect if the page loses focus (app opened)
@@ -1057,17 +1726,85 @@ export default function MenuPage() {
     setShowGuestWarningModal(true);
   }, [cart.length]);
 
+  const handleExternalWallet = useCallback(() => {
+    // For call waiter flow, always allow (no cart check)
+    if (!isCallWaiterFlow && cart.length === 0) {
+      alert('Rien a commander !');
+      return;
+    }
+
+    console.log('[EXTERNAL WALLET] User requested external wallet on Safari/iOS');
+
+    // Generate the hive://sign/ URL
+    const hiveOpUrl = isCallWaiterFlow ? callWaiter() : orderNow();
+
+    // Set a flag to detect if the page loses focus (app opened)
+    let protocolHandlerWorked = false;
+    let blurTime = 0;
+    let errorOccurred = false;
+
+    const blurHandler = () => {
+      blurTime = Date.now();
+      console.log('[EXTERNAL WALLET] Page lost focus - protocol handler might have worked');
+    };
+
+    const focusHandler = () => {
+      if (blurTime > 0) {
+        const blurDuration = Date.now() - blurTime;
+        console.log(`[EXTERNAL WALLET] Page regained focus after ${blurDuration}ms`);
+
+        // Only consider it successful if blur lasted more than 2 seconds (real app switch)
+        // Safari error dialog causes brief blur (<500ms)
+        if (blurDuration > 2000) {
+          protocolHandlerWorked = true;
+          console.log('[EXTERNAL WALLET] Blur duration suggests successful app switch - clearing cart');
+          // Only clear cart for normal orders, not for call waiter
+          if (!isCallWaiterFlow) {
+            clearCart();
+          }
+        } else {
+          // Short blur likely means Safari error was shown and dismissed
+          console.log('[EXTERNAL WALLET] Short blur - likely Safari error, NOT clearing cart');
+          errorOccurred = true;
+        }
+      }
+    };
+
+    window.addEventListener('blur', blurHandler);
+    window.addEventListener('focus', focusHandler);
+
+    // Try to open the hive:// URL
+    try {
+      window.location.href = hiveOpUrl;
+    } catch (error) {
+      console.log('[EXTERNAL WALLET] Failed to open hive:// URL:', error);
+      errorOccurred = true;
+    }
+
+    // After 3 seconds, check if the protocol handler worked
+    setTimeout(() => {
+      window.removeEventListener('blur', blurHandler);
+      window.removeEventListener('focus', focusHandler);
+
+      if (!protocolHandlerWorked) {
+        console.log('[EXTERNAL WALLET] Protocol handler did not work - cart preserved');
+      }
+    }, 3000);
+  }, [cart.length, orderNow, clearCart, isCallWaiterFlow, callWaiter]);
+
   // Handle import account button click
   const handleImportAccount = useCallback(() => {
     if (importDisabled) return;
     setShowImportModal(true);
     setImportEmail('');
     setImportError('');
+    setImportStep('email');
+    setVerificationCode('');
+    setMultipleAccounts([]);
   }, [importDisabled]);
 
-  // Handle import account submission
-  const handleImportSubmit = useCallback(async () => {
-    // Validate email format
+  // Handle email submission (request verification code)
+  const handleRequestCode = useCallback(async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const sanitizedEmail = importEmail.trim().toLowerCase();
 
@@ -1081,94 +1818,54 @@ export default function MenuPage() {
     setImportError('');
 
     try {
-      // Determine Innopay URL
-      let innopayUrl: string;
-      if (window.location.hostname === 'localhost') {
-        innopayUrl = 'http://localhost:3000';
-      } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
-        innopayUrl = 'https://wallet.innopay.lu';
-      } else {
-        innopayUrl = `http://${window.location.hostname}:3000`;
-      }
+      const innopayUrl = getInnopayUrl();
+      console.log('[VERIFY] Requesting code for:', sanitizedEmail);
 
-      console.log('[IMPORT ACCOUNT] Calling innopay API:', `${innopayUrl}/api/account/retrieve`);
-
-      const response = await fetch(`${innopayUrl}/api/account/retrieve`, {
+      const response = await fetch(`${innopayUrl}/api/verify/request-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: sanitizedEmail })
+        body: JSON.stringify({ email: sanitizedEmail, language: 'fr' })
       });
 
-      // Parse response regardless of status
       const data = await response.json();
-      console.log('[IMPORT ACCOUNT] API response:', { status: response.status, data });
+      console.log('[VERIFY] Request response:', data);
 
-      // Check if account was found
       if (data.found === true) {
-        console.log('[IMPORT ACCOUNT] Account found:', data.accountName);
-
-        // Save to localStorage
-        localStorage.setItem('innopay_accountName', data.accountName);
-        localStorage.setItem('innopay_masterPassword', data.masterPassword);
-
-        // Save keys if available
-        if (data.keys) {
-          localStorage.setItem('innopay_activePrivate', data.keys.active);
-          localStorage.setItem('innopay_postingPrivate', data.keys.posting);
-          localStorage.setItem('innopay_memoPrivate', data.keys.memo);
-          console.log('[IMPORT ACCOUNT] Saved account with all keys');
-        } else {
-          console.log('[IMPORT ACCOUNT] Saved account (keys not available)');
-        }
-
-        // Close modal and refresh page
-        setShowImportModal(false);
-        console.log('[IMPORT ACCOUNT] Reloading page to activate account');
-        window.location.reload();
-
+        // Code sent! Move to code entry step
+        setImportStep('code');
+        setImportLoading(false);
       } else if (data.found === false) {
-        // Account not found - this is expected behavior, not an error
-        console.log('[IMPORT ACCOUNT] Account not found for email:', sanitizedEmail);
-
-        // Decrement attempts FIRST
+        // Email not found - decrement attempts
         const newAttempts = importAttempts - 1;
         setImportAttempts(newAttempts);
         localStorage.setItem('innopay_import_attempts', newAttempts.toString());
-        console.log('[IMPORT ACCOUNT] Attempts remaining:', newAttempts);
 
-        // Check if out of attempts
         if (newAttempts <= 0) {
-          // Final attempt used
           setImportError('Rien dans la base de données, désolé!');
           setImportDisabled(true);
 
-          // Close modal after 2 seconds
           setTimeout(() => {
+            setImportError('');
+            setImportLoading(false);
             setShowImportModal(false);
-          }, 2000);
+          }, 3000);
         } else {
-          // Still have attempts remaining
-          setImportError('Vous avez peut-être utilisé une adresse mail différente');
+          setImportError(`Vous avez peut-être utilisé une adresse mail différente (${newAttempts} tentatives restantes)`);
 
-          // Clear error after 3 seconds to allow retry
           setTimeout(() => {
             setImportError('');
             setImportLoading(false);
           }, 3000);
         }
-
-      } else {
-        // Unexpected response format
-        console.error('[IMPORT ACCOUNT] Unexpected response format:', data);
-        setImportError('Erreur de réponse du serveur');
+      } else if (data.error) {
+        setImportError(data.error);
         setTimeout(() => {
           setImportError('');
           setImportLoading(false);
         }, 3000);
       }
-
     } catch (error) {
-      console.error('[IMPORT ACCOUNT] Network or parsing error:', error);
+      console.error('[VERIFY] Network error:', error);
       setImportError('Erreur de connexion au serveur');
       setTimeout(() => {
         setImportError('');
@@ -1176,6 +1873,124 @@ export default function MenuPage() {
       }, 3000);
     }
   }, [importEmail, importAttempts]);
+
+  // Handle verification code submission
+  const handleVerifyCode = useCallback(async () => {
+    if (!verificationCode || verificationCode.length !== 6) {
+      setImportError('Entrez un code à 6 chiffres');
+      setTimeout(() => setImportError(''), 3000);
+      return;
+    }
+
+    setImportLoading(true);
+    setImportError('');
+
+    try {
+      const innopayUrl = getInnopayUrl();
+      console.log('[VERIFY] Checking code:', verificationCode);
+
+      const response = await fetch(`${innopayUrl}/api/verify/check-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: importEmail.trim().toLowerCase(),
+          code: verificationCode
+        })
+      });
+
+      const data = await response.json();
+      console.log('[VERIFY] Check response:', data);
+
+      if (data.success === true) {
+        if (data.single === true) {
+          // Single account - auto-import
+          console.log('[VERIFY] Single account found:', data.accountName);
+
+          localStorage.setItem('innopay_accountName', data.accountName);
+          localStorage.setItem('innopay_masterPassword', data.masterPassword || '');
+
+          if (data.keys) {
+            localStorage.setItem('innopay_activePrivate', data.keys.active);
+            localStorage.setItem('innopay_postingPrivate', data.keys.posting);
+            localStorage.setItem('innopay_memoPrivate', data.keys.memo);
+          }
+
+          // Refresh page to activate account
+          window.location.reload();
+
+        } else {
+          // Multiple accounts - show selection
+          console.log('[VERIFY] Multiple accounts found:', data.accounts);
+          setMultipleAccounts(data.accounts);
+          setImportStep('select');
+          setImportLoading(false);
+        }
+      } else if (data.error) {
+        setImportError(data.error);
+        setTimeout(() => {
+          setImportError('');
+          setImportLoading(false);
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('[VERIFY] Network error:', error);
+      setImportError('Erreur de connexion au serveur');
+      setTimeout(() => {
+        setImportError('');
+        setImportLoading(false);
+      }, 3000);
+    }
+  }, [verificationCode, importEmail]);
+
+  // Handle account selection (when multiple accounts found)
+  const handleSelectAccount = useCallback(async (accountName: string) => {
+    setImportLoading(true);
+    setImportError('');
+
+    try {
+      const innopayUrl = getInnopayUrl();
+      console.log('[VERIFY] Selecting account:', accountName);
+
+      const response = await fetch(`${innopayUrl}/api/verify/get-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountName,
+          email: importEmail.trim().toLowerCase()
+        })
+      });
+
+      const data = await response.json();
+      console.log('[VERIFY] Credentials response:', data);
+
+      if (data.accountName) {
+        localStorage.setItem('innopay_accountName', data.accountName);
+        localStorage.setItem('innopay_masterPassword', data.masterPassword || '');
+
+        if (data.keys) {
+          localStorage.setItem('innopay_activePrivate', data.keys.active);
+          localStorage.setItem('innopay_postingPrivate', data.keys.posting);
+          localStorage.setItem('innopay_memoPrivate', data.keys.memo);
+        }
+
+        // Refresh page to activate account
+        window.location.reload();
+      } else if (data.error) {
+        setImportError(data.error);
+        setTimeout(() => {
+          setImportError('');
+          setImportLoading(false);
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('[VERIFY] Network error:', error);
+      setImportError('Erreur de connexion au serveur');
+      setTimeout(() => {
+        setImportError('');
+        setImportLoading(false);
+      }, 3000);
+    }
+  }, [importEmail]);
 
   const proceedWithGuestCheckout = useCallback(async () => {
     try {
@@ -1185,20 +2000,16 @@ export default function MenuPage() {
       // Use no-discount price + 5% processing fee
       const amountEuroNoDiscount = parseFloat(getTotalEurPriceNoDiscount());
       const amountEuroWithFee = amountEuroNoDiscount * 1.05;
-      const customMemo = getMemo();
 
-      console.log('Guest checkout:', { amountEuroWithFee, memo: customMemo });
+      // Generate distriate suffix for guest checkout tracking
+      const { distriate } = await import('@/lib/utils');
+      const distriateSuffix = distriate('gst'); // 'gst' tag for guest checkout
+      const baseMemo = getMemo();
+      const customMemo = `${baseMemo} ${distriateSuffix}`;
 
-      // Determine Innopay URL based on environment
-      let innopayUrl: string;
-      if (window.location.hostname === 'localhost') {
-        innopayUrl = 'http://localhost:3000';
-      } else if (window.location.hostname === 'indies.innopay.lu' || window.location.hostname.includes('vercel.app')) {
-        innopayUrl = 'https://wallet.innopay.lu';
-      } else {
-        // Local network (e.g., 192.168.x.x)
-        innopayUrl = `http://${window.location.hostname}:3000`;
-      }
+      console.log('Guest checkout:', { amountEuroWithFee, memo: customMemo, distriateSuffix });
+
+      const innopayUrl = getInnopayUrl();
 
       console.log('[DEBUG] Current hostname:', window.location.hostname);
       console.log('[DEBUG] Determined innopayUrl:', innopayUrl);
@@ -1310,16 +2121,17 @@ export default function MenuPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Wallet Notification Banner */}
-      {showWalletNotification && !walletCredentials && !guestCheckoutStarted && !showPaymentSuccess && (
+      {showWalletNotification && !walletCredentials && !guestCheckoutStarted && !showPaymentSuccess && !flow4Success && (
         <Draggable
           className="z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg rounded-lg"
           style={{
-            left: '0',
             top: cart.length === 0 && welcomeCarouselHeight > 0
               ? `${totalFixedHeaderHeight + welcomeCarouselHeight}px`
               : `${totalFixedHeaderHeight}px`,
-            right: '0',
+            width: '100%',
+            maxWidth: '896px', // max-w-4xl = 56rem = 896px
           }}
+          initialPosition={{ x: 0, y: 0 }}
         >
           <div className="max-w-4xl mx-auto flex items-center gap-4">
             {/* Drag handle indicator */}
@@ -1330,12 +2142,12 @@ export default function MenuPage() {
             {/* Left zone: Text - takes most space */}
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm md:text-base">
-                {isSafariBanner
+                {isSafariBanner && cart.length === 0
                   ? "💳 Si vous n'avez pas de portefeuille compatible Innopay, nous conseillons de créer un compte avant de commander!"
                   : "💳 Pour commander, créez votre portefeuille Innopay"
                 }
               </p>
-              {!isSafariBanner && (
+              {(!isSafariBanner || cart.length > 0) && (
                 <p className="text-xs md:text-sm opacity-90 mt-1">
                   Gratuit et instantané - Pas besoin d'installer d'application
                 </p>
@@ -1363,46 +2175,71 @@ export default function MenuPage() {
               <button
                 onClick={() => {
                   // Build base URL based on environment
-                  let baseUrl = '';
-                  if (typeof window !== 'undefined') {
-                    if (window.location.hostname === 'localhost') {
-                      baseUrl = 'http://localhost:3000/user';
-                    } else if (window.location.hostname === 'indies.innopay.lu') {
-                      baseUrl = 'https://wallet.innopay.lu/user';
-                    } else {
-                      baseUrl = `http://${window.location.hostname}:3000/user`;
-                    }
+                  const baseUrl = typeof window !== 'undefined'
+                    ? `${getInnopayUrl()}/user`
+                    : 'https://wallet.innopay.lu/user';
+
+                  // Get parameters based on flow type
+                  let orderAmount, discount, customMemo;
+
+                  if (isCallWaiterFlow) {
+                    // Call waiter flow - fixed parameters
+                    orderAmount = '0.02';
+                    discount = '0';
+                    customMemo = 'Un serveur est appelé ' + (table ? `TABLE ${table}` : '');
+                    console.log(`[${new Date().toISOString()}] [CALL WAITER] Opening account creation for call waiter`);
+                  } else {
+                    // Normal order flow
+                    orderAmount = getTotalEurPrice();
+                    discount = getDiscountAmount();
+                    customMemo = getMemo();
+                    console.log(`[${new Date().toISOString()}] [INDIESMENU] Opening account creation with params:`, {
+                      orderAmount,
+                      discount,
+                      memoLength: customMemo.length,
+                      memo: customMemo.substring(0, 100) + (customMemo.length > 100 ? '...' : '')
+                    });
                   }
-
-                  // Get parameters
-                  const orderAmount = getTotalEurPrice();
-                  const discount = getDiscountAmount();
-                  const customMemo = getMemo();
-
-                  console.log(`[${new Date().toISOString()}] [INDIESMENU] Opening account creation with params:`, {
-                    orderAmount,
-                    discount,
-                    memoLength: customMemo.length,
-                    memo: customMemo.substring(0, 100) + (customMemo.length > 100 ? '...' : '')
-                  });
 
                   // Build URL with parameters
                   const params = new URLSearchParams();
+                  params.set('restaurant', 'indies'); // Restaurant identifier for innopay hub
+                  params.set('restaurant_account', recipient); // Hive account for payment destination
+                  params.set('table', table); // Add table parameter for restaurant context
                   params.set('order_amount', orderAmount);
                   if (parseFloat(discount) > 0) {
                     params.set('discount', discount);
                   }
                   params.set('memo', customMemo);
 
+                  // Set Flow 5 marker for account creation with order
+                  localStorage.setItem('innopay_flow_pending', 'flow5_create_and_pay');
+                  console.log('[FLOW 5] Set flow marker: flow5_create_and_pay');
+
                   // Navigate in same window (like guest checkout)
                   window.location.href = `${baseUrl}?${params.toString()}`;
                 }}
-                className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold text-sm hover:bg-blue-50 transition-colors whitespace-nowrap"
+                className="bg-white text-blue-600 px-4 py-3 rounded-lg font-bold text-base hover:bg-blue-50 transition-colors w-[180px] text-center flex items-center justify-center gap-2"
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
               >
-                Créer un compte
+                <span>Créer un compte</span>
+                <img src="/images/favicon-32x32.png" alt="innopay" className="w-10 h-10" />
               </button>
+
+              {/* External Wallet Button - Show when cart has items OR when triggered by order button (not just Safari detection) */}
+              {(!isSafariBanner || cart.length > 0) && (
+                <button
+                  onClick={handleExternalWallet}
+                  className="bg-black text-red-500 px-4 py-3 rounded-lg font-semibold text-sm hover:bg-gray-900 transition-colors w-[180px] text-center"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  title="Use external wallet app like Hive Keychain or Ecency / Utiliser une app portefeuille externe comme Hive Keychain ou Ecency"
+                >
+                  Portefeuille externe
+                </button>
+              )}
+
               <button
                 onClick={handleGuestCheckout}
                 className="bg-gray-600 bg-opacity-60 text-gray-300 px-3 py-1.5 rounded-lg font-normal text-xs hover:bg-opacity-70 transition-colors w-[120px] text-center"
@@ -1419,6 +2256,7 @@ export default function MenuPage() {
               <button
                 onClick={() => {
                   setShowWalletNotification(false);
+                  setIsCallWaiterFlow(false); // Reset call waiter flow flag
                   console.log('Notification dismissed temporarily - will show again on next order attempt');
                 }}
                 className="text-white hover:text-blue-200 transition-colors p-1"
@@ -1503,26 +2341,7 @@ export default function MenuPage() {
         </>
       )}
 
-      {showPaymentSuccess && blockchainComplete && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">✓</span>
-              <div>
-                <p className="font-semibold text-base md:text-lg">
-                  Votre commande a été transmise et est en cours de préparation
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowPaymentSuccess(false)}
-              className="bg-white text-green-700 px-4 py-2 rounded-lg font-semibold hover:bg-green-50 transition-colors ml-4"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
+      {/* REMOVED: Duplicate success banner - now unified below with Flow 5 and Flow 7 */}
 
       {/* Account Creation Success - Yellow Banner (Processing) */}
       {showAccountCreated && !accountCreationComplete && (
@@ -1543,8 +2362,30 @@ export default function MenuPage() {
         </div>
       )}
 
-      {/* Account Creation Success - Green Banner (Order Transmitted) */}
-      {showAccountCreated && accountCreationComplete && !newAccountCredentials && (
+      {/* Flow 4 Success Banner - create_account_only (no order) */}
+      {flow4Success && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">✓</span>
+              <div>
+                <p className="font-semibold text-base md:text-lg">
+                  Votre portefeuille Innopay est prêt, vous pouvez déjà commander
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setFlow4Success(false)}
+              className="bg-white text-green-700 px-4 py-2 rounded-lg font-semibold hover:bg-green-50 transition-colors ml-4"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* UNIFIED Order Success Banner - Flow 5 (create_account_and_pay), Flow 6 (pay_with_account), Flow 7 (pay_with_topup) */}
+      {(flow5Success || flow6Success || flow7Success) && (
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
@@ -1556,7 +2397,11 @@ export default function MenuPage() {
               </div>
             </div>
             <button
-              onClick={() => setShowAccountCreated(false)}
+              onClick={() => {
+                setFlow5Success(false);
+                setFlow6Success(false);
+                setFlow7Success(false);
+              }}
               className="bg-white text-green-700 px-4 py-2 rounded-lg font-semibold hover:bg-green-50 transition-colors ml-4"
             >
               OK
@@ -1572,8 +2417,11 @@ export default function MenuPage() {
         <div className="fixed top-2 right-2 z-[10001]">
           <button
             onClick={() => {
-              if (confirm('Clear all localStorage (dev only)?')) {
-                // Clear all innopay-related items
+              if (confirm('Clear all localStorage and sessionStorage (dev only)? Table number will be preserved.')) {
+                // Preserve table number
+                const currentTable = new URLSearchParams(window.location.search).get('table');
+
+                // Clear all innopay-related items from localStorage
                 localStorage.removeItem('innopay_accountName');
                 localStorage.removeItem('innopay_masterPassword');
                 localStorage.removeItem('innopay_activePrivate');
@@ -1582,14 +2430,28 @@ export default function MenuPage() {
                 localStorage.removeItem('innopay_import_attempts');
                 localStorage.removeItem('innopay_accounts');
                 localStorage.removeItem('innopay_wallet_credentials');
+                localStorage.removeItem('innopay_lastBalance');
+                localStorage.removeItem('innopay_pending_order');
+                localStorage.removeItem('innopay_flow_pending'); // Flow marker (Flow 5, 7, etc.)
+                localStorage.removeItem('innopay_flow5_pending'); // Legacy marker (cleanup)
+                localStorage.removeItem('cart');
 
-                console.log('[DEV] localStorage cleared');
-                alert('localStorage cleared! Reloading...');
-                window.location.reload();
+                // Clear all sessionStorage
+                sessionStorage.clear();
+
+                console.log('[DEV] localStorage and sessionStorage cleared, preserving table:', currentTable);
+                alert('Storage cleared! Reloading...');
+
+                // Reload with table parameter if it exists
+                if (currentTable) {
+                  window.location.href = `${window.location.pathname}?table=${currentTable}`;
+                } else {
+                  window.location.reload();
+                }
               }
             }}
             className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1 rounded shadow-lg font-mono"
-            title="Development only: Clear localStorage"
+            title="Development only: Clear localStorage and sessionStorage"
           >
             🧹 Clear LS
           </button>
@@ -1665,58 +2527,18 @@ export default function MenuPage() {
       )}
 
       {/* Wallet Balance Reopen Button */}
-      {!showWalletBalance && walletBalance && (
-        <button
-          onClick={() => setShowWalletBalance(true)}
-          className="fixed bottom-4 right-4 z-[9998] bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-colors"
-          aria-label="Voir portefeuille"
-        >
-          <span className="text-2xl">💰</span>
-        </button>
-      )}
+      <WalletReopenButton
+        visible={!showWalletBalance && !!walletBalance}
+        onClick={() => setShowWalletBalance(true)}
+      />
 
       {/* Persistent Wallet Balance Indicator */}
-      {showWalletBalance && walletBalance && (
-        <Draggable
-          className="z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 rounded-lg shadow-lg"
-          initialPosition={{
-            x: typeof window !== 'undefined' ? window.innerWidth - 316 : 0, // 300px max-width + 16px margin
-            y: typeof window !== 'undefined' ? window.innerHeight - 170 : 0  // Approximate height + 30px lift
-          }}
-          style={{
-            minWidth: '200px',
-            maxWidth: '300px',
-          }}
-        >
-          <div className="flex items-center justify-between gap-3">
-            {/* Drag handle indicator */}
-            <div className="text-white opacity-50 text-xs flex-shrink-0">
-              ⋮⋮
-            </div>
-
-            <div className="flex-1">
-              <p className="text-xs opacity-75 mb-1">Votre portefeuille Innopay</p>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">💰</span>
-                <div>
-                  <p className="font-bold text-lg">{walletBalance.euroBalance.toFixed(2)} €</p>
-                  <p className="text-xs opacity-75 font-mono">{walletBalance.accountName}</p>
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowWalletBalance(false)}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-1 transition-colors"
-              aria-label="Fermer"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </Draggable>
+      {walletBalance && (
+        <MiniWallet
+          balance={walletBalance}
+          visible={showWalletBalance}
+          onClose={() => setShowWalletBalance(false)}
+        />
       )}
 
       {/* Import Account Modal */}
@@ -1733,42 +2555,124 @@ export default function MenuPage() {
 
             <h3 className="text-xl font-bold mb-4 text-gray-800 text-center">Importer un compte</h3>
 
-            {!importError ? (
-              <>
-                <p className="text-sm text-gray-600 mb-4 text-center">
-                  Entrez l'adresse email que vous avez utilisé pour créer le compte
-                </p>
-
-                <input
-                  type="email"
-                  value={importEmail}
-                  onChange={(e) => setImportEmail(e.target.value)}
-                  placeholder="votre@email.com"
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg mb-4 focus:outline-none focus:border-blue-500 text-gray-800"
-                  disabled={importLoading}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !importLoading) {
-                      handleImportSubmit();
-                    }
-                  }}
-                />
-
-                <p className="text-xs text-gray-500 mb-4 text-center">
-                  {importAttempts} tentative{importAttempts > 1 ? 's' : ''} restante{importAttempts > 1 ? 's' : ''}
-                </p>
-
-                <button
-                  onClick={handleImportSubmit}
-                  disabled={importLoading || !importEmail}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  {importLoading ? 'Recherche...' : 'Récupérer'}
-                </button>
-              </>
-            ) : (
+            {/* Show appropriate content based on step and error state */}
+            {importError && importStep === 'email' ? (
               <div className="text-center py-8">
                 <p className="text-red-600 font-semibold text-lg">{importError}</p>
               </div>
+            ) : (
+              <>
+                {/* Step 1: Email input (original design) */}
+                {importStep === 'email' && (
+                  <>
+                    <p className="text-sm text-gray-600 mb-4 text-center">
+                      Entrez l'adresse email que vous avez utilisé pour créer le compte
+                    </p>
+
+                    <input
+                      type="email"
+                      value={importEmail}
+                      onChange={(e) => setImportEmail(e.target.value)}
+                      placeholder="votre@email.com"
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg mb-4 focus:outline-none focus:border-blue-500 text-gray-800"
+                      disabled={importLoading}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && !importLoading) {
+                          handleRequestCode();
+                        }
+                      }}
+                    />
+
+                    <p className="text-xs text-gray-500 mb-4 text-center">
+                      {importAttempts} tentative{importAttempts > 1 ? 's' : ''} restante{importAttempts > 1 ? 's' : ''}
+                    </p>
+
+                    <button
+                      onClick={handleRequestCode}
+                      disabled={importLoading || !importEmail}
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                      {importLoading ? 'Recherche...' : 'Récupérer'}
+                    </button>
+                  </>
+                )}
+
+                {/* Step 2: Code verification (replaces the old immediate import) */}
+                {importStep === 'code' && (
+                  <>
+                    <p className="text-sm text-gray-600 mb-4 text-center">
+                      Un code de vérification a été envoyé à <strong>{importEmail}</strong>
+                    </p>
+
+                    <input
+                      type="text"
+                      value={verificationCode}
+                      onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="Code à 6 chiffres"
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg mb-4 focus:outline-none focus:border-blue-500 text-gray-800 text-center text-2xl font-mono tracking-widest"
+                      disabled={importLoading}
+                      maxLength={6}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && !importLoading && verificationCode.length === 6) {
+                          handleVerifyCode();
+                        }
+                      }}
+                    />
+
+                    {importError && (
+                      <p className="text-xs text-red-600 mb-4 text-center">{importError}</p>
+                    )}
+
+                    <button
+                      onClick={handleVerifyCode}
+                      disabled={importLoading || verificationCode.length !== 6}
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed mb-2"
+                    >
+                      {importLoading ? 'Vérification...' : 'Vérifier'}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setImportStep('email');
+                        setVerificationCode('');
+                        setImportError('');
+                      }}
+                      className="w-full text-blue-600 hover:text-blue-800 text-sm"
+                    >
+                      ← Retour
+                    </button>
+                  </>
+                )}
+
+                {/* Step 3: Multiple accounts selection (if needed) */}
+                {importStep === 'select' && (
+                  <>
+                    <p className="text-sm text-gray-600 mb-4 text-center">
+                      Plusieurs comptes trouvés. Sélectionnez celui à importer:
+                    </p>
+
+                    <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                      {multipleAccounts.map((account) => (
+                        <button
+                          key={account.accountName}
+                          onClick={() => handleSelectAccount(account.accountName)}
+                          className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                        >
+                          <div className="font-semibold text-gray-800">{account.accountName}</div>
+                          <div className="text-sm text-gray-600">
+                            Solde: {account.euroBalance.toFixed(2)} € •
+                            Créé: {new Date(account.creationDate).toLocaleDateString('fr-FR')}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    {importError && (
+                      <p className="text-xs text-red-600 mb-4 text-center">{importError}</p>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1846,7 +2750,7 @@ export default function MenuPage() {
       {cart.length > 0 && (
         <div ref={cartRef} className="fixed-cart-container">
           <div className="cart-header">Votre Ordre ({getTotalItems()} items) <br/><span className="text-sm">Les prix affichés incluent le discount</span></div>
-          <div className="cart-items-list">
+          <div ref={cartItemsListRef} className="cart-items-list">
             {cart.map(item => (
               // Use the memoized CartItemDisplay component
               <CartItemDisplay

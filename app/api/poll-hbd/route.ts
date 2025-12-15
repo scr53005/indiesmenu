@@ -80,7 +80,7 @@ export async function GET(request: Request) {
       orderBy: { id: 'desc' },
       take: 50,
     });
-    console.log('Unfulfilled transfers from back-end DB:', unfulfilledTransfers.length, 'rows');
+    console.log('Unfulfilled HBD transfers from back-end DB:', unfulfilledTransfers.length, 'rows');
 
     const formattedUnfulfilled = unfulfilledTransfers.map(t => ({
       id: t.id.toString(),

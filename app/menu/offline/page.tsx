@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import MenuItem from '@/components/MenuItem';
+import MenuItem from '@/components/menu/MenuItem';
 import { MenuData, FormattedDish, FormattedDrink } from '@/lib/data/menu';
 import '@/app/globals.css';
 

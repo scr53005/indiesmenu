@@ -10,6 +10,27 @@ export interface CurrencyRate {
   isFresh: boolean;
 }
 
+/**
+ * Determines the Innopay URL based on the current environment
+ * @returns The base URL for the Innopay wallet service
+ */
+export function getInnopayUrl(): string {
+  if (typeof window === 'undefined') {
+    // Server-side fallback
+    return process.env.NEXT_PUBLIC_INNOPAY_URL || 'https://wallet.innopay.lu';
+  }
+
+  const hostname = window.location.hostname;
+
+  if (hostname === 'localhost') {
+    return 'http://localhost:3000';
+  } else if (hostname === 'indies.innopay.lu' || hostname.includes('vercel.app')) {
+    return 'https://wallet.innopay.lu';
+  } else {
+    return `http://${hostname}:3000`;
+  }
+}
+
 interface HiveTransferParams {
   recipient: string;
   amountHbd: string; // e.g., "0.010"
@@ -24,13 +45,32 @@ interface CartItem {
   options: { [key: string]: string }; // e.g., { size: '50cl' }
 }
 
-// Fetches the latest EUR/USD rate from the API
+// Fetches the latest EUR/USD rate
+// On client-side: calls the API endpoint
+// On server-side: uses shared business logic directly (no HTTP overhead)
 export async function getLatestEurUsdRate(today: Date): Promise<CurrencyRate> {
   const todayStr = today.toISOString().split('T')[0];
+
+  // Server-side: import and call shared business logic directly
+  if (typeof window === 'undefined') {
+    try {
+      const { fetchCurrencyRate } = await import('@/lib/currency-service');
+      return await fetchCurrencyRate(today);
+    } catch (error) {
+      console.warn('[UTILS] Error fetching currency rate on server:', error);
+      return {
+        date: today.toISOString(),
+        conversion_rate: 1.0,
+        isFresh: false,
+      };
+    }
+  }
+
+  // Client-side: call the API endpoint
   try {
     const response = await fetch(`/api/currency?today=${todayStr}`);
     if (!response.ok) {
-      console.warn('Failed to fetch currency rate from API, status:', response.status);
+      console.warn('[UTILS] Failed to fetch currency rate from API, status:', response.status);
       return {
         date: today.toISOString(),
         conversion_rate: 1.0,
@@ -40,7 +80,7 @@ export async function getLatestEurUsdRate(today: Date): Promise<CurrencyRate> {
     const data: CurrencyRate = await response.json();
     return data;
   } catch (error) {
-    console.warn('Error fetching currency rate from API:', error);
+    console.warn('[UTILS] Error fetching currency rate from API:', error);
     return {
       date: today.toISOString(),
       conversion_rate: 1.0,

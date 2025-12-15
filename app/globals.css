@@ -47,6 +47,9 @@ body {
   box-shadow: 0 4px 12px var(--shadow);
   padding: 12px;
   color: white;
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
 }
 .fixed-menu-selector {
   position: fixed;
@@ -85,12 +88,52 @@ body {
   font-weight: bold;
   margin-bottom: 5px;
   text-align: center;
+  flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 .cart-items-list {
   display: flex;
   flex-direction: column;
   gap: 8px; /* Space between cart items */
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0; /* Important for flex scrolling to work properly */
+  position: relative;
+  /* Make scrollbar more visible on iOS */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollbar styling for webkit browsers */
+.cart-items-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.cart-items-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.cart-items-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+}
+
+.cart-items-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* Visual indicator for scrollable content - fade at bottom */
+.cart-items-list::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  background: linear-gradient(to bottom, transparent, var(--primary) 80%);
+  pointer-events: none;
+  opacity: var(--show-gradient, 0);
+  transition: opacity 0.3s;
 }
 
 /*.cart-item-grid {
@@ -229,6 +272,7 @@ body {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid #eee;
+  flex-shrink: 0; /* Prevent footer from shrinking */
 }
 
 .cart-total-text {
@@ -237,7 +281,7 @@ body {
 }
 
 .order-now-button {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  background: linear-gradient(90deg, #6b2808 0%, var(--primary) 50%, #fbbf24 100%);
   color: white;
   border: none;
   border-radius: 8px;
@@ -256,7 +300,7 @@ body {
 
 .call-waiter-button {
   background-color: white;
-  color: var(--primary);
+  color: #6b2808;
   border: 2px solid var(--primary);
   border-radius: 8px;
   padding: 10px 20px;
