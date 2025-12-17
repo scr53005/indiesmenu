@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { invalidateMenuCache } from '@/lib/data/menu';
 
 const prisma = new PrismaClient();
 
@@ -86,6 +87,10 @@ export async function POST(request: NextRequest) {
         category_id: categoryRecord.category_id,
       },
     });
+
+    // Invalidate menu cache so new dish appears immediately
+    invalidateMenuCache();
+    console.log(`[ADMIN] Created dish ${newDish.dish_id}, cache invalidated`);
 
     return NextResponse.json(newDish, { status: 201 });
   } catch (error) {

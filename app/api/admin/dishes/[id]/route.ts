@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { invalidateMenuCache } from '@/lib/data/menu';
 
 const prisma = new PrismaClient();
 
@@ -25,6 +26,10 @@ export async function PUT(
         ...(sold_out !== undefined && { sold_out }),
       },
     });
+
+    // Invalidate menu cache so changes appear immediately
+    invalidateMenuCache();
+    console.log(`[ADMIN] Updated dish ${dishId}, cache invalidated`);
 
     return NextResponse.json(updatedDish);
   } catch (error) {
@@ -53,6 +58,10 @@ export async function DELETE(
     await prisma.dishes.delete({
       where: { dish_id: dishId },
     });
+
+    // Invalidate menu cache so deletion appears immediately
+    invalidateMenuCache();
+    console.log(`[ADMIN] Deleted dish ${dishId}, cache invalidated`);
 
     return NextResponse.json({ message: 'Dish deleted successfully' });
   } catch (error) {

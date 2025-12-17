@@ -336,3 +336,16 @@ export async function getCachedMenuData(): Promise<MenuData> {
     throw error;
   }
 }
+
+/**
+ * Invalidates the menu cache
+ * Call this after creating/updating/deleting dishes or drinks
+ */
+export function invalidateMenuCache(): void {
+  console.log('[MENU CACHE] Cache invalidated manually');
+  menuCache = {
+    data: null,
+    timestamp: 0,
+    isStale: true,
+  };
+}

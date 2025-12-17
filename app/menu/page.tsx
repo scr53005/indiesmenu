@@ -402,25 +402,26 @@ export default function MenuPage() {
     }
   }, []);
 
-  // 🔧 DEBUG: Load Eruda for mobile debugging
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/eruda';
-    script.onload = () => {
-      if ((window as any).eruda) {
-        (window as any).eruda.init();
-        console.log('🔧 Eruda mobile debugger loaded - tap floating button to open console');
-      }
-    };
-    document.body.appendChild(script);
+  // 🔧 DEBUG: Load Eruda for mobile debugging (COMMENTED OUT FOR PRODUCTION)
+  // Uncomment for mobile debugging only
+  // useEffect(() => {
+  //   const script = document.createElement('script');
+  //   script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+  //   script.onload = () => {
+  //     if ((window as any).eruda) {
+  //       (window as any).eruda.init();
+  //       console.log('🔧 Eruda mobile debugger loaded - tap floating button to open console');
+  //     }
+  //   };
+  //   document.body.appendChild(script);
 
-    return () => {
-      // Cleanup on unmount
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-    };
-  }, []);
+  //   return () => {
+  //     // Cleanup on unmount
+  //     if (script.parentNode) {
+  //       script.parentNode.removeChild(script);
+  //     }
+  //   };
+  // }, []);
 
   // Load import attempts counter from localStorage
   useEffect(() => {
