@@ -1633,7 +1633,9 @@ export default function MenuPage() {
           localStorage.removeItem('innopay_flow_pending');
         }
 
-        alert('Commande envoyée avec succès!');
+        // Show unified order success banner (replaced alert for consistency with other flows)
+        setFlow6Success(true);
+        // alert('Commande envoyée avec succès!'); // OLD: Replaced with unified banner
 
       } catch (error: any) {
         console.error('[WALLET PAYMENT] Error:', error);
