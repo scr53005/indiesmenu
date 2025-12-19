@@ -24,7 +24,7 @@ interface GroupedCategory<T> {
 }
 
 export default function MenuPage() {
-  const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, setTable } = useCart();
+  const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable } = useCart();
   // Use the imported MenuData type for the menu state
   const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [], conversion_rate: 1.0000 }); // Initialize with empty data
   const [error, setError] = useState<string | null>(null);
@@ -321,9 +321,17 @@ export default function MenuPage() {
               // Trigger balance refresh AFTER all state updates and localStorage writes complete
               // Increased from 3 to 5 seconds to allow Hive-Engine cache to update
               setTimeout(() => {
-                console.log('[FLOW 7] Triggering balance refresh to fetch real on-chain balance');
-                setRefreshBalanceTrigger(prev => prev + 1);
-              }, 5000); // 5 seconds to allow Hive-Engine cache to catch up
+                console.log('[FLOW 7] Fetching fresh balance from localStorage');
+                const accountName = localStorage.getItem('innopay_accountName');
+                const lastBalance = localStorage.getItem('innopay_lastBalance');
+                if (accountName && lastBalance) {
+                  setWalletBalance({
+                    accountName,
+                    euroBalance: parseFloat(lastBalance)
+                  });
+                  console.log('[FLOW 7] Balance updated:', lastBalance);
+                }
+              }, 5000); // 5 seconds to allow Hive-Engine cache to update
 
             } else if (currentFlow === 'flow5_create_and_pay') {
               // FLOW 5: Create new account with order payment
@@ -1346,11 +1354,14 @@ export default function MenuPage() {
     });
 
     if (accountName && (activeKey || masterPassword)) {
-      // ═══════════════════════════════════════════════════════════════════════════════
-      // FLOW 6 & 7: pay_with_account | pay_with_topup
+      // ═════════════════════════════════════════════════════════════════════════
+      // FLOW 6 & 7 ENTRY POINT - EXISTING ACCOUNT PAYMENT (Nov 2025)
+      // ═════════════════════════════════════════════════════════════════════════
+      // User has credentials → Check balance → Route to Flow 6 or Flow 7
+      // Flow 6 (sufficient balance): Direct payment with dual-currency system
+      // Flow 7 (insufficient balance): Redirect to innopay for topup
       // Reference: lib/flows.ts, FLOWS.md lines 148-244
-      // Description: Pay with existing account (or redirect to topup if insufficient balance)
-      // ═══════════════════════════════════════════════════════════════════════════════
+      // ═════════════════════════════════════════════════════════════════════════
       console.log('[WALLET PAYMENT] Customer has credentials, initiating EURO token payment');
 
       // Start timer
@@ -1420,11 +1431,14 @@ export default function MenuPage() {
 
         console.log('[WALLET PAYMENT] Final EURO balance:', currentEuroBalance, 'Required:', amountEuroNum);
 
-        // ───────────────────────────────────────────────────────────────────────────────
-        // FLOW 7 DECISION POINT: Insufficient balance → pay_with_topup
+        // ─────────────────────────────────────────────────────────────────────────
+        // FLOW 6 vs FLOW 7 DECISION POINT (Dec 2025)
+        // ─────────────────────────────────────────────────────────────────────────
+        // Decision: Sufficient balance → FLOW 6 (pay_with_account)
+        //           Insufficient balance → FLOW 7 (pay_with_topup)
         // Reference: lib/flows.ts detectFlow(), FLOWS.md lines 197-244
-        // ───────────────────────────────────────────────────────────────────────────────
-        // Check if sufficient balance
+        // ─────────────────────────────────────────────────────────────────────────
+        // Check if sufficient balance for Flow 6
         if (currentEuroBalance < amountEuroNum) {
           // Round UP deficit to nearest cent to avoid rounding errors
           const deficitRaw = amountEuroNum - currentEuroBalance;
@@ -1441,53 +1455,61 @@ export default function MenuPage() {
           }
           setOrderProcessing(false);
 
-          // ⚠️ FLOW 7: pay_with_topup - PROPER IMPLEMENTATION (Flow 2 + Flow 6)
+          // ─────────────────────────────────────────────────────────────────────────
+          // FLOW 7: pay_with_topup - UNIFIED WEBHOOK ARCHITECTURE (Dec 2025)
+          // ─────────────────────────────────────────────────────────────────────────
+          // Architecture: Redirect to innopay with order context → User tops up via Stripe
+          //               → Webhook handles ALL transfers (topup + order payment + change)
+          //               → Stripe redirects back to indiesmenu with order_success=true
           // Reference: FLOWS.md lines 197-244
-          // Redirect to innopay UI with full context for proper topup experience
           // NOTE: Cart persists in localStorage automatically - no need to store separately!
+          // ─────────────────────────────────────────────────────────────────────────
 
-          // Generate order memo for context
-          const orderMemo = getMemo();
+          // Generate order memo with distriate suffix (added Dec 18, 2025)
+          const orderMemo = getMemoWithDistriate();
 
-          // Redirect to innopay client UI with context
+          // Build return URL for Stripe redirect after topup completion
           const returnUrl = `${window.location.origin}/menu?table=${table}`;
+
+          // Prepare context parameters for innopay
           const params = new URLSearchParams({
             topup_for: 'order',                              // Flag: topup for restaurant order
             source: 'indiesmenu',                            // Source application
             table: table,                                     // Table number
             order_amount: amountEuroNum.toFixed(2),          // Order total
-            order_memo: encodeURIComponent(orderMemo),       // Order details
+            order_memo: encodeURIComponent(orderMemo),       // Order details with distriate suffix
             deficit: deficit,                                 // Amount needed
             account: accountName,                             // Account name (for MiniWallet display)
             balance: currentEuroBalance.toFixed(2),          // Current balance
-            return_url: encodeURIComponent(returnUrl)        // Return after success
+            return_url: encodeURIComponent(returnUrl)        // Return URL after Stripe payment
           });
 
-          // Set Flow 7 marker before redirect
+          // Set Flow 7 marker for success detection on return
           localStorage.setItem('innopay_flow_pending', 'flow7_topup_and_pay');
           console.log('[FLOW 7] Set flow marker: flow7_topup_and_pay');
 
-          // Clear old balance before redirect - Flow 7 will fetch fresh balance after return
+          // Clear stale balance - will be refreshed from webhook data on return
           localStorage.removeItem('innopay_lastBalance');
           console.log('[FLOW 7] Cleared old balance - will fetch fresh after topup');
 
-          console.log('[FLOW 7] Redirecting to innopay UI with unified webhook approach');
+          console.log('[FLOW 7] Redirecting to innopay with unified webhook approach');
           console.log('[FLOW 7] Context params:', Object.fromEntries(params));
 
-          // Redirect to innopay client page (not API)
-          // NEW FLOW 7: Webhook will handle everything (topup + order payment + change)
-          // and return with order_success=true&session_id=XXX
+          // Redirect to innopay landing page with order context
+          // Webhook will execute all transfers and Stripe will redirect back with session_id
           window.location.href = `${innopayUrl}?${params.toString()}`;
           return;
         }
 
-        // ───────────────────────────────────────────────────────────────────────────────
-        // FLOW 6: pay_with_account - Working implementation (DO NOT BREAK)
+        // ─────────────────────────────────────────────────────────────────────────
+        // FLOW 6: pay_with_account - TWO-LEG DUAL-CURRENCY ARCHITECTURE (Nov 2025)
+        // ─────────────────────────────────────────────────────────────────────────
+        // Architecture: Customer → innopay (HBD attempt + EURO collateral)
+        //               → innopay API executes restaurant transfer (HBD priority, EURO fallback)
+        //               → Records outstanding debt if HBD insufficient
         // Reference: lib/flows.ts detectFlow(), FLOWS.md lines 148-196
-        // Structure: Two-leg dual-currency payment (HBD attempt + EURO collateral + debt)
-        //   Leg 1: Customer → innopay (lines 1122-1196)
-        //   Leg 2: innopay → restaurant (lines 1197-1248, via API)
-        // ───────────────────────────────────────────────────────────────────────────────
+        // Status: ✅ STABLE - DO NOT BREAK
+        // ─────────────────────────────────────────────────────────────────────────
 
         // alert('Étape 2: Récupération du taux EUR/USD...');
         // 3. Fetch EUR/USD rate using the same approach as kitchen backend

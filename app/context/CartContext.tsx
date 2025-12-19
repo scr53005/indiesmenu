@@ -31,6 +31,7 @@ interface CartContextType {
   getTotalEurPriceNoDiscount: () => string;
   getDiscountAmount: () => string;
   getMemo: () => string;
+  getMemoWithDistriate: () => string; // Returns memo with distriate suffix (for Flow 7)
   setTable: (tableId: string) => void;
 }
 
@@ -50,6 +51,7 @@ const CartContext = createContext<CartContextType>({
   getTotalEurPriceNoDiscount: () => '0.00',
   getDiscountAmount: () => '0.00',
   getMemo: () => '',
+  getMemoWithDistriate: () => '',
   setTable: () => {},
 });
 
@@ -206,6 +208,19 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     return memoWithTableInfo;
   }, [cart, tableState]);
 
+  const getMemoWithDistriate = useCallback(() => {
+    // Get base memo and add distriate suffix (same pattern as orderNow)
+    const baseMemo = getMemo();
+    // Use generateDistriatedHiveOp to get the memo with suffix, then extract just the memo
+    const params = {
+      recipient: 'temp',
+      amountHbd: '0.001',
+      memo: baseMemo
+    };
+    generateDistriatedHiveOp(params); // This modifies params.memo to include distriate suffix
+    return params.memo;
+  }, [getMemo]);
+
   const orderNow = useCallback(() => {
     const memoWithTableInfo = getMemo();
     const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
@@ -268,6 +283,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
         getTotalEurPriceNoDiscount,
         getDiscountAmount,
         getMemo,
+        getMemoWithDistriate,
         setTable
       }}
     >
