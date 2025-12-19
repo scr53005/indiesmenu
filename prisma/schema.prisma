@@ -115,11 +115,28 @@ model drinks_ingredients {
   @@id([drink_id, ingredient_id])
 }
 
+model alergenes {
+  alergene_id           Int                     @id @default(autoincrement())
+  name_fr               String                  @unique @db.VarChar(100)
+  name_en               String                  @unique @db.VarChar(100)
+  ingredients_alergenes ingredients_alergenes[]
+}
+
 model ingredients {
-  ingredient_id      Int                  @id @default(autoincrement())
-  name               String               @unique @db.VarChar(100)
-  dishes_ingredients dishes_ingredients[]
-  drinks_ingredients drinks_ingredients[]
+  ingredient_id         Int                     @id @default(autoincrement())
+  name                  String                  @unique @db.VarChar(100)
+  dishes_ingredients    dishes_ingredients[]
+  drinks_ingredients    drinks_ingredients[]
+  ingredients_alergenes ingredients_alergenes[]
+}
+
+model ingredients_alergenes {
+  ingredient_id Int
+  alergene_id   Int
+  ingredients   ingredients @relation(fields: [ingredient_id], references: [ingredient_id], onDelete: Cascade, onUpdate: NoAction)
+  alergenes     alergenes   @relation(fields: [alergene_id], references: [alergene_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([ingredient_id, alergene_id])
 }
 
 model orders {
