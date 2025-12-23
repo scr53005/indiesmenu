@@ -10,8 +10,10 @@ export function middleware(request: NextRequest) {
     const authCookie = request.cookies.get('admin_session');
 
     if (!authCookie || authCookie.value !== 'authenticated') {
-      // Redirect to login
-      return NextResponse.redirect(new URL('/admin/login', request.url));
+      // Redirect to login with return URL
+      const loginUrl = new URL('/admin/login', request.url);
+      loginUrl.searchParams.set('returnUrl', request.nextUrl.pathname);
+      return NextResponse.redirect(loginUrl);
     }
   }
 
