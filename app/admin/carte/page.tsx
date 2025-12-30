@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 
 interface Match {
   id: number;
@@ -192,7 +193,16 @@ export default function AdminCarte() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Admin - Carte & Images</h1>
+        <div className="flex items-center gap-4 mb-8">
+          <Link
+            href="/admin"
+            className="text-blue-600 hover:text-blue-800 transition-colors"
+            title="Retour au tableau de bord"
+          >
+            <span className="text-3xl">←</span>
+          </Link>
+          <h1 className="text-3xl font-bold">Admin - Carte & Images</h1>
+        </div>
 
         {message && (
           <div

@@ -32,6 +32,10 @@ output_qrs
 output_qrs/*
 *.bak
 
+# image optimization (temporary folders)
+/public/images-backup
+/public/images-optimized
+
 # debug
 npm-debug.log*
 yarn-debug.log*

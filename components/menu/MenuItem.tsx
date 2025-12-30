@@ -1,5 +1,6 @@
 // components/MenuItem.tsx
 import React from 'react';
+import Image from 'next/image';
 // Import the enriched types directly from your menu data file
 import { FormattedCuisson, FormattedIngredient, FormattedDish, FormattedDrink } from '@/lib/data/menu';
 
@@ -89,7 +90,15 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
     return (
         <div className="menu-item text-black"> {/* key prop is applied in the map function in the parent component */}
             {item.image && (
-                <img src={item.image} alt={item.name} className="menu-item-image" />
+                <Image
+                    src={item.image}
+                    alt={item.name}
+                    width={800}
+                    height={600}
+                    className="menu-item-image"
+                    loading="lazy"
+                    quality={75}
+                />
             )}
             <div className="menu-item-details">
                 <h4 className="font-bold text-lg">{item.name}</h4>

@@ -8,7 +8,7 @@ export default function AdminLogin() {
   const [error, setError] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnUrl = searchParams.get('returnUrl') || '/admin/daily-specials';
+  const returnUrl = searchParams.get('returnUrl') || '/admin';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

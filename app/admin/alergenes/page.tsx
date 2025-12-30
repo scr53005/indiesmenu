@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 interface Alergene {
   alergene_id: number;
@@ -131,9 +132,18 @@ export default function AdminAlergenes() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            Gestion des Allergènes
-          </h1>
+          <div className="flex items-center gap-4 mb-2">
+            <Link
+              href="/admin"
+              className="text-blue-600 hover:text-blue-800 transition-colors"
+              title="Retour au tableau de bord"
+            >
+              <span className="text-3xl">←</span>
+            </Link>
+            <h1 className="text-3xl font-bold text-gray-800">
+              Gestion des Allergènes
+            </h1>
+          </div>
           <p className="text-gray-600">
             Assignez des allergènes aux ingrédients selon le règlement UE 1169/2011
           </p>

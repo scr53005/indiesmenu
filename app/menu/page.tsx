@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useCart } from '@/app/context/CartContext';
+import { useBalance } from '@/hooks/useBalance';
 import MenuItem from '@/components/menu/MenuItem';
 import CartItemDisplay from '@/components/menu/CartItemDisplay';
 import MiniWallet, { WalletReopenButton } from '@/components/ui/MiniWallet';
@@ -98,7 +99,27 @@ export default function MenuPage() {
     accountName: string;
     euroBalance: number;
   } | null>(null);
-  const [refreshBalanceTrigger, setRefreshBalanceTrigger] = useState(0); // Increment to trigger balance refresh
+
+  // Get account name for React Query balance fetching
+  const accountName = typeof window !== 'undefined'
+    ? localStorage.getItem('innopay_accountName')
+    : null;
+
+  // Fetch balance using React Query (replaces manual useEffect at line 602-705)
+  const { balance, isLoading: balanceLoading, refetch: refetchBalance } = useBalance(accountName, {
+    enabled: !!accountName && !accountName.startsWith('mockaccount'),
+  });
+
+  // Sync React Query balance to walletBalance state
+  useEffect(() => {
+    if (balance !== null && accountName) {
+      setWalletBalance({
+        accountName,
+        euroBalance: balance
+      });
+      setShowWalletBalance(true);
+    }
+  }, [balance, accountName]);
 
   // State for topup success notification
   const [showTopupSuccess, setShowTopupSuccess] = useState(false);
@@ -371,6 +392,8 @@ export default function MenuPage() {
 
             } else {
               // Normal account creation without order (no Flow 5 marker)
+              console.log('[ACCOUNT CREATED] ⚠️ Entered ELSE branch - currentFlow:', currentFlow);                                      
+              console.log('[ACCOUNT CREATED] This will cause page reload in 3 seconds!');     
               setNewAccountCredentials({
                 accountName: credentials.accountName,
                 masterPassword: credentials.masterPassword,
@@ -603,105 +626,8 @@ export default function MenuPage() {
     }
   }, [searchParams, table, clearCart]);
 
-  // Check for existing wallet credentials on mount
-  useEffect(() => {
-    const checkWalletBalance = async () => {
-      // Safety check: only run in browser context
-      if (typeof window === 'undefined') {
-        console.log('[WALLET BALANCE] Skipping - not in browser context');
-        return;
-      }
-
-      const accountName = localStorage.getItem('innopay_accountName');
-
-      if (!accountName) {
-        console.warn('[WALLET BALANCE] No credentials found in localStorage');
-        return;
-      }
-
-      console.warn('[WALLET BALANCE] Found credentials for:', accountName);
-
-      // First, check for cached/optimistic balance in localStorage
-      const cachedBalance = localStorage.getItem('innopay_lastBalance');
-      if (cachedBalance) {
-        const balance = parseFloat(cachedBalance);
-        console.log('[WALLET BALANCE] Using cached balance from localStorage:', balance);
-        setWalletBalance({
-          accountName,
-          euroBalance: balance
-        });
-        setShowWalletBalance(true);
-      }
-
-      // Skip blockchain fetch for mock accounts (they don't exist on-chain)
-      if (accountName.startsWith('mockaccount')) {
-        console.log('[WALLET BALANCE] Mock account detected - skipping blockchain fetch');
-        // If no cached balance, show 0 for mock account
-        if (!cachedBalance) {
-          setWalletBalance({
-            accountName,
-            euroBalance: 0
-          });
-          setShowWalletBalance(true);
-        }
-        return;
-      }
-
-      try {
-        // Fetch EURO balance using robust API strategy
-        console.log('[WALLET BALANCE] Calling API to fetch real balance for:', accountName);
-        const response = await fetch(`/api/balance/euro?account=${encodeURIComponent(accountName)}`);
-
-        if (response.ok) {
-          const data = await response.json();
-          const euroBalance = data.balance;
-
-          console.log('[WALLET BALANCE] Real EURO token balance retrieved:', euroBalance, 'from', data.source);
-
-          // CRITICAL: Prevent stale Hive-Engine cache from overwriting fresh data
-          // Only update if new balance is >= current balance OR if current balance is very old (60+ seconds)
-          const currentBalance = parseFloat(localStorage.getItem('innopay_lastBalance') || '0');
-          const balanceTimestamp = parseInt(localStorage.getItem('innopay_lastBalance_timestamp') || '0');
-          const now = Date.now();
-          const isStale = (now - balanceTimestamp) > 60000; // 60 seconds
-
-          if (euroBalance >= currentBalance || isStale) {
-            console.log('[WALLET BALANCE] ✓ Updating balance:', currentBalance, '→', euroBalance, isStale ? '(stale)' : '(higher)');
-
-            // Update with real balance
-            setWalletBalance({
-              accountName,
-              euroBalance: parseFloat(euroBalance.toFixed(2))
-            });
-            // Update localStorage with real balance and timestamp
-            localStorage.setItem('innopay_lastBalance', euroBalance.toFixed(2));
-            localStorage.setItem('innopay_lastBalance_timestamp', now.toString());
-            setShowWalletBalance(true);
-          } else {
-            console.warn('[WALLET BALANCE] ⚠️ Ignoring stale balance from cache:', euroBalance, '< current:', currentBalance);
-            console.warn('[WALLET BALANCE] This is likely Hive-Engine cache lag - keeping current balance');
-
-            // Retry after 5 seconds to get fresh data
-            console.log('[WALLET BALANCE] Scheduling retry in 5 seconds...');
-            setTimeout(() => {
-              console.log('[WALLET BALANCE] Retrying balance fetch to get fresh data');
-              setRefreshBalanceTrigger(prev => prev + 1);
-            }, 5000);
-          }
-        } else {
-          console.warn('[WALLET BALANCE] API returned error:', response.status);
-          // Keep the cached balance we set above
-        }
-      } catch (error: any) {
-        console.error('[WALLET BALANCE] Error fetching EURO balance from API (will use cached):', error);
-        // Keep the cached balance we set above, don't override with 0
-      }
-    };
-
-    // Check on mount AND when refresh is triggered
-    // This ensures the real balance is fetched after Flow 7 updates the state
-    checkWalletBalance();
-  }, [refreshBalanceTrigger]); // Re-fetch when trigger increments
+  // ✅ Balance fetching now handled by React Query useBalance hook above (lines 109-122)
+  // Replaced 98 lines of manual fetch logic with automatic caching and smart refetching
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // FLOW 7: REMOVED - Now using unified webhook approach

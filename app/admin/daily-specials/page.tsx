@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { PT_Sans } from 'next/font/google';
 
 const ptSans = PT_Sans({
@@ -232,6 +233,13 @@ export default function AdminDailySpecials() {
       <div className="bg-blue-600 text-white p-4 shadow-lg">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
+            <Link
+              href="/admin"
+              className="text-white hover:text-blue-200 transition-colors"
+              title="Retour au tableau de bord"
+            >
+              <span className="text-2xl">←</span>
+            </Link>
             <h1 className="text-3xl font-bold">Administration - Plat du Jour</h1>
             {/* Save status indicator */}
             {unsavedChanges && (
@@ -263,6 +271,13 @@ export default function AdminDailySpecials() {
               className="bg-white text-blue-600 px-4 py-2 rounded hover:bg-blue-50"
             >
               Menu
+            </a>
+            <a
+              href="/display/printout"
+              target="_blank"
+              className="bg-white text-blue-600 px-4 py-2 rounded hover:bg-blue-50"
+            >
+              Version imprimable
             </a>
           </div>
         </div>
