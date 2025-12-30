@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from './context/CartContext';
+import QueryProvider from './providers/QueryProvider';
 import { Suspense } from 'react';
 import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
 
@@ -39,11 +40,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ServiceWorkerRegistration />
-        <Suspense fallback={<div>Loading application...</div>}>
-        <CartProvider>
-          {children}
-        </CartProvider>
-       </Suspense>
+        <QueryProvider>
+          <Suspense fallback={<div>Loading application...</div>}>
+            <CartProvider>
+              {children}
+            </CartProvider>
+          </Suspense>
+        </QueryProvider>
       </body>
     </html>
   );
