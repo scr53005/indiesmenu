@@ -24,7 +24,7 @@ interface GroupedCategory<T> {
 }
 
 export default function MenuPage() {
-  const { cart, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable } = useCart();
+  const { cart, table, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable } = useCart();
   // Use the imported MenuData type for the menu state
   const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [], conversion_rate: 1.0000 }); // Initialize with empty data
   const [error, setError] = useState<string | null>(null);
@@ -33,10 +33,21 @@ export default function MenuPage() {
   const [selectedCuisson, setSelectedCuisson] = useState<{ [key: string]: string }>({}); // Track selected cuisson for dishes
   const [selectedIngredients, setSelectedIngredients] = useState<{ [key: string]: string }>({}); // Track selected ingredients for drinks
   const searchParams = useSearchParams();
-  const urlTable = searchParams.get('table') || '00';
-  const validatedTable = parseInt(urlTable, 10);
-  const table = isNaN(validatedTable) ? '00' : validatedTable.toString(); // Default to '00' if parsing fails
+  // Note: 'table' is now managed by CartContext and persisted in localStorage
+  // CartContext automatically reads from URL param or localStorage, with URL taking precedence
   const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
+
+  /**
+   * Helper function to clean up URL params while preserving the table number
+   * Priority: URL param > localStorage > CartContext fallback
+   */
+  const cleanUrlPreservingTable = useCallback((context: string) => {
+    const urlTableParam = searchParams.get('table');
+    const preservedTable = urlTableParam || localStorage.getItem('cartTable') || table;
+    const newUrl = `${window.location.pathname}?table=${preservedTable}`;
+    window.history.replaceState({}, '', newUrl);
+    console.log(`[${context}] URL cleaned, preserved table:`, preservedTable);
+  }, [searchParams, table]);
 
   // State for menu navigation
   const [activeMenuSection, setActiveMenuSection] = useState<'dishes' | 'drinks' | null>(null);
@@ -164,9 +175,8 @@ export default function MenuPage() {
       setTransmissionError(false); // Reset error state
       setCurrentSessionId(sessionId);
       // DON'T clear cart yet - wait for blockchain confirmation
-      // Remove query params from URL
-      const newUrl = `${window.location.pathname}?table=${table}`;
-      window.history.replaceState({}, '', newUrl);
+      // Remove query params from URL while preserving table
+      cleanUrlPreservingTable('PAYMENT SUCCESS CHECK');
     } else {
       console.log('[PAYMENT SUCCESS CHECK] No success payment detected');
     }
@@ -258,9 +268,8 @@ export default function MenuPage() {
               euroBalance: credentials.euroBalance
             });
 
-            // Remove query params from URL
-            const newUrl = `${window.location.pathname}?table=${table}`;
-            window.history.replaceState({}, '', newUrl);
+            // Remove query params from URL while preserving table
+            cleanUrlPreservingTable('EXISTING ACCOUNT');
 
             // Check if Flow 5 marker exists, update to handover
             if (currentFlow === 'flow5_create_and_pay') {
@@ -310,9 +319,8 @@ export default function MenuPage() {
               localStorage.removeItem('innopay_flow_pending');
               console.log('[FLOW 7 SUCCESS] Cleared flow marker');
 
-              // Remove query params from URL
-              const newUrl = `${window.location.pathname}?table=${table}`;
-              window.history.replaceState({}, '', newUrl);
+              // Remove query params from URL while preserving table
+              cleanUrlPreservingTable('FLOW 7 COMPLETION');
 
               // Show success banner
               handleFlow7Success();
@@ -350,9 +358,8 @@ export default function MenuPage() {
               localStorage.removeItem('innopay_flow_pending');
               console.log('[FLOW 5 NEW ACCOUNT] Cart cleared, flow marker removed - order complete');
 
-              // Remove query params from URL
-              const newUrl = `${window.location.pathname}?table=${table}`;
-              window.history.replaceState({}, '', newUrl);
+              // Remove query params from URL while preserving table
+              cleanUrlPreservingTable('FLOW 5 NEW ACCOUNT');
 
               // Show success banner for Flow 5 (create_account_and_pay)
               setNewAccountCredentials({
@@ -377,9 +384,8 @@ export default function MenuPage() {
 
               console.log('[ACCOUNT CREATED] Success banner shown for account:', credentials.accountName);
 
-              // Remove query params from URL
-              const newUrl = `${window.location.pathname}?table=${table}`;
-              window.history.replaceState({}, '', newUrl);
+              // Remove query params from URL while preserving table
+              cleanUrlPreservingTable('ACCOUNT CREATED');
 
               // Refresh page after 3 seconds to load mini wallet with stored credentials
               setTimeout(() => {
@@ -541,9 +547,8 @@ export default function MenuPage() {
               console.log('[FLOW 4] Account created successfully, showing Flow 4 success banner');
             }
 
-            // Clear params from URL
-            const newUrl = `${window.location.pathname}?table=${table}`;
-            window.history.replaceState({}, '', newUrl);
+            // Clear params from URL while preserving table
+            cleanUrlPreservingTable('TOPUP RETURN');
 
             // Reload after 3 seconds to fetch real balance
             setTimeout(() => {
@@ -586,9 +591,8 @@ export default function MenuPage() {
         // Show success banner
         setShowTopupSuccess(true);
 
-        // Clear params from URL
-        const newUrl = `${window.location.pathname}?table=${table}`;
-        window.history.replaceState({}, '', newUrl);
+        // Clear params from URL while preserving table
+        cleanUrlPreservingTable('TOPUP SUCCESS');
 
         // Reload page after 2 seconds to refresh wallet balance
         setTimeout(() => {
@@ -802,7 +806,7 @@ export default function MenuPage() {
 
         console.log("Fetched conversion rate:", data.conversion_rate);
 
-        // Prefetch all menu images for offline caching
+        /* // Prefetch all menu images for offline caching
         const prefetchImages = () => {
           const imageUrls: string[] = [
             ...data.dishes.map(d => d.image),
@@ -827,6 +831,7 @@ export default function MenuPage() {
 
         // Start prefetching after a short delay to prioritize initial page load
         setTimeout(prefetchImages, 1000);
+        */
       } catch (e: any) {
         setError(e.message);
         setLoading(false);

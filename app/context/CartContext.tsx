@@ -75,18 +75,26 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
         setConversionRate(firstItemWithRate.conversion_rate);
       }
     }
-    // Initialize table from localStorage or URL
-    const savedTable = localStorage.getItem('cartTable');
-    if (savedTable) {
-        setTableState(savedTable);
-    } else if (urlTable) {
+    // Initialize table from URL or localStorage (URL takes precedence - it's the source of truth from QR codes)
+    if (urlTable) {
+        // URL parameter present - this is authoritative (from QR code scan or direct link)
         const validatedTable = parseInt(urlTable, 10);
         const finalTable = isNaN(validatedTable) ? '203' : validatedTable.toString();
         setTableState(finalTable);
         localStorage.setItem('cartTable', finalTable);
+        console.log('[CART CONTEXT] Table set from URL:', finalTable);
     } else {
-        setTableState('203'); // Default if neither localStorage nor URL provides it
-        localStorage.setItem('cartTable', '203');
+        // No URL parameter - check localStorage for previously saved table
+        const savedTable = localStorage.getItem('cartTable');
+        if (savedTable) {
+            setTableState(savedTable);
+            console.log('[CART CONTEXT] Table restored from localStorage:', savedTable);
+        } else {
+            // No URL and no localStorage - use default
+            setTableState('203');
+            localStorage.setItem('cartTable', '203');
+            console.log('[CART CONTEXT] Table set to default: 203');
+        }
     }
 
   }, [urlTable]); // Depend on urlTable to react to changes in the URL param
