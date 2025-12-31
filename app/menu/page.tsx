@@ -111,7 +111,7 @@ export default function MenuPage() {
   });
 
   // Hook to invalidate balance cache (for use after payments)
-  const invalidateBalance = useInvalidateBalance();
+  // const invalidateBalance = useInvalidateBalance();
 
   // Sync React Query balance to walletBalance state
   useEffect(() => {
@@ -596,10 +596,10 @@ export default function MenuPage() {
             // Clear params from URL while preserving table
             cleanUrlPreservingTable('TOPUP RETURN');
 
-            // Reload after 3 seconds to fetch real balance
+            // Fetch fresh balance after topup
             setTimeout(() => {
-              console.log('[TOPUP RETURN] Reloading to fetch real balance');
-              window.location.reload();
+              console.log('[TOPUP RETURN] Fetching fresh balance');
+              refetchBalance();
             }, 3000);
 
           } catch (error) {
