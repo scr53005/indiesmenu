@@ -26,7 +26,7 @@ interface UseBalanceReturn {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
-  source: string | null;
+  source: string | null; // 'localStorage-cache' or 'hive-engine'
   refetch: () => void;
   updateBalance: (newBalance: number) => void; // Optimistic update
 }
@@ -58,9 +58,12 @@ export function useBalance(
     isError,
     error,
     refetch,
+    status,
+    fetchStatus,
   } = useQuery<BalanceResponse, Error>({
     queryKey: ['balance', accountName],
     queryFn: async () => {
+      console.log('[useBalance] 🔄 Fetching fresh balance from blockchain for:', accountName);
       if (!accountName) {
         throw new Error('No account name provided');
       }
@@ -71,19 +74,21 @@ export function useBalance(
       // Save to localStorage cache
       saveCachedBalance(result.balance, result.timestamp);
 
+      console.log('[useBalance] ✅ Fresh balance received:', result.balance, 'source:', result.source);
       return result;
     },
     enabled: enabled && !!accountName,
-    staleTime: 60 * 1000, // 60 seconds (matches your current logic)
+    // staleTime and refetchOnMount inherited from global QueryProvider config
+    // (staleTime: 0, refetchOnMount: true)
     gcTime: 5 * 60 * 1000, // 5 minutes cache
-    refetchInterval,
-    // Provide initial data from localStorage cache
+    refetchInterval, // Only refetch on interval if explicitly requested
+    // Provide initial data from localStorage cache (for instant UI)
     initialData: () => {
       if (!accountName) return undefined;
 
       const cached = getCachedBalance();
       if (cached) {
-        console.log('[useBalance] Using cached balance as initial data:', cached.balance);
+        console.log('[useBalance] 📦 Using cached balance for instant UI:', cached.balance, '(will refetch fresh data immediately)');
         return {
           balance: cached.balance,
           source: 'localStorage-cache',
@@ -92,9 +97,26 @@ export function useBalance(
       }
       return undefined;
     },
+    // Tell React Query when the initial data was fetched (prevents treating it as fresh)
+    initialDataUpdatedAt: () => {
+      const cached = getCachedBalance();
+      return cached ? cached.timestamp : undefined;
+    },
     // Retry on failure
     retry: 2,
   });
+
+  // Only log when query is actually enabled
+  if (enabled && accountName) {
+    console.log('[useBalance] Query state:', {
+      accountName,
+      status,
+      fetchStatus,
+      hasData: !!data,
+      balance: data?.balance,
+      source: data?.source
+    });
+  }
 
   // Mutation for optimistic balance updates
   const updateBalanceMutation = useMutation({

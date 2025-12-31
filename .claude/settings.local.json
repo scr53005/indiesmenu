@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/Sorin/Documents/GitHub/innopay/**)"
+      "Read(//c/Users/Sorin/Documents/GitHub/innopay/**)",
+      "Bash(npx prisma migrate:*)"
     ],
     "deny": [],
     "ask": []

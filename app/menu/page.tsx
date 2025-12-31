@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useCart } from '@/app/context/CartContext';
-import { useBalance } from '@/hooks/useBalance';
+import { useBalance, useInvalidateBalance } from '@/hooks/useBalance';
 import MenuItem from '@/components/menu/MenuItem';
 import CartItemDisplay from '@/components/menu/CartItemDisplay';
 import MiniWallet, { WalletReopenButton } from '@/components/ui/MiniWallet';
@@ -106,9 +106,12 @@ export default function MenuPage() {
     : null;
 
   // Fetch balance using React Query (replaces manual useEffect at line 602-705)
-  const { balance, isLoading: balanceLoading, refetch: refetchBalance } = useBalance(accountName, {
+  const { balance, isLoading: balanceLoading, refetch: refetchBalance, source: balanceSource } = useBalance(accountName, {
     enabled: !!accountName && !accountName.startsWith('mockaccount'),
   });
+
+  // Hook to invalidate balance cache (for use after payments)
+  const invalidateBalance = useInvalidateBalance();
 
   // Sync React Query balance to walletBalance state
   useEffect(() => {
@@ -129,6 +132,7 @@ export default function MenuPage() {
   const [flow5Success, setFlow5Success] = useState(false); // create_account_and_pay
   const [flow6Success, setFlow6Success] = useState(false); // pay_with_account
   const [flow7Success, setFlow7Success] = useState(false); // pay_with_topup
+  const [waiterCalledSuccess, setWaiterCalledSuccess] = useState(false); // call_waiter
 
   // State for import account modal (email verification system)
   const [showImportModal, setShowImportModal] = useState(false);
@@ -298,24 +302,43 @@ export default function MenuPage() {
               console.log('[FLOW 5] Marker updated: flow5_create_and_pay -> flow5_existing_account_handover');
             }
 
-            // Auto-trigger payment check after a brief delay to let state update
-            setTimeout(() => {
-              const cartTotal = parseFloat(getTotalEurPrice());
-              console.log('[EXISTING ACCOUNT] Cart total:', cartTotal);
+            // Check if payment was already made in innopay (order_success=true)
+            if (orderSuccess === 'true') {
+              console.log('[EXISTING ACCOUNT] Payment already completed in innopay - showing success and clearing cart');
 
-              if (credentials.euroBalance >= cartTotal) {
-                // Sufficient balance - trigger Flow 6 (pay_with_account)
-                console.log('[EXISTING ACCOUNT] Sufficient balance - triggering Flow 6 payment');
-                handleOrder();
-              } else {
-                // Insufficient balance - trigger Flow 7 (pay_with_topup)
-                console.log('[EXISTING ACCOUNT] Insufficient balance - triggering Flow 7');
-                // Flow 7 will be triggered by the normal checkout button logic
-                // which detects insufficient balance
-                alert('Balance insuffisant. Redirection vers le rechargement...');
-                // The user will need to click Commander again, which will trigger Flow 7
-              }
-            }, 500);
+              // Clear cart - order has been paid
+              clearCart();
+
+              // Clear flow marker
+              localStorage.removeItem('innopay_flow_pending');
+
+              // Show MiniWallet with updated balance
+              setShowWalletBalance(true);
+
+              // Show success message
+              setShowPaymentSuccess(true);
+              setTimeout(() => setShowPaymentSuccess(false), 5000);
+
+            } else {
+              // Payment not yet made - auto-trigger payment check after a brief delay
+              setTimeout(() => {
+                const cartTotal = parseFloat(getTotalEurPrice());
+                console.log('[EXISTING ACCOUNT] Cart total:', cartTotal);
+
+                if (credentials.euroBalance >= cartTotal) {
+                  // Sufficient balance - trigger Flow 6 (pay_with_account)
+                  console.log('[EXISTING ACCOUNT] Sufficient balance - triggering Flow 6 payment');
+                  handleOrder();
+                } else {
+                  // Insufficient balance - trigger Flow 7 (pay_with_topup)
+                  console.log('[EXISTING ACCOUNT] Insufficient balance - triggering Flow 7');
+                  // Flow 7 will be triggered by the normal checkout button logic
+                  // which detects insufficient balance
+                  alert('Balance insuffisant. Redirection vers le rechargement...');
+                  // The user will need to click Commander again, which will trigger Flow 7
+                }
+              }, 500);
+            }
           } else {
             // Use explicit flow marker for reliable flow detection
             if (currentFlow === 'flow7_topup_and_pay') {
@@ -1107,84 +1130,154 @@ export default function MenuPage() {
       }, 1000);
 
       try {
-        // Check customer's EURO token balance using robust API strategy
-        console.log('[CALL WAITER] Checking EURO balance for:', accountName);
+        // Get balance from React Query cache (already fetched by useBalance hook)
+        console.log('[CALL WAITER] Getting EURO balance for:', accountName);
 
-        // Get optimistic balance from localStorage
-        let euroBalance = 0;
-        const optimisticBalanceStr = localStorage.getItem('innopay_lastBalance');
-        if (optimisticBalanceStr) {
-          euroBalance = parseFloat(optimisticBalanceStr);
-          console.log('[CALL WAITER] Optimistic balance:', euroBalance);
-        }
-
-        // Try to get real balance from API
-        try {
-          const response = await fetch(`/api/balance/euro?account=${encodeURIComponent(accountName)}`);
-          if (response.ok) {
-            const data = await response.json();
-            const apiBalance = data.balance;
-
-            // Validate against optimistic balance (±1 EUR tolerance)
-            if (optimisticBalanceStr) {
-              const roundedApi = Math.round(apiBalance);
-              const roundedOptimistic = Math.round(euroBalance);
-              if (Math.abs(roundedApi - roundedOptimistic) <= 1) {
-                console.log('[CALL WAITER] API balance validates optimistic balance');
-              } else {
-                euroBalance = apiBalance;
-                console.log('[CALL WAITER] Updated to API balance:', euroBalance);
-              }
-            } else {
-              euroBalance = apiBalance;
-              console.log('[CALL WAITER] Using API balance:', euroBalance);
-            }
-
-            // Update localStorage
-            localStorage.setItem('innopay_lastBalance', euroBalance.toFixed(2));
+        // Use cached balance from useBalance hook, fallback to localStorage
+        let euroBalance = balance ?? 0;
+        if (euroBalance === 0) {
+          const optimisticBalanceStr = localStorage.getItem('innopay_lastBalance');
+          if (optimisticBalanceStr) {
+            euroBalance = parseFloat(optimisticBalanceStr);
+            console.log('[CALL WAITER] Using fallback localStorage balance:', euroBalance);
           }
-        } catch (apiError) {
-          console.warn('[CALL WAITER] API fetch failed, using optimistic balance:', apiError);
+        } else {
+          console.log('[CALL WAITER] Using cached balance from React Query:', euroBalance);
         }
 
         console.log('[CALL WAITER] Customer EURO balance:', euroBalance);
 
         if (euroBalance >= callWaiterAmount) {
-          // pay_with_account flow - sufficient balance
-          console.log('[CALL WAITER] Sufficient balance, paying with account');
+          // CALL WAITER: Typical FLOW 6 architecture (0.02€ with special memo to restaurant)
+          // This IS a complete payment flow - restaurant must receive the transfer to trigger waiter
+          console.log('[CALL WAITER] Sufficient balance, using FLOW 6 architecture');
 
-          const transferResponse = await fetch('/api/transfer-from-customer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              accountName,
-              activeKey: activeKey || undefined,
-              masterPassword: masterPassword || undefined,
-              amountEuro: callWaiterAmount,
-              memo: callWaiterMemo
-            })
+          // 1. Get EUR/USD rate
+          const today = new Date();
+          const rateData = await getLatestEurUsdRate(today);
+          const eurUsdRate = rateData.conversion_rate;
+          console.log('[CALL WAITER] EUR/USD rate:', eurUsdRate, 'isFresh:', rateData.isFresh);
+
+          // 2. Import necessary functions
+          const { createEuroTransferOperation } = await import('@/lib/utils');
+
+          // 3. Create EURO transfer operation (customer → innopay)
+          // No distriate suffix needed for call waiter - use memo directly
+          const euroOp = createEuroTransferOperation(
+            accountName,
+            'innopay',
+            callWaiterAmount.toFixed(2),  // Convert to string
+            callWaiterMemo  // Full memo, not a suffix
+          );
+
+          console.log('[CALL WAITER] Payment details:', {
+            amount: callWaiterAmount,
+            memo: callWaiterMemo,
+            eurUsdRate
           });
 
-          if (!transferResponse.ok) {
-            throw new Error('Transfer failed');
+          // 4. Sign and broadcast EURO transfer via innopay API
+          const innopaySignUrl = getInnopayUrl();
+
+          const signPayload: any = {
+            operation: euroOp,
+          };
+
+          if (activeKey) {
+            signPayload.activePrivateKey = activeKey;
+            console.log('[CALL WAITER] Sending active key (with fallback to innopay authority)');
+          } else if (masterPassword) {
+            signPayload.masterPassword = masterPassword;
+            signPayload.accountName = accountName;
+            console.log('[CALL WAITER] Sending master password (with fallback to innopay authority)');
           }
 
-          const transferData = await transferResponse.json();
-          console.log('[CALL WAITER] Transfer successful:', transferData.txId);
+          const signResponse = await fetch(`${innopaySignUrl}/api/sign-and-broadcast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(signPayload)
+          });
 
-          // Stop timer and show success
+          if (!signResponse.ok) {
+            const errorData = await signResponse.json();
+            throw new Error(errorData.message || 'Signing failed');
+          }
+
+          const signResult = await signResponse.json();
+          const customerTxId = signResult.txId;
+          const usedFallback = signResult.usedFallback;
+
+          if (usedFallback) {
+            console.log('[CALL WAITER] EURO transfer successful using innopay authority (fallback)! TX:', customerTxId);
+          } else {
+            console.log('[CALL WAITER] EURO transfer successful with user key! TX:', customerTxId);
+          }
+
+          // 5. Update mini-wallet balance after successful EURO transfer
+          const newBalance = euroBalance - callWaiterAmount;
+          console.log('[CALL WAITER] Updating wallet balance from', euroBalance, 'to', newBalance);
+          setWalletBalance({
+            accountName,
+            euroBalance: parseFloat(newBalance.toFixed(2))
+          });
+
+          // Update localStorage optimistically (instant UI update)
+          localStorage.setItem('innopay_lastBalance', newBalance.toFixed(2));
+          localStorage.setItem('innopay_lastBalance_timestamp', Date.now().toString());
+
+          // Force immediate fresh balance fetch from blockchain
+          console.log('[CALL WAITER] Triggering fresh balance fetch from blockchain...');
+          refetchBalance();
+
+          // 6. Call innopay API to execute transfer to restaurant (innopay → restaurant)
+          // This is CRITICAL - restaurant must receive the transfer with memo to trigger waiter
+          const innopayUrl = getInnopayUrl();
+          console.log('[CALL WAITER] Calling wallet-payment API to forward to restaurant...');
+
+          const paymentPayload = {
+            customerAccount: accountName,
+            customerTxId: customerTxId,
+            recipient: process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe',
+            amountEuro: callWaiterAmount,
+            eurUsdRate: eurUsdRate,
+            orderMemo: callWaiterMemo,
+            distriateSuffix: '-'  // Minimal suffix (API requires truthy value)
+          };
+
+          console.log('[CALL WAITER] Payment payload:', paymentPayload);
+
+          const response = await fetch(`${innopayUrl}/api/wallet-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(paymentPayload)
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[CALL WAITER] wallet-payment API error:', response.status, errorText);
+
+            // Stop timer on API error
+            if (orderTimerRef.current) {
+              clearInterval(orderTimerRef.current);
+            }
+            setOrderProcessing(false);
+            throw new Error('Failed to forward payment to restaurant');
+          }
+
+          const result = await response.json();
+          console.log('[CALL WAITER] Payment forwarded to restaurant!', result);
+
+          // Stop timer and show waiter called success (NO cart clearing for call waiter)
           if (orderTimerRef.current) {
             clearInterval(orderTimerRef.current);
           }
           setOrderProcessing(false);
-          setBlockchainComplete(true);
-          setShowPaymentSuccess(true);
+          setWaiterCalledSuccess(true);
 
-          // Hide after 5 seconds
+          // Hide after 15 seconds
           setTimeout(() => {
-            setShowPaymentSuccess(false);
-            setBlockchainComplete(false);
-          }, 5000);
+            setWaiterCalledSuccess(false);
+          }, 15000);
 
         } else {
           // ───────────────────────────────────────────────────────────────────────────────
@@ -1526,6 +1619,15 @@ export default function MenuPage() {
           accountName,
           euroBalance: parseFloat(newBalance.toFixed(2))
         });
+
+        // Update localStorage optimistically (instant UI update)
+        localStorage.setItem('innopay_lastBalance', newBalance.toFixed(2));
+        localStorage.setItem('innopay_lastBalance_timestamp', Date.now().toString());
+        console.log('[WALLET PAYMENT] Updated localStorage balance optimistically:', newBalance.toFixed(2));
+
+        // Force immediate fresh balance fetch from blockchain
+        console.log('[WALLET PAYMENT] Triggering fresh balance fetch from blockchain...');
+        refetchBalance();
 
         // 7. Call innopay API to execute HBD/EURO transfer to restaurant
         const innopayUrl = getInnopayUrl();
@@ -2168,6 +2270,11 @@ export default function MenuPage() {
                   }
                   params.set('memo', customMemo);
 
+                  // Add return_url to preserve environment (dev/prod) for redirect back
+                  const returnUrl = `${window.location.origin}/menu`;
+                  params.set('return_url', returnUrl);
+                  console.log('[FLOW 5] Return URL set:', returnUrl);
+
                   // Set Flow 5 marker for account creation with order
                   localStorage.setItem('innopay_flow_pending', 'flow5_create_and_pay');
                   console.log('[FLOW 5] Set flow marker: flow5_create_and_pay');
@@ -2366,6 +2473,31 @@ export default function MenuPage() {
         </div>
       )}
 
+      {/* Waiter Called Success Banner */}
+      {waiterCalledSuccess && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🔔</span>
+              <div>
+                <p className="font-semibold text-base md:text-lg">
+                  Un serveur arrive à votre table!
+                </p>
+                <p className="text-sm opacity-90">
+                  Waiter notified - someone will be with you shortly
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setWaiterCalledSuccess(false)}
+              className="bg-white text-blue-700 px-4 py-2 rounded-lg font-semibold hover:bg-blue-50 transition-colors ml-4"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* DEV ONLY: Clear localStorage button */}
       {(window.location.hostname === 'localhost' ||
         window.location.hostname.includes('127.0.0.1') ||
@@ -2494,6 +2626,7 @@ export default function MenuPage() {
           balance={walletBalance}
           visible={showWalletBalance}
           onClose={() => setShowWalletBalance(false)}
+          balanceSource={balanceSource || undefined}
         />
       )}
 

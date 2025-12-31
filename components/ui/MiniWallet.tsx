@@ -14,6 +14,7 @@ interface MiniWalletProps {
   visible: boolean;
   title?: string; // Optional custom title
   initialPosition?: { x: number; y: number }; // Optional custom position
+  balanceSource?: string; // 'localStorage-cache' or 'hive-engine'
 }
 
 /**
@@ -39,7 +40,8 @@ export default function MiniWallet({
   onClose,
   visible,
   title = 'Votre portefeuille Innopay',
-  initialPosition
+  initialPosition,
+  balanceSource
 }: MiniWalletProps) {
   if (!visible) return null;
 
@@ -47,6 +49,12 @@ export default function MiniWallet({
     e.stopPropagation(); // Prevent drag from triggering
     onClose();
   };
+
+  // Determine if balance is from cache (stale) or fresh from blockchain
+  const isCached = balanceSource === 'localStorage-cache';
+  const balanceClassName = isCached
+    ? 'font-bold text-lg italic text-blue-200' // Cached: italic + light blue
+    : 'font-bold text-lg text-white'; // Fresh: normal + white
 
   // Default position: bottom-right
   const defaultPosition = {
@@ -75,7 +83,7 @@ export default function MiniWallet({
           <div className="flex items-center gap-2">
             <span className="text-2xl">💰</span>
             <div>
-              <p className="font-bold text-lg">{balance.euroBalance.toFixed(2)} €</p>
+              <p className={balanceClassName}>{balance.euroBalance.toFixed(2)} €</p>
               <p className="text-xs opacity-75 font-mono">{balance.accountName}</p>
             </div>
           </div>

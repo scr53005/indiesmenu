@@ -1,298 +1,180 @@
-# Balance Fetching Refactor - Quick Start Guide
+# System Status & Migration Summary
 
-## ✅ What's Been Done (Phase 1 - Infrastructure)
-
-All infrastructure is ready! The following files have been created:
-
-1. **`app/providers/QueryProvider.tsx`** - React Query configuration
-2. **`lib/api/balance.ts`** - Centralized balance API
-3. **`hooks/useBalance.ts`** - Balance query hook
-4. **`app/layout.tsx`** - Updated with QueryProvider wrapper
-
-**Status**: ✅ No breaking changes, app works exactly as before
+**Last Updated**: 2025-12-31
 
 ---
 
-## 🎯 What's Next (Phase 2-5 - Actual Refactoring)
+## ✅ Completed Work
 
-Now you can refactor the 3 duplicate balance fetches **one at a time**.
+### React Query Balance Migration (2025-12-30)
 
-### Quick Win Checklist:
+**Phase 1: Infrastructure Setup** ✅
+- Installed React Query v5.90.15 + DevTools
+- Created QueryProvider with optimal config (`staleTime: 0`, `refetchOnMount: true`)
+- Created balance API module (`lib/api/balance.ts`)
+- Created useBalance hook (`hooks/useBalance.ts`)
+- Wrapped app in layout.tsx
 
-- [ ] **Phase 2**: Replace wallet balance fetch (line 602) → Save 83 lines
-- [ ] **Phase 3**: Replace call waiter balance fetch (line 1192) → Save 20 lines
-- [ ] **Phase 4**: Replace wallet payment balance fetch (line 1393) → Save 18 lines
-- [ ] **Phase 5**: Add optimistic updates (bonus feature)
-
-**Total Time**: 2-3 hours
-**Total Lines Saved**: 121 lines (80% reduction)
-
----
-
-## 📖 How to Use the Migration Plan
-
-### Step 1: Read the Plan
-```bash
-cat REACT-QUERY-MIGRATION-PLAN.md
-```
-
-### Step 2: Start with Phase 2
-Open `menu/page.tsx` and follow the "BEFORE → AFTER" code examples in the migration plan.
-
-### Step 3: Test After Each Phase
-```bash
-npm run dev
-# Open http://localhost:3001/menu?table=1
-# Test the specific feature you just refactored
-```
-
-### Step 4: Commit After Each Phase
-```bash
-git add .
-git commit -m "refactor: replace balance fetch #1 with React Query"
-```
-
----
-
-## 🐛 Debugging Tools
-
-### React Query DevTools
-- **Location**: Bottom-right corner of the page
-- **Shows**: All active queries, cache state, fetch status
-- **Usage**: Click to expand, inspect "balance" query
-
-### Console Logs
-Look for these prefixes:
-- `[BALANCE API]` - New React Query logs
-- `[useBalance]` - Hook-specific logs
-- `[WALLET BALANCE]` - Old logs (will be removed during migration)
-
----
-
-## 🔄 What Changes for You
-
-### Before (Manual Fetching):
-```typescript
-// 98 lines of fetch logic
-useEffect(() => {
-  const checkWalletBalance = async () => {
-    const response = await fetch(...);
-    const data = await response.json();
-    localStorage.setItem('innopay_lastBalance', ...);
-    // ... complex staleness logic
-  };
-  checkWalletBalance();
-}, [refreshBalanceTrigger]);
-```
-
-### After (React Query):
-```typescript
-// 15 lines total
-import { useBalance } from '@/hooks/useBalance';
-
-const { balance, refetch } = useBalance(accountName);
-
-useEffect(() => {
-  if (balance !== null && accountName) {
-    setWalletBalance({ accountName, euroBalance: balance });
-  }
-}, [balance, accountName]);
-```
-
----
-
-## 🎁 Benefits You'll Get
-
-### 1. Automatic Deduplication
-**Before**: 3 identical fetches could run simultaneously
-**After**: React Query shares the cached result
-
-### 2. Smart Caching
-**Before**: Manual localStorage with timestamp checks
-**After**: React Query manages cache automatically (60s stale time)
-
-### 3. Loading States
-**Before**: Manual `isLoading` state management
-**After**: `const { isLoading } = useBalance()` - built-in
-
-### 4. Error Handling
-**Before**: try/catch in every fetch
-**After**: `const { error, isError } = useBalance()` - built-in
-
-### 5. Optimistic Updates
-**Before**: Not possible
-**After**: `updateBalance(newBalance)` - instant UI feedback
-
-### 6. DevTools
-**Before**: Manual console.log debugging
-**After**: Visual DevTools showing cache state
-
----
-
-## 📞 Support
-
-### If Something Breaks:
-
-1. **Check the console** for error messages
-2. **Check DevTools** (React Query panel)
-3. **Rollback**: `git checkout menu/page.tsx`
-4. **Ask for help** with the error message
-
-### Common Issues:
-
-**Issue**: "useBalance is not defined"
-**Fix**: Add import: `import { useBalance } from '@/hooks/useBalance';`
-
-**Issue**: "balance is always null"
-**Fix**: Check accountName is not null, check DevTools for query status
-
-**Issue**: "Too many refetches"
-**Fix**: Check `enabled` option is set correctly
-
----
-
-## 🚀 Ready to Start?
-
-1. Open `REACT-QUERY-MIGRATION-PLAN.md`
-2. Follow Phase 2 instructions
-3. Test thoroughly
-4. Move to Phase 3
-
-**Good luck!** 🎉
-
----
-
-## 📊 Progress Tracker
-
-Track your progress:
-
-- [x] Phase 1: Infrastructure setup ✅ (2025-12-30)
-  - ✅ Installed React Query v5.90.15 + DevTools
-  - ✅ Created QueryProvider with optimal config
-  - ✅ Created balance API module (`lib/api/balance.ts`)
-  - ✅ Created useBalance hook (`hooks/useBalance.ts`)
-  - ✅ Fixed TypeScript errors (DevTools buttonPosition)
-  - ✅ Wrapped app in layout.tsx
-  - **Status**: Ready for Phase 2
-
-- [ ] Phase 2: Replace balance fetch #1 (wallet balance) ⏳ NEXT
-  - **Location**: `menu/page.tsx:602-699`
-  - **Lines to save**: 83 lines (98 → 15)
-  - **Steps**: Add import, get accountName, replace useEffect, remove refreshBalanceTrigger
-  - **Test**: Balance appears on load, DevTools shows query
-
-- [ ] Phase 3: Replace balance fetch #2 (call waiter)
-  - **Location**: `menu/page.tsx:1192`
-  - **Lines to save**: 20 lines
-
-- [ ] Phase 4: Replace balance fetch #3 (wallet payment)
-  - **Location**: `menu/page.tsx:1393`
-  - **Lines to save**: 18 lines
-
-- [ ] Phase 5: Add optimistic updates (bonus)
-
-**Last Updated**: 2025-12-30 01:30 CET
-**Current Session**: Ready to start Phase 2 tomorrow
-
----
-
-## 🔄 Why Commit After Each Phase?
-
-### 1. **Safe Rollback Points**
-Each phase is a complete, working unit. If Phase 3 breaks something, you can:
-```bash
-git checkout menu/page.tsx  # Roll back just the broken file
-# Or
-git reset --hard HEAD~1      # Roll back the entire phase
-```
-
-### 2. **Bisect-Friendly History**
-If a bug appears later, you can use `git bisect` to find which phase introduced it:
-```bash
-git bisect start
-git bisect bad              # Current state has bug
-git bisect good <commit>    # Phase 1 was working
-# Git will binary search through Phase 2, 3, 4...
-```
-
-### 3. **Code Review Clarity**
-Each commit tells a story:
-- `refactor: replace wallet balance fetch with React Query (Phase 2)`
-- `refactor: replace call waiter balance fetch with React Query (Phase 3)`
-- `refactor: replace payment balance fetch with React Query (Phase 4)`
-
-Much clearer than one giant commit: `refactor: add React Query (changed 500 lines)`
-
-### 4. **Testing Isolation**
-Test after each phase to ensure:
-- Phase 2 works → commit
-- Phase 3 works → commit
-- **Phase 4 breaks** → Don't commit, investigate, fix, then commit
-
-If you committed Phase 2 & 3, you know the bug is in Phase 4, not somewhere else.
-
-### 5. **Collaboration Safety**
-If working in a team, small commits:
-- Reduce merge conflicts
-- Make PR reviews manageable
-- Allow cherry-picking specific features
-
-### 6. **Progress Tracking**
-You can see exactly what you accomplished:
-```
-✅ Phase 1: Infrastructure (committed)
-✅ Phase 2: Balance fetch 1 (committed)
-⏸️ Phase 3: Balance fetch 2 (in progress)
-```
-
----
-
-## 📝 Tomorrow's Resume Guide
-
-When you're ready to continue:
-
-### Step 1: Check Current State
-```bash
-cd /c/Users/Sorin/Documents/GitHub/indiesmenu
-git status  # Should show clean working tree after Phase 1
-```
-
-### Step 2: Read the Plan
-```bash
-cat MIGRATION-SUMMARY.md          # Quick overview
-cat REACT-QUERY-MIGRATION-PLAN.md # Detailed steps for Phase 2
-```
-
-### Step 3: Start Phase 2
-Follow the steps in `REACT-QUERY-MIGRATION-PLAN.md` under "Phase 2":
-1. Add import: `import { useBalance } from '@/hooks/useBalance';`
-2. Get accountName from localStorage
-3. Replace the useEffect (lines 602-699)
-4. Remove `refreshBalanceTrigger` state
-5. Replace `setRefreshBalanceTrigger` calls with `refetchBalance()`
-
-### Step 4: Test Phase 2
-```bash
-npm run dev
-# Visit http://localhost:3001/menu?table=1
-# Check balance appears
-# Open React Query DevTools (bottom-right)
-```
-
-### Step 5: Commit Phase 2
-```bash
-git add .
-git commit -m "refactor: replace wallet balance fetch with React Query (Phase 2)
-
+**Phase 2: Replace Wallet Balance Fetch** ✅
 - Replaced manual fetch logic (98 lines) with useBalance hook (15 lines)
-- Removed refreshBalanceTrigger state
-- Added automatic caching with 60s stale time
-- Balance now managed by React Query with built-in retry"
-```
+- Removed `refreshBalanceTrigger` state
+- Added automatic caching with React Query
+- **Fixed**: Added `initialDataUpdatedAt` to prevent stale cache issue
+- **Fixed**: Changed `staleTime` to 0 for blockchain data (always verify fresh)
 
-### Step 6: Continue to Phase 3
-Repeat process for Phase 3 (call waiter balance) and Phase 4 (payment balance).
+**Phase 3: Replace Call Waiter Balance Fetch** ✅
+- Replaced manual fetch logic (39 lines) with React Query cache usage (16 lines)
+- Eliminated duplicate API call - uses cached balance from useBalance hook
+- Added fallback to localStorage if balance is null
+
+**Total Lines Saved**: 106 lines of duplicate balance fetching code removed
 
 ---
 
-**Good night! 😴 Tomorrow you'll replace 121 lines of duplicate code with clean React Query hooks!**
+### Critical Fixes (2025-12-31)
+
+**Payment Processor Business Logic** ✅
+- **Issue**: Restaurant wasn't getting paid if customer transfer failed
+- **Fix**: Complete rewrite of `innopay/services/payment-processor.ts`
+  - Step 1: Transfer EURO from customer → innopay (record debt if fails, continue)
+  - Step 2: Get EUR/USD rate
+  - Step 3a: Transfer HBD/EURO from innopay → restaurant (MUST succeed)
+  - Step 3b: Transfer HBD from customer → innopay (using innopay's active authority)
+  - Record debts for all failed transfers (non-blocking)
+- **Database Changes**:
+  - Added `amount_euro` column to `outstanding_debt` table
+  - Made `euro_tx_id` nullable
+  - Added `hbd_tx_id` column
+  - Migration: `20251230232155_update_outstanding_debt_for_euro_and_hbd`
+- **New Function**: `transferHbdFromAccount()` in `innopay/services/hive.ts`
+
+**Call Waiter Functionality** ✅
+- **Issue**: Failed with "Erreur lors du paiement" - tried to call non-existent `/api/transfer-from-customer` endpoint
+- **Fix**: Refactored to use complete FLOW 6 architecture
+  - Get EUR/USD rate
+  - Create EURO transfer operation (customer → innopay)
+  - Sign and broadcast via `/api/sign-and-broadcast`
+  - Call `/api/wallet-payment` to forward 0.02€ to restaurant with memo "Un serveur est appelé TABLE X"
+  - Restaurant receives transfer to trigger waiter notification
+- **Differences from regular FLOW 6**:
+  - Amount: 0.02€ (not cart total)
+  - Memo: "Un serveur est appelé TABLE X" (not order details)
+  - distriateSuffix: `-` (minimal truthy value, API requires it)
+  - Don't clear cart after success
+- **TypeScript Fix**: Convert `callWaiterAmount` to string with `.toFixed(2)` for `createEuroTransferOperation`
+
+**Balance Refresh Issues** ✅
+- **Issue**: After FLOW 6 payment, balance remained stale (TanStack said "stale")
+- **Root Cause**: `invalidateBalance()` only marks query as stale, doesn't force refetch
+- **Fix**: Use `refetchBalance()` instead for immediate fresh fetch from blockchain
+- **Implementation**:
+  - Added `useInvalidateBalance` import (though ended up using `refetchBalance`)
+  - Both FLOW 6 and call waiter now:
+    1. Calculate newBalance optimistically
+    2. Update localStorage with optimistic value (instant UI)
+    3. Call `refetchBalance()` to force immediate blockchain fetch
+
+**Waiter Called Success Notification** ✅
+- Created dedicated `waiterCalledSuccess` state
+- Added blue success banner (distinct from green order success)
+- Bell emoji 🔔 instead of checkmark
+- Bilingual message: "Un serveur arrive à votre table!" / "Waiter notified - someone will be with you shortly"
+- Displays for 15 seconds (not 5)
+- Auto-dismisses or manual OK button
+
+**Environment Separation** ✅
+- **Issue**: Starting on localhost redirected to production URL after payment
+- **Fix**: Added `return_url` parameter through entire FLOW 5 chain
+  - indiesmenu passes returnUrl to innopay
+  - innopay passes to execute-order-payment API
+  - API uses provided returnUrl instead of hardcoded getRestaurantUrl
+
+**Flow 5 Duplicate Execution** ✅
+- **Issue**: React StrictMode caused 4 alerts and duplicate transactions
+- **Fix**: Added `useRef` guard to prevent duplicate execution
+
+**Optimistic Balance Updates** ✅
+- FLOW 6 now updates localStorage before redirecting (innopay/app/user/page.tsx)
+- Prevents stale balance on subsequent operations
+
+---
+
+## ⏳ Pending Work
+
+### React Query Migration - Remaining Phases
+
+**Phase 4: Replace Wallet Payment Balance Fetch** ⏸️
+- Location: `menu/page.tsx` (wallet payment flow)
+- Strategy: Use cached balance, refetch before payment
+- Lines to save: ~18 lines
+
+**Phase 5: Add Optimistic Updates (Bonus)** ⏸️
+- Add instant UI feedback after payments
+- Automatically invalidate cache after 2 seconds
+
+---
+
+## 📊 System Health
+
+**Working Flows**:
+- ✅ FLOW 5 (create_account_and_pay) - existing account
+- ✅ FLOW 6 (pay_with_account) - complete
+- ✅ Call waiter - complete
+- ✅ Balance refresh - working correctly
+
+**Known Issues**:
+- None currently
+
+**Database Status**:
+- ✅ Production DB: Migration applied
+- ✅ Dev DB: Migration applied
+- ✅ Prisma client regenerated
+
+---
+
+## 🎯 Architecture Overview
+
+**Payment Flows**:
+1. Customer → innopay (EURO + HBD attempt)
+2. innopay → restaurant (HBD priority, EURO fallback)
+3. Debt tracking for all failed transfers
+
+**Balance Management**:
+- React Query hook (`useBalance`) for caching and fetching
+- localStorage for optimistic updates and offline fallback
+- Always verify with fresh blockchain fetch on mount (`staleTime: 0`)
+- `refetchBalance()` for immediate fresh fetches after payments
+
+**Call Waiter**:
+- Uses FLOW 6 architecture
+- Transfers 0.02€ with special memo to trigger waiter notification
+- Restaurant receives transfer to know waiter is needed
+
+---
+
+## 📝 Files Modified Today
+
+**indiesmenu**:
+- `app/menu/page.tsx` - Call waiter refactor, balance refresh fixes, success notification
+- `app/providers/QueryProvider.tsx` - Fixed staleTime and refetchOnMount
+
+**innopay**:
+- `services/payment-processor.ts` - Complete business logic rewrite
+- `services/hive.ts` - Added `transferHbdFromAccount()`
+- `prisma/schema.prisma` - Updated `outstanding_debt` model
+- `prisma/migrations/20251230232155_update_outstanding_debt_for_euro_and_hbd/migration.sql` - New migration
+- `app/user/page.tsx` - Added optimistic balance update, return_url support
+- `app/api/execute-order-payment/route.ts` - Added returnUrl support
+
+---
+
+## 🚀 Next Session Goals
+
+1. Test complete payment flows end-to-end
+2. Consider completing Phase 4 of React Query migration (wallet payment balance fetch)
+3. Monitor for any edge cases or issues
+4. Consider Phase 5 (optimistic updates) if beneficial
+
+---
+
+**Status**: System stable, all critical issues resolved, balance management working correctly

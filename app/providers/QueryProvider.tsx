@@ -10,15 +10,18 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Disable automatic refetching (we'll control this manually for blockchain data)
+            // For blockchain data: disable background refetches but allow manual control
             refetchOnWindowFocus: false,
             refetchOnReconnect: false,
-            refetchOnMount: false,
-            // Keep data fresh for 60 seconds (matches your current timestamp logic)
-            staleTime: 60 * 1000, // 60 seconds
+            // CRITICAL: Allow refetchOnMount (individual queries can override)
+            // This ensures fresh data on component mount
+            refetchOnMount: true,
+            // CRITICAL: Set staleTime to 0 for blockchain data (always fetch fresh)
+            // Individual queries can override if needed
+            staleTime: 0,
             // Cache data for 5 minutes
             gcTime: 5 * 60 * 1000, // 5 minutes (formerly cacheTime)
-            // Retry failed requests
+            // Retry failed requests (blockchain APIs can be flaky)
             retry: 2,
             retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
           },
