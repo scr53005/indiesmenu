@@ -215,6 +215,7 @@ export default function MenuPage() {
     const credentialToken = searchParams.get('credential_token');
     const sessionId = searchParams.get('session_id'); // Flow 7 uses Stripe session_id
     const balance = searchParams.get('balance');
+    const flowParam = searchParams.get('flow'); // Explicit flow from innopay (6 or 7)
 
     // 🔧 DEBUG: Log URL params to localStorage to persist across page reload
     const flowMarker = localStorage.getItem('innopay_flow_pending');
@@ -226,11 +227,12 @@ export default function MenuPage() {
       orderSuccess,
       credentialToken,
       sessionId,
-      flowMarker
+      flowMarker,
+      flowParam
     };
     localStorage.setItem('innopay_debug_last_params', JSON.stringify(debugLog));
     console.log('[CREDENTIAL CHECK] 🔧 DEBUG LOG:', debugLog);
-    console.log('[CREDENTIAL CHECK] accountCreated:', accountCreated, 'existingAccount:', existingAccount, 'orderSuccess:', orderSuccess, 'credentialToken:', credentialToken, 'sessionId:', sessionId, 'flowMarker:', flowMarker);
+    console.log('[CREDENTIAL CHECK] accountCreated:', accountCreated, 'existingAccount:', existingAccount, 'orderSuccess:', orderSuccess, 'credentialToken:', credentialToken, 'sessionId:', sessionId, 'flowMarker:', flowMarker, 'flowParam:', flowParam);
 
     // For Flow 7, we get order_success=true and session_id from Stripe redirect
     // For Flow 5, we get credential_token from webhook
@@ -269,9 +271,20 @@ export default function MenuPage() {
           localStorage.setItem('innopay_postingPrivate', credentials.keys.posting.privateKey);
           localStorage.setItem('innopay_memoPrivate', credentials.keys.memo.privateKey);
 
-          // Determine flow from explicit marker (more reliable than URL params)
-          const currentFlow = flowMarker; // Read from closure variable set above
-          console.log('[FLOW DETECTION] Current flow marker:', currentFlow);
+          // Determine flow from URL param (source of truth from innopay) or fallback to marker
+          // flowParam: '6' = Flow 6 (pay with existing account), '7' = Flow 7 (topup + pay)
+          let currentFlow = flowMarker; // Start with marker
+
+          // Override with explicit flow parameter from innopay (more reliable)
+          if (flowParam === '6') {
+            currentFlow = 'flow6_pay_with_account';
+            console.log('[FLOW DETECTION] Explicit flow=6 detected - Flow 6 (pay with existing account)');
+          } else if (flowParam === '7') {
+            currentFlow = 'flow7_topup_and_pay';
+            console.log('[FLOW DETECTION] Explicit flow=7 detected - Flow 7 (topup + pay)');
+          }
+
+          console.log('[FLOW DETECTION] Final flow:', currentFlow, '(marker:', flowMarker, ', param:', flowParam, ')');
 
           // Store balance to localStorage ONLY if NOT Flow 7 (Flow 7 will fetch real balance)
           if (currentFlow !== 'flow7_topup_and_pay') {
@@ -1082,7 +1095,7 @@ export default function MenuPage() {
     });
   }, [addItem, menu]);
 
-  const fallBackNoKeychain = () => {
+  /*const fallBackNoKeychain = () => {
     const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.mobilekeychain'; // Android
     const iosFallbackUrl = 'https://apps.apple.com/us/app/hive-keychain/id1550923076'; // iOS
     setTimeout(() => {
@@ -1096,7 +1109,7 @@ export default function MenuPage() {
         }
       }
     }, 1000);
-  };
+  };*/
 
   const handleCallWaiter = useCallback(async () => {
     console.log('[CALL WAITER] Initiating call waiter flow');
