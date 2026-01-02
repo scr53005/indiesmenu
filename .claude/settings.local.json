@@ -3,7 +3,8 @@
     "allow": [
       "Read(//c/Users/Sorin/Documents/GitHub/innopay/**)",
       "Bash(npx prisma migrate:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

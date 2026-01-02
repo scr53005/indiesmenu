@@ -47,7 +47,10 @@ export async function GET(request: Request) {
       // Check if transfer exists
       const exists = await prisma.transfers.findUnique({ where: { id: BigInt(transfer.id) } });
       if (!exists) {
-        console.log('Inserting transfer:', transfer.id);
+        console.warn('NOT inserting (on purpose) transfer:', transfer.id);
+        // DISABLED: Now using merchant-hub sync instead (see /api/transfers/sync-from-merchant-hub)
+        // Uncomment to re-enable direct HAF polling:
+        /*
         await prisma.transfers.create({
           data: {
             id: BigInt(transfer.id),
@@ -60,7 +63,8 @@ export async function GET(request: Request) {
             received_at: new Date(), // Server time, not blockchain time (see NOTE above)
           },
         });
-        console.log('Inserted transfer to back-end DB:', transfer.id);
+        */
+        console.warn('Skipped transfer to back-end DB:', transfer.id);
       }
       transfers.push(transfer);
     }

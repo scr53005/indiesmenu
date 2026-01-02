@@ -6,20 +6,8 @@ import { MenuData } from '@/lib/data/menu';
 import 'react-toastify/dist/ReactToastify.css';
 import React from 'react';
 
-// Get merchant-hub URL - always use production instance
-function getMerchantHubUrl(): string {
-  if (typeof window === 'undefined') return '';
-
-  const url = process.env.NEXT_PUBLIC_MERCHANT_HUB_URL || 'https://merchant-hub-theta.vercel.app';
-  // Strip trailing slash to avoid double-slash issues
-  return url.replace(/\/$/, '');
-}
-
 interface Transfer {
-  messageId: string; // Redis Stream message ID (for ACK)
-  id: string; // HAF operation ID
-  restaurant_id: string;
-  account: string;
+  id: string;
   from_account: string;
   amount: string;
   symbol: string;
@@ -27,16 +15,10 @@ interface Transfer {
   parsedMemo?: HydratedOrderLine[];
   isCallWaiter?: boolean;
   received_at: string;
-  block_num?: number;
-  fulfilled_at?: string | null;
 }
 
-interface ConsumeResponse {
-  transfers: Transfer[];
-  consumerId?: string;
-  streamKey?: string;
-  groupName?: string;
-  pending?: number;
+function getMerchantHubUrl(): string {
+  return process.env.NEXT_PUBLIC_MERCHANT_HUB_URL || 'https://merchant-hub-theta.vercel.app';
 }
 
 export default function CurrentOrdersPage() {
@@ -45,8 +27,11 @@ export default function CurrentOrdersPage() {
   const [menuData, setMenuData] = useState<MenuData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transmittedToKitchen, setTransmittedToKitchen] = useState<Map<string, string>>(new Map());
-  const consumerId = useRef(`admin-${Date.now()}`);
+  const [lastSyncInfo, setLastSyncInfo] = useState<string>('');
+  const [isPoller, setIsPoller] = useState(false);
+  const [pollerStatus, setPollerStatus] = useState<string>('');
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
+  const pollerInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch menu data for hydration
   useEffect(() => {
@@ -62,153 +47,183 @@ export default function CurrentOrdersPage() {
     fetchMenu();
   }, []);
 
-  // Poll merchant-hub for new transfers
-  const pollTransfers = useCallback(async () => {
-    try {
-      const merchantHubUrl = getMerchantHubUrl();
-      if (!merchantHubUrl) {
-        console.warn('Merchant hub URL not configured');
-        return;
+  // Hydrate transfers with menu data
+  const hydrateTransfers = useCallback((rawTransfers: any[]): Transfer[] => {
+    return rawTransfers.map(tx => {
+      let parsedMemo: HydratedOrderLine[] = [];
+      let isCallWaiter = false;
+
+      const tableIndex = tx.memo?.lastIndexOf('TABLE ') ?? -1;
+      const memoPrefix = tableIndex !== -1
+        ? tx.memo.substring(0, tableIndex).trim().toLowerCase()
+        : (tx.memo || '').toLowerCase();
+
+      if (memoPrefix.includes('appel')) {
+        isCallWaiter = true;
       }
 
-      const url = `${merchantHubUrl}/api/transfers/consume?restaurantId=indies&consumerId=${consumerId.current}&count=50`;
+      const orderContent = tableIndex !== -1
+        ? tx.memo.substring(0, tableIndex).trim()
+        : (tx.memo || '');
 
-      const res = await fetch(url);
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch transfers: ${res.statusText}`);
-      }
-
-      const data: ConsumeResponse = await res.json();
-
-      if (data.transfers && data.transfers.length > 0) {
-        console.log(`[POLL] Received ${data.transfers.length} new transfers`);
-
-        // Hydrate memos and prepare transfers
-        const hydratedTransfers = data.transfers.map(tx => {
-          let parsedMemo: HydratedOrderLine[] = [];
-          let isCallWaiter = false;
-
-          const tableIndex = tx.memo.lastIndexOf('TABLE ');
-          const memoPrefix = tableIndex !== -1
-            ? tx.memo.substring(0, tableIndex).trim().toLowerCase()
-            : tx.memo.toLowerCase();
-
-          if (memoPrefix.includes('appel')) {
-            isCallWaiter = true;
-          }
-
-          const orderContent = tableIndex !== -1
-            ? tx.memo.substring(0, tableIndex).trim()
-            : tx.memo;
-
-          if (isCallWaiter || !menuData) {
-            parsedMemo = [{ type: 'raw', content: orderContent }];
-          } else {
+      // Try to parse existing parsedMemo or hydrate fresh
+      if (tx.parsedMemo) {
+        try {
+          parsedMemo = typeof tx.parsedMemo === 'string'
+            ? JSON.parse(tx.parsedMemo)
+            : tx.parsedMemo;
+        } catch {
+          if (menuData && !isCallWaiter) {
             try {
               parsedMemo = hydrateMemo(orderContent, menuData);
-            } catch (e) {
-              console.error(`Error hydrating memo for TX ${tx.id}:`, e);
+            } catch {
               parsedMemo = [{ type: 'raw', content: orderContent }];
             }
-          }
-
-          return { ...tx, parsedMemo, isCallWaiter };
-        });
-
-        // Insert into PostgreSQL using same logic as /api/poll-hbd
-        const messagesToAck: string[] = [];
-
-        for (const transfer of hydratedTransfers) {
-          try {
-            // Check if transfer already exists (reusing poll-hbd logic)
-            const checkRes = await fetch(`/api/transfers/check?id=${transfer.id}`);
-
-            if (checkRes.ok) {
-              const { exists } = await checkRes.json();
-
-              if (!exists) {
-                // Insert new transfer (reusing poll-hbd insert logic)
-                const insertRes = await fetch('/api/transfers/insert-from-merchant-hub', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    id: transfer.id,
-                    from_account: transfer.from_account,
-                    amount: transfer.amount,
-                    symbol: transfer.symbol,
-                    memo: transfer.memo,
-                    parsed_memo: JSON.stringify(transfer.parsedMemo),
-                    received_at: transfer.received_at,
-                  }),
-                });
-
-                if (insertRes.ok) {
-                  console.log(`[INSERT] Successfully inserted transfer ${transfer.id}`);
-                  // Success! Mark for ACK
-                  messagesToAck.push(transfer.messageId);
-
-                  // Add to UI
-                  setTransfers(prev => [...prev, transfer]);
-
-                  // Show toast
-                  toast.info(
-                    `Nouvelle commande: ${getOrderDisplayContent(transfer.parsedMemo || [])} pour ${getTable(transfer.memo) || 'inconnue'} - ${transfer.amount} ${transfer.symbol}`,
-                    { autoClose: false }
-                  );
-                } else {
-                  console.error(`Failed to insert transfer ${transfer.id}:`, await insertRes.text());
-                }
-              } else {
-                // Already exists - ACK it anyway (idempotent)
-                messagesToAck.push(transfer.messageId);
-                console.log(`[INSERT] Transfer ${transfer.id} already exists, ACKing`);
-              }
-            }
-          } catch (err) {
-            console.error(`Error processing transfer ${transfer.id}:`, err);
-            // Don't ACK - message will stay pending
+          } else {
+            parsedMemo = [{ type: 'raw', content: orderContent }];
           }
         }
-
-        // ACK successfully inserted messages
-        if (messagesToAck.length > 0) {
-          try {
-            await fetch(`${merchantHubUrl}/api/transfers/ack`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                restaurantId: 'indies',
-                messageIds: messagesToAck,
-              }),
-            });
-            console.log(`[ACK] Acknowledged ${messagesToAck.length} messages`);
-          } catch (err) {
-            console.error('Failed to ACK messages:', err);
-          }
+      } else if (menuData && !isCallWaiter) {
+        try {
+          parsedMemo = hydrateMemo(orderContent, menuData);
+        } catch {
+          parsedMemo = [{ type: 'raw', content: orderContent }];
         }
+      } else {
+        parsedMemo = [{ type: 'raw', content: orderContent }];
+      }
+
+      return { ...tx, parsedMemo, isCallWaiter };
+    });
+  }, [menuData]);
+
+  // Load unfulfilled transfers from database
+  const loadTransfers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/transfers/unfulfilled');
+      if (res.ok) {
+        const data = await res.json();
+        const hydrated = hydrateTransfers(data.transfers || []);
+        setTransfers(hydrated);
+        console.log(`[LOAD] ${hydrated.length} unfulfilled transfers from DB`);
+      }
+    } catch (err) {
+      console.error('Failed to load transfers:', err);
+    }
+  }, [hydrateTransfers]);
+
+  // Trigger HAF poll on merchant-hub (only called if this page is the elected poller)
+  const triggerPoll = useCallback(async () => {
+    const merchantHubUrl = getMerchantHubUrl().replace(/\/$/, '');
+    try {
+      const pollRes = await fetch(`${merchantHubUrl}/api/poll`);
+      if (pollRes.ok) {
+        const pollData = await pollRes.json();
+        console.log(`[POLL] HAF poll: ${pollData.transfersFound} transfers found`);
+      } else {
+        console.warn(`[POLL] HAF poll failed: ${pollRes.status}`);
       }
     } catch (err: any) {
-      console.error('[POLL] Error:', err);
+      console.error('[POLL] HAF poll error:', err.message);
+    }
+  }, []);
+
+  // Sync from merchant-hub and reload (consume from Redis stream, insert to DB, ACK)
+  const syncAndReload = useCallback(async () => {
+    try {
+      // Consume from Redis stream, insert to DB, ACK
+      const syncRes = await fetch('/api/transfers/sync-from-merchant-hub', {
+        method: 'POST',
+      });
+
+      if (syncRes.ok) {
+        const syncData = await syncRes.json();
+        if (syncData.inserted > 0) {
+          toast.info(`${syncData.inserted} nouvelle(s) commande(s)!`, { autoClose: 3000 });
+        }
+        setLastSyncInfo(`Sync: ${syncData.inserted || 0} new, ${syncData.acked || 0} acked`);
+        console.log(`[SYNC]`, syncData);
+      }
+
+      // Reload from database
+      await loadTransfers();
+
+    } catch (err: any) {
+      console.error('[SYNC] Error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [menuData]);
+  }, [loadTransfers]);
 
-  // Start polling on mount
+  // Wake-up: Attempt to become the poller on mount
   useEffect(() => {
-    pollTransfers(); // Initial poll
+    const merchantHubUrl = getMerchantHubUrl().replace(/\/$/, '');
+    const shopId = 'indies-current-orders';
 
-    // Poll every 6 seconds
-    pollInterval.current = setInterval(pollTransfers, 6000);
+    async function wakeUp() {
+      try {
+        console.log('[WAKE-UP] Attempting to register as poller...');
+        const res = await fetch(`${merchantHubUrl}/api/wake-up`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shopId }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          console.log('[WAKE-UP] Response:', data);
+
+          if (data.shouldStartPolling) {
+            // This page won the election - start polling HAF every 6 seconds
+            setIsPoller(true);
+            setPollerStatus(`Poller actif (${shopId})`);
+            toast.success('Cette page est le poller actif!', { autoClose: 3000 });
+
+            // Start polling HAF immediately
+            triggerPoll();
+
+            // Continue polling every 6 seconds
+            pollerInterval.current = setInterval(triggerPoll, 6000);
+          } else {
+            // Another page is polling - just consume from stream
+            setIsPoller(false);
+            setPollerStatus(`Poller: ${data.poller || 'inconnu'}`);
+            console.log(`[WAKE-UP] Another page is polling: ${data.poller}`);
+          }
+        } else {
+          console.error('[WAKE-UP] Failed:', res.status);
+          setPollerStatus('Wake-up échoué');
+        }
+      } catch (err: any) {
+        console.error('[WAKE-UP] Error:', err.message);
+        setPollerStatus('Erreur wake-up');
+      }
+    }
+
+    wakeUp();
+
+    // Cleanup poller interval on unmount
+    return () => {
+      if (pollerInterval.current) {
+        clearInterval(pollerInterval.current);
+      }
+    };
+  }, [triggerPoll]);
+
+  // Sync from Redis stream every 6 seconds (all pages do this, regardless of poller status)
+  useEffect(() => {
+    syncAndReload(); // Initial sync and load
+
+    // Sync every 6 seconds
+    pollInterval.current = setInterval(syncAndReload, 6000);
 
     return () => {
       if (pollInterval.current) {
         clearInterval(pollInterval.current);
       }
     };
-  }, [pollTransfers]);
+  }, [syncAndReload]);
 
   // Transmit to kitchen (local state only)
   const handleTransmitToKitchen = (id: string) => {
@@ -255,7 +270,7 @@ export default function CurrentOrdersPage() {
     }
   };
 
-  // Helper to format order content
+  // Helper to format order content for display
   function getOrderDisplayContent(memoLines: HydratedOrderLine[]): string {
     if (memoLines.length === 0) return '';
     if (memoLines[0].type === 'raw') return memoLines[0].content;
@@ -271,9 +286,6 @@ export default function CurrentOrdersPage() {
       .join(', ');
   }
 
-  // Filter unfulfilled orders
-  const unfulfilledOrders = transfers.filter(t => !t.fulfilled_at);
-
   return (
     <div className="container">
       <ToastContainer position="top-right" />
@@ -286,13 +298,21 @@ export default function CurrentOrdersPage() {
         </div>
       )}
 
+      {(lastSyncInfo || pollerStatus) && (
+        <div className="sync-info">
+          {pollerStatus && <span className={isPoller ? 'poller-active' : 'poller-passive'}>{pollerStatus}</span>}
+          {pollerStatus && lastSyncInfo && ' | '}
+          {lastSyncInfo}
+        </div>
+      )}
+
       {loading && <p>Chargement des commandes...</p>}
 
-      {!loading && unfulfilledOrders.length === 0 ? (
+      {!loading && transfers.length === 0 ? (
         <p>Pas de commandes en attente</p>
       ) : (
         <ul>
-          {unfulfilledOrders.map(transfer => {
+          {transfers.map(transfer => {
             // Format received_at as CEST
             const receivedDateTime = new Date(transfer.received_at).toLocaleString('en-GB', {
               timeZone: 'Europe/Paris',
@@ -365,6 +385,9 @@ export default function CurrentOrdersPage() {
                 <p className={isLate ? 'late-order' : ''}>
                   Ordre recu le: <strong>{receivedDateTime}</strong>
                 </p>
+                <p className="debug-info">
+                  ID: <strong>{transfer.id}</strong>
+                </p>
 
                 {/* Kitchen transmission button (only for orders with dishes that haven't been transmitted) */}
                 {hasDishes && !isTransmittedToKitchen && (
@@ -406,6 +429,18 @@ export default function CurrentOrdersPage() {
           padding: 10px;
           margin-bottom: 15px;
           border-radius: 5px;
+        }
+        .sync-info {
+          font-size: 12px;
+          color: #666;
+          margin-bottom: 10px;
+        }
+        .poller-active {
+          color: #008000;
+          font-weight: bold;
+        }
+        .poller-passive {
+          color: #666;
         }
         ul {
           list-style: none;
@@ -461,6 +496,11 @@ export default function CurrentOrdersPage() {
         .late-order {
           color: rgb(220, 60, 60);
           font-weight: bold;
+        }
+        .debug-info {
+          font-size: 12px;
+          color: #888;
+          margin-top: 5px;
         }
 
         /* Order details styling */
