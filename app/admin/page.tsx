@@ -131,6 +131,22 @@ export default function AdminDashboard() {
             </div>
           </Link>
 
+          {/* Current Orders Card */}
+          <Link href="/admin/current_orders">
+            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-green-500 group">
+              <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">🛎️</div>
+              <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-green-600">
+                Commandes
+              </h2>
+              <p className="text-gray-600 mb-4">
+                Voir et gérer les commandes en cours
+              </p>
+              <div className="flex items-center text-green-600 font-semibold group-hover:translate-x-2 transition-transform">
+                Gérer →
+              </div>
+            </div>
+          </Link>
+
         </div>
 
         {/* Quick Links */}
