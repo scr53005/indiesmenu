@@ -1,7 +1,7 @@
 # INNOPAY ECOSYSTEM - PROJECT OVERVIEW
 
-**Last Updated**: 2025-12-31
-**Architecture**: Hub-and-Spokes Multi-Restaurant Payment System
+**Last Updated**: 2026-01-02
+**Architecture**: Hub-and-Spokes Multi-Restaurant Payment System with Centralized Blockchain Polling
 
 ---
 
@@ -9,12 +9,13 @@
 
 1. [Architecture Overview](#architecture-overview)
 2. [Hub: Innopay](#hub-innopay)
-3. [Spoke 1: Indiesmenu](#spoke-1-indiesmenu)
-4. [Spoke 2: Croque-Bedaine](#spoke-2-croque-bedaine)
-5. [Payment Flows](#payment-flows)
-6. [Technology Stack](#technology-stack)
-7. [Development Setup](#development-setup)
-8. [Deployment](#deployment)
+3. [Merchant Hub: HAF Polling Infrastructure](#merchant-hub-haf-polling-infrastructure)
+4. [Spoke 1: Indiesmenu](#spoke-1-indiesmenu)
+5. [Spoke 2: Croque-Bedaine](#spoke-2-croque-bedaine)
+6. [Payment Flows](#payment-flows)
+7. [Technology Stack](#technology-stack)
+8. [Development Setup](#development-setup)
+9. [Deployment](#deployment)
 
 ---
 
@@ -26,6 +27,19 @@ The Innopay ecosystem follows a **hub-and-spokes architecture** where:
 - **Spokes**: Individual restaurant applications that integrate with the hub for payments
 
 ```
+                    ┌─────────────────────────────────────┐
+                    │      MERCHANT-HUB (Kitchen Hub)     │
+                    │   Centralized HAF Polling Service   │
+                    │                                     │
+                    │ • Polls Hive blockchain (HAF DB)   │
+                    │ • Batched queries (O(1) scaling)   │
+                    │ • Redis Streams pub/sub            │
+                    │ • Distributed leader election      │
+                    └──────────────┬──────────────────────┘
+                                   │ Redis Streams
+                    ┌──────────────┴──────────────────────┐
+                    │                                     │
+                    ▼                                     ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                         HUB: INNOPAY                        │
 │                    (wallet.innopay.lu)                      │
@@ -42,9 +56,9 @@ The Innopay ecosystem follows a **hub-and-spokes architecture** where:
           │                                   │
           ▼                                   ▼
 ┌─────────────────────┐           ┌─────────────────────┐
-│  SPOKE 1: Indies    │           │  SPOKE 2: Croque    │
-│     Menu System     │           │  Bedaine Menu       │
-│   (Next.js)         │           │   (Vite/React)      │
+│  SPOKE 1: Indies    │◄─────────►│  SPOKE 2: Croque    │
+│     Menu System     │  Redis    │  Bedaine Menu       │
+│   (Next.js)         │  Streams  │   (Vite/React)      │
 │                     │           │                     │
 │ • Menu management   │           │ • Menu display      │
 │ • Order processing  │           │ • Cart system       │
@@ -150,6 +164,249 @@ wallet.innopay.lu → menu.indies.lu
 // Localhost
 localhost:3000 → localhost:3001
 ```
+
+---
+
+## 🔄 MERCHANT HUB: HAF POLLING INFRASTRUCTURE
+
+**Repository**: `../merchant-hub`
+**Tech Stack**: Next.js 15 + TypeScript + PostgreSQL (HAF) + Upstash Redis
+**Deployment**: Vercel (serverless with Cron)
+
+### Purpose
+
+The merchant-hub is a **centralized blockchain polling service** that solves the "diabolo topology" problem. Instead of each restaurant independently polling the Hive blockchain (which would create N×3 database queries for N restaurants), merchant-hub centralizes all polling into **3 total queries** (one per currency).
+
+### Architecture: Distributed Leader Election
+
+The merchant-hub uses a **distributed leader election** pattern where multiple restaurant co (customer-facing) pages coordinate to elect a single poller:
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  Indies Co  │    │ Croque Co   │    │  Other Co   │
+│    Page     │    │    Page     │    │   Pages     │
+└──────┬──────┘    └──────┬──────┘    └──────┬──────┘
+       │                  │                  │
+       └──────────────────┼──────────────────┘
+                          │ Redis SETNX (atomic election)
+                          ▼
+                  ┌───────────────┐
+                  │ Merchant-Hub  │
+                  │   (Poller)    │
+                  └───────────────┘
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │   HAF DB      │
+                  │ (Hive Archive)│
+                  └───────────────┘
+```
+
+**Election Process**:
+1. First co page to open calls `/api/wake-up`
+2. Attempts Redis `SETNX` with random collision-avoidance delay (Ethernet-like)
+3. Winner becomes "poller", polls every 6 seconds
+4. Losers subscribe to Redis Streams for transfer notifications
+5. Poller maintains heartbeat (30s TTL)
+6. If poller dies, another co page takes over
+
+### Polling Modes
+
+**Active Mode (6-second polling)**:
+- Triggered when at least one restaurant co page is open
+- Poller queries HAF database every 6 seconds
+- Publishes transfers to Redis Streams
+- Maintains heartbeat lock
+
+**Sleeping Mode (1-minute polling)**:
+- Vercel Cron fallback when all shops closed
+- Polls every 1 minute via `/api/cron-poll`
+- Only runs if no active 6-second poller detected
+- Ensures transfers aren't missed overnight
+
+### Batched Query Architecture (O(1) Scaling)
+
+**The Scaling Problem (Old Approach)**:
+```
+2 restaurants × 3 currencies = 6 queries
+400 restaurants × 3 currencies = 1,200 queries
+Execution time: ~24 seconds at scale
+```
+
+**The Solution (Batched Queries)**:
+```typescript
+// ONE query for ALL restaurants per currency
+const hbdResult = await pool.query(
+  `SELECT id, to_account, from_account, amount, symbol, memo
+   FROM hafsql.operation_transfer_table
+   WHERE to_account = ANY($1)  -- ['indies.cafe', 'croque.bedaine', ...]
+     AND symbol = 'HBD'
+     AND id > $2
+   ORDER BY id DESC
+   LIMIT 100`,
+  [allAccounts, minLastId]
+);
+```
+
+**Performance Comparison**:
+
+| Restaurants | Old Queries | New Queries | Improvement | Est. Time |
+|------------|-------------|-------------|-------------|-----------|
+| 2          | 6           | 3           | 2x          | ~60ms     |
+| 4          | 12          | 3           | 4x          | ~65ms     |
+| 400        | 1,200       | 3           | **400x**    | ~65ms     |
+
+**Key Insight**: Network latency (10-50ms per round-trip) dominates query execution time. By reducing from N queries to 3 queries, we eliminate the dominant cost factor.
+
+### Multi-Environment Polling
+
+Since batched queries scale at O(1), merchant-hub queries **ALL accounts** (prod + dev) simultaneously:
+
+```typescript
+const accounts = [
+  'indies.cafe',      // Production
+  'indies-test',      // Development
+  'croque.bedaine',   // Production
+  'croque-test'       // Development
+];
+// Still just 3 queries total!
+```
+
+Each transfer includes the `account` field so restaurant co pages can filter by environment if needed.
+
+### Currency Support
+
+**Three currencies polled**:
+
+1. **HBD** (Hive-Backed Dollars) - Native Hive token
+   - Query: `operation_transfer_table`
+   - Fast native transfers
+   - Base layer blockchain
+
+2. **EURO** - Hive-Engine token
+   - Query: `operation_custom_json_view`
+   - Pegged to EUR (1:1)
+   - Layer 2 smart contract
+
+3. **OCLT** - Hive-Engine loyalty token
+   - Query: `operation_custom_json_view`
+   - Community token
+   - Layer 2 smart contract
+
+### Redis Streams Integration
+
+**Stream Architecture**:
+```
+transfers:indies          → Indies restaurant transfers
+transfers:croque-bedaine  → Croque restaurant transfers
+system:broadcasts         → System coordination messages
+polling:poller            → Current poller identity
+polling:heartbeat         → Poller liveness
+polling:mode              → active-6s | sleeping-1min
+lastId:indies:HBD         → Last processed HBD transfer ID
+lastId:indies:EURO        → Last processed EURO transfer ID
+```
+
+**Transfer Object Structure**:
+```typescript
+interface Transfer {
+  id: string;                // HAF operation ID
+  restaurant_id: string;     // 'indies' | 'croque-bedaine'
+  account: string;           // 'indies.cafe' | 'indies-test'
+  from_account: string;      // Customer Hive account
+  amount: string;            // Transfer amount
+  symbol: 'HBD' | 'EURO' | 'OCLT';
+  memo: string;              // Order details + table info
+  parsed_memo?: string;      // Decoded memo
+  received_at: string;       // ISO timestamp
+  block_num?: number;        // Blockchain block number
+}
+```
+
+### API Routes
+
+**Coordination APIs**:
+- `/api/wake-up` - Co page initialization, attempt leader election
+- `/api/heartbeat` - Poller heartbeat maintenance (every 5s)
+- `/api/poll` - Active polling endpoint (every 6s)
+- `/api/cron-poll` - Vercel Cron fallback (every 1min)
+
+**Monitoring APIs** (future):
+- `/api/status` - System health check
+- `/api/metrics` - Polling statistics
+
+### Key Features
+
+1. **Zero Missed Transfers**: Dual-mode (active + sleeping) ensures 24/7 coverage
+2. **Automatic Failover**: Poller death triggers automatic re-election
+3. **Scalable**: O(1) query complexity regardless of restaurant count
+4. **Environment-Agnostic**: Works in Vercel prod/preview/dev environments
+5. **Memo Filtering**: Per-restaurant memo patterns (e.g., "TABLE" keyword)
+6. **LastId Tracking**: Per-restaurant, per-currency cursor for deduplication
+
+### Technology Stack
+
+| Category | Technology |
+|----------|------------|
+| Framework | Next.js 15 (serverless) |
+| Language | TypeScript 5 |
+| Database | PostgreSQL (HAF - Hive Application Framework) |
+| Cache/Pub-Sub | Upstash Redis (serverless) |
+| Deployment | Vercel Pro (10s timeout) |
+| Cron | Vercel Cron (1-minute) |
+| DB Driver | pg (node-postgres) |
+
+### Configuration
+
+**Restaurant Config** (`lib/config.ts`):
+```typescript
+export const RESTAURANTS: RestaurantConfig[] = [
+  {
+    id: 'indies',
+    name: 'Indies Restaurant',
+    accounts: {
+      prod: 'indies.cafe',
+      dev: 'indies-test'
+    },
+    currencies: ['HBD', 'EURO', 'OCLT'],
+    memoFilters: {
+      HBD: '%TABLE %',
+      EURO: '%TABLE %',
+      OCLT: '%TABLE %'
+    }
+  },
+  // ... more restaurants
+];
+```
+
+### Vercel Deployment Constraints
+
+**Serverless Limitations**:
+- Max execution time: 10s (Vercel Pro)
+- No long-running processes
+- Stateless functions
+- Cold starts possible
+
+**Solutions**:
+- External triggers (co page wake-up calls)
+- Redis-based coordination
+- Vercel Cron for fallback
+- Fast queries (<1s execution)
+
+### Future Enhancements
+
+**Planned**:
+- [ ] `/api/status` endpoint for monitoring
+- [ ] Prometheus metrics export
+- [ ] Transfer confirmation/acknowledgment
+- [ ] Historical transfer queries
+- [ ] WebSocket streaming for real-time updates
+
+**Scaling Beyond 400 Restaurants**:
+- Current LIMIT 100 (HBD) and 1000 (tokens) handles expected volume
+- If spike exceeds LIMIT, next poll (6s later) catches remainder
+- Transfers delayed by seconds, not lost
+- Midnight-based bounds (discussed but not implemented) as future optimization
 
 ---
 
@@ -704,7 +961,7 @@ npm run migrate:deploy
 4. **React Query**: Smart caching, automatic refetching, optimistic updates
 5. **Tailwind CSS**: Utility-first styling, consistent across projects
 
-### Current Status (2025-12-31)
+### Current Status (2026-01-02)
 
 **Hub (innopay)**:
 - ✅ Production ready
@@ -712,16 +969,29 @@ npm run migrate:deploy
 - ✅ Debt tracking implemented
 - ✅ Credential handover working
 
+**Merchant-Hub (merchant-hub)**:
+- ✅ Core infrastructure complete
+- ✅ Batched queries implemented (O(1) scaling)
+- ✅ Distributed leader election working
+- ✅ Redis Streams integration complete
+- ✅ Multi-environment support (prod + dev accounts)
+- ✅ Vercel Cron fallback configured
+- 🚧 Co page integration pending (Indies & Croque)
+- 🚧 Transfer consumption logic needed
+- 🔧 Status/metrics endpoints planned
+
 **Spoke 1 (indiesmenu)**:
 - ✅ Production ready
 - ✅ All flows tested and working
 - ✅ Balance refresh optimized
 - ✅ React Query migration (Phases 1-3 complete)
 - 🔧 Optional optimizations remaining (Phases 4-5)
+- 🚧 Merchant-hub integration pending
 
 **Spoke 2 (croque-bedaine)**:
 - 🚧 In development
 - 🚧 Hub integration TBD
+- 🚧 Merchant-hub integration TBD
 - ✅ Modern UI with shadcn/ui
 - ✅ Vite build setup complete
 
@@ -753,6 +1023,12 @@ npm run migrate:deploy
 
 ---
 
-**Last Updated**: 2025-12-31
+**Last Updated**: 2026-01-02
 **Maintainer**: Development Team
 **Questions**: Refer to individual project documentation or code comments
+
+**New in 2026-01-02**:
+- 🆕 Merchant-Hub: Centralized HAF polling infrastructure with O(1) scaling
+- 🆕 Batched queries: 3 total queries regardless of restaurant count
+- 🆕 Distributed leader election for polling coordination
+- 🆕 Multi-environment support (prod + dev accounts polled simultaneously)
