@@ -6,21 +6,13 @@ import { MenuData } from '@/lib/data/menu';
 import 'react-toastify/dist/ReactToastify.css';
 import React from 'react';
 
-// Get merchant-hub URL based on environment
+// Get merchant-hub URL - always use production instance
 function getMerchantHubUrl(): string {
   if (typeof window === 'undefined') return '';
 
-  const hostname = window.location.hostname;
-
-  // Production: https://merchant-hub.vercel.app or similar
-  if (hostname === 'indies.innopay.lu') {
-    return process.env.NEXT_PUBLIC_MERCHANT_HUB_URL || 'https://merchant-hub.vercel.app';
-  }
-
-  // Development: localhost or 192.168.*
-  // Assume merchant-hub runs on same host, different port
-  const protocol = window.location.protocol;
-  return `${protocol}//${hostname}:3002`; // Adjust port as needed
+  const url = process.env.NEXT_PUBLIC_MERCHANT_HUB_URL || 'https://merchant-hub-theta.vercel.app';
+  // Strip trailing slash to avoid double-slash issues
+  return url.replace(/\/$/, '');
 }
 
 interface Transfer {
@@ -52,6 +44,7 @@ export default function CurrentOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [menuData, setMenuData] = useState<MenuData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [transmittedToKitchen, setTransmittedToKitchen] = useState<Map<string, string>>(new Map());
   const consumerId = useRef(`admin-${Date.now()}`);
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -80,9 +73,7 @@ export default function CurrentOrdersPage() {
 
       const url = `${merchantHubUrl}/api/transfers/consume?restaurantId=indies&consumerId=${consumerId.current}&count=50`;
 
-      const res = await fetch(url, {
-        credentials: 'include', // For CORS
-      });
+      const res = await fetch(url);
 
       if (!res.ok) {
         throw new Error(`Failed to fetch transfers: ${res.statusText}`);
@@ -162,7 +153,7 @@ export default function CurrentOrdersPage() {
 
                   // Show toast
                   toast.info(
-                    `New order: ${getOrderDisplayContent(transfer.parsedMemo || [])} for ${getTable(transfer.memo) || 'unknown'} - ${transfer.amount} ${transfer.symbol}`,
+                    `Nouvelle commande: ${getOrderDisplayContent(transfer.parsedMemo || [])} pour ${getTable(transfer.memo) || 'inconnue'} - ${transfer.amount} ${transfer.symbol}`,
                     { autoClose: false }
                   );
                 } else {
@@ -186,7 +177,6 @@ export default function CurrentOrdersPage() {
             await fetch(`${merchantHubUrl}/api/transfers/ack`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
               body: JSON.stringify({
                 restaurantId: 'indies',
                 messageIds: messagesToAck,
@@ -220,28 +210,48 @@ export default function CurrentOrdersPage() {
     };
   }, [pollTransfers]);
 
+  // Transmit to kitchen (local state only)
+  const handleTransmitToKitchen = (id: string) => {
+    const now = new Date();
+    const timestamp = now.toLocaleTimeString('fr-FR', {
+      timeZone: 'Europe/Paris',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    setTransmittedToKitchen(prev => {
+      const updated = new Map(prev);
+      updated.set(id, timestamp);
+      return updated;
+    });
+
+    toast.success('Transmis en cuisine!', {
+      autoClose: 3000,
+      toastId: `kitchen-${id}`,
+    });
+  };
+
   // Mark transfer as fulfilled
   const handleFulfill = async (transferId: string) => {
     try {
-      const res = await fetch(`/api/transfers/fulfill`, {
+      const res = await fetch(`/api/fulfill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transferId }),
+        body: JSON.stringify({ id: transferId }),
       });
 
       if (res.ok) {
-        setTransfers(prev =>
-          prev.map(t =>
-            t.id === transferId
-              ? { ...t, fulfilled_at: new Date().toISOString() }
-              : t
-          )
-        );
-        toast.success('Order marked as fulfilled!');
+        setTransfers(prev => prev.filter(t => t.id !== transferId));
+        setTransmittedToKitchen(prev => {
+          const updated = new Map(prev);
+          updated.delete(transferId);
+          return updated;
+        });
+        toast.success('Commande satisfaite!', { autoClose: 3000 });
       }
     } catch (err) {
       console.error('Failed to mark as fulfilled:', err);
-      toast.error('Failed to mark order as fulfilled');
+      toast.error('Erreur lors de la satisfaction de la commande');
     }
   };
 
@@ -265,75 +275,255 @@ export default function CurrentOrdersPage() {
   const unfulfilledOrders = transfers.filter(t => !t.fulfilled_at);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="container">
       <ToastContainer position="top-right" />
 
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6">Current Orders</h1>
+      <h1>Commandes en cours</h1>
 
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            Error: {error}
-          </div>
-        )}
-
-        {loading && <p>Loading orders...</p>}
-
-        <div className="bg-white rounded-lg shadow">
-          {unfulfilledOrders.length === 0 ? (
-            <p className="p-6 text-gray-500">No pending orders</p>
-          ) : (
-            <div className="divide-y">
-              {unfulfilledOrders.map(transfer => (
-                <div key={transfer.id} className="p-4 hover:bg-gray-50">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="font-semibold text-lg">
-                        {getTable(transfer.memo) || 'Table Unknown'}
-                      </div>
-                      <div className="text-gray-700 mt-1">
-                        {transfer.parsedMemo && transfer.parsedMemo.length > 0 ? (
-                          <div>
-                            {transfer.parsedMemo.map((line, idx) => (
-                              <div key={idx}>
-                                {line.type === 'item' && (
-                                  <span>
-                                    {line.quantity > 0 ? `${line.quantity}x ` : ''}
-                                    {line.description}
-                                  </span>
-                                )}
-                                {line.type === 'separator' && <hr className="my-1" />}
-                                {line.type === 'raw' && <span>{line.content}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span>{transfer.memo}</span>
-                        )}
-                      </div>
-                      <div className="text-sm text-gray-500 mt-2">
-                        {transfer.amount} {transfer.symbol} from {transfer.from_account}
-                        <br />
-                        {new Date(transfer.received_at).toLocaleString('en-GB', {
-                          timeZone: 'Europe/Luxembourg',
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleFulfill(transfer.id)}
-                      className="ml-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                    >
-                      Mark Fulfilled
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+      {error && (
+        <div className="error-box">
+          Erreur: {error}
         </div>
-      </div>
+      )}
+
+      {loading && <p>Chargement des commandes...</p>}
+
+      {!loading && unfulfilledOrders.length === 0 ? (
+        <p>Pas de commandes en attente</p>
+      ) : (
+        <ul>
+          {unfulfilledOrders.map(transfer => {
+            // Format received_at as CEST
+            const receivedDateTime = new Date(transfer.received_at).toLocaleString('en-GB', {
+              timeZone: 'Europe/Paris',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+
+            // Compute time difference
+            const now = new Date();
+            const receivedTime = new Date(transfer.received_at);
+            const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
+            const isLate = timeDiffSeconds > 600; // 10 minutes
+
+            // Check if order contains dishes
+            const hasDishes = !transfer.isCallWaiter && transfer.parsedMemo?.some(
+              line => line.type === 'item' && line.categoryType === 'dish'
+            );
+            const isTransmittedToKitchen = transmittedToKitchen.has(transfer.id);
+            const kitchenTransmitTime = transmittedToKitchen.get(transfer.id);
+
+            return (
+              <li key={transfer.id} className={transfer.isCallWaiter ? 'call-waiter-item' : ''}>
+                <p>Commande:</p>
+                <div className={`order-details-container ${transfer.isCallWaiter ? 'call-waiter-content' : ''}`}>
+                  {transfer.parsedMemo && transfer.parsedMemo.length > 0 ? (
+                    transfer.parsedMemo.map((line, idx) => (
+                      <React.Fragment key={idx}>
+                        {line.type === 'item' ? (
+                          <div className="order-item-line">
+                            <span className="order-item-quantity">{line.quantity}</span>
+                            <span
+                              className={`order-item-description ${
+                                line.categoryType === 'drink' ? 'drink-item' : line.categoryType === 'dish' ? 'dish-item' : ''
+                              }`}
+                            >
+                              {line.description}
+                            </span>
+                          </div>
+                        ) : line.type === 'separator' ? (
+                          <hr className="order-separator" />
+                        ) : (
+                          <div className="order-item-description full-width-raw">{line.content}</div>
+                        )}
+                      </React.Fragment>
+                    ))
+                  ) : (
+                    <div className="order-item-description">{transfer.memo}</div>
+                  )}
+                </div>
+
+                {/* Show kitchen transmission timestamp if transmitted */}
+                {hasDishes && isTransmittedToKitchen && (
+                  <p className="kitchen-transmitted">
+                    Transmis en cuisine a <strong>{kitchenTransmitTime}</strong>
+                  </p>
+                )}
+
+                <p>
+                  Pour la table: <strong>{getTable(transfer.memo) || 'inconnue'}</strong>
+                </p>
+                <p>
+                  Client: <strong>{transfer.from_account || 'inconnu'}</strong>
+                </p>
+                <p>
+                  Prix en {transfer.symbol}: <strong>{transfer.amount}</strong>
+                </p>
+                <p className={isLate ? 'late-order' : ''}>
+                  Ordre recu le: <strong>{receivedDateTime}</strong>
+                </p>
+
+                {/* Kitchen transmission button (only for orders with dishes that haven't been transmitted) */}
+                {hasDishes && !isTransmittedToKitchen && (
+                  <button
+                    onClick={() => handleTransmitToKitchen(transfer.id)}
+                    className="kitchen-button"
+                  >
+                    Transmettre en cuisine
+                  </button>
+                )}
+                {' '}
+                {/* Fulfill button - disabled if has dishes and not transmitted to kitchen */}
+                <button
+                  onClick={() => handleFulfill(transfer.id)}
+                  disabled={hasDishes && !isTransmittedToKitchen}
+                  className={hasDishes && !isTransmittedToKitchen ? 'fulfill-button disabled-button' : 'fulfill-button'}
+                >
+                  C'est parti !
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <style jsx>{`
+        .container {
+          max-width: 800px;
+          margin: 0 auto;
+          padding: 20px;
+        }
+        h1 {
+          margin-bottom: 20px;
+        }
+        .error-box {
+          background: #fee;
+          border: 1px solid #f00;
+          color: #900;
+          padding: 10px;
+          margin-bottom: 15px;
+          border-radius: 5px;
+        }
+        ul {
+          list-style: none;
+          padding: 0;
+        }
+        li {
+          border: 1px solid #ddd;
+          padding: 15px;
+          margin-bottom: 15px;
+          border-radius: 5px;
+          background: #fff;
+        }
+        button {
+          background: #0070f3;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          cursor: pointer;
+          border-radius: 3px;
+          font-size: 14px;
+        }
+        button:hover {
+          background: #005bb5;
+        }
+        .fulfill-button {
+          background: #0070f3;
+        }
+        .fulfill-button:hover {
+          background: #005bb5;
+        }
+        .kitchen-button {
+          background: #ff8c00;
+          color: white;
+          margin-right: 10px;
+        }
+        .kitchen-button:hover {
+          background: #e67e00;
+        }
+        .disabled-button {
+          background: #ccc !important;
+          cursor: not-allowed;
+          opacity: 0.6;
+        }
+        .disabled-button:hover {
+          background: #ccc !important;
+        }
+        .kitchen-transmitted {
+          color: #ff6600;
+          font-weight: bold;
+          margin: 10px 0;
+          margin-left: 10px;
+        }
+        .late-order {
+          color: rgb(220, 60, 60);
+          font-weight: bold;
+        }
+
+        /* Order details styling */
+        .order-details-container {
+          margin-left: 10px;
+          margin-bottom: 10px;
+        }
+        .order-item-line {
+          display: grid;
+          grid-template-columns: 30px 1fr;
+          gap: 5px;
+          align-items: baseline;
+          margin-bottom: 2px;
+        }
+        .order-item-quantity {
+          font-weight: bold;
+          color: #555;
+          text-align: right;
+        }
+        .order-item-description {
+          font-weight: bold;
+          color: #333;
+        }
+        .drink-item {
+          color: #008000;
+        }
+        .dish-item {
+          color: #8B0000;
+        }
+        .full-width-raw {
+          grid-column: span 2;
+        }
+        .order-separator {
+          border: none;
+          border-top: 1px dashed #ccc;
+          margin: 10px 0;
+          grid-column: span 2;
+        }
+
+        /* Call waiter styling */
+        .call-waiter-item {
+          background-color: #ffe0e0;
+          border-color: red;
+          animation: pulse-red 1.5s infinite alternate;
+        }
+        .call-waiter-content .order-item-quantity,
+        .call-waiter-content .order-item-description,
+        .call-waiter-content .full-width-raw {
+          color: red;
+          font-weight: bold;
+        }
+
+        @keyframes pulse-red {
+          0% {
+            box-shadow: 0 0 5px rgba(255, 0, 0, 0.5);
+            transform: scale(1);
+          }
+          100% {
+            box-shadow: 0 0 20px rgba(255, 0, 0, 1);
+            transform: scale(1.02);
+          }
+        }
+      `}</style>
     </div>
   );
 }
