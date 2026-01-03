@@ -609,10 +609,16 @@ export default function MenuPage() {
             // Clear params from URL while preserving table
             cleanUrlPreservingTable('TOPUP RETURN');
 
-            // Fetch fresh balance after topup
+            // Fetch fresh balance after topup, then show unified success banner
             setTimeout(() => {
               console.log('[TOPUP RETURN] Fetching fresh balance');
               refetchBalance();
+              setShowTopupSuccess(false);
+              // Show unified success banner after topup banner disappears
+              if (amountParam) {
+                console.log('[FLOW 5] Showing unified success banner after topup');
+                setFlow5Success(true);
+              }
             }, 3000);
 
           } catch (error) {
@@ -767,33 +773,6 @@ export default function MenuPage() {
         }
 
         console.log("Fetched conversion rate:", data.conversion_rate);
-
-        /* // Prefetch all menu images for offline caching
-        const prefetchImages = () => {
-          const imageUrls: string[] = [
-            ...data.dishes.map(d => d.image),
-            ...data.drinks.map(d => d.image)
-          ].filter((url): url is string => url !== null && url !== undefined && url !== '');
-
-          console.log(`Prefetching ${imageUrls.length} menu images for offline access...`);
-
-          imageUrls.forEach((url, index) => {
-            const img = new window.Image();
-            img.src = url;
-            img.onload = () => {
-              if (index === imageUrls.length - 1) {
-                console.log('✓ All menu images prefetched and cached');
-              }
-            };
-            img.onerror = () => {
-              console.warn(`Failed to prefetch image: ${url}`);
-            };
-          });
-        };
-
-        // Start prefetching after a short delay to prioritize initial page load
-        setTimeout(prefetchImages, 1000);
-        */
       } catch (e: any) {
         setError(e.message);
         setLoading(false);
@@ -1094,22 +1073,6 @@ export default function MenuPage() {
       discount: cartItemDiscount, // Pass discount to cart
     });
   }, [addItem, menu]);
-
-  /*const fallBackNoKeychain = () => {
-    const fallbackUrl = 'https://play.google.com/store/apps/details?id=com.mobilekeychain'; // Android
-    const iosFallbackUrl = 'https://apps.apple.com/us/app/hive-keychain/id1550923076'; // iOS
-    setTimeout(() => {
-      if (document.hasFocus()) {
-        if (navigator.userAgent.includes('Android')) {
-          window.location.href = fallbackUrl;
-        } else if (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')) {
-          window.location.href = iosFallbackUrl;
-        } else {
-          alert(navigator.userAgent + ' - Please install the Hive Keychain app / extension to proceed.');
-        }
-      }
-    }, 1000);
-  };*/
 
   const handleCallWaiter = useCallback(async () => {
     console.log('[CALL WAITER] Initiating call waiter flow');
@@ -2194,7 +2157,7 @@ export default function MenuPage() {
       {/* Wallet Notification Banner */}
       {showWalletNotification && !walletCredentials && !guestCheckoutStarted && !showPaymentSuccess && !flow4Success && (
         <Draggable
-          className="z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg rounded-lg"
+          className="z-[8990] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg rounded-lg"
           style={{
             top: cart.length === 0 && welcomeCarouselHeight > 0
               ? `${totalFixedHeaderHeight + welcomeCarouselHeight}px`
@@ -2349,7 +2312,7 @@ export default function MenuPage() {
 
       {/* Payment Success Banner - Two States */}
       {showPaymentSuccess && !blockchainComplete && !transmissionError && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-700"></div>
@@ -2370,7 +2333,7 @@ export default function MenuPage() {
       {showPaymentSuccess && transmissionError && (
         <>
           {/* Yellow payment success banner (stays visible) */}
-          <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-3 shadow-lg">
+          <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-3 shadow-lg">
             <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">✓</span>
@@ -2382,7 +2345,7 @@ export default function MenuPage() {
           </div>
 
           {/* Grey error banner below */}
-          <div className="fixed left-0 right-0 z-[9998] bg-gradient-to-r from-gray-600 to-gray-700 text-white px-4 py-4 shadow-lg" style={{ top: '60px' }}>
+          <div className="fixed left-0 right-0 z-[8990] bg-gradient-to-r from-gray-600 to-gray-700 text-white px-4 py-4 shadow-lg" style={{ top: '60px' }}>
             <div className="max-w-4xl mx-auto">
               <div className="flex flex-col items-center gap-3">
                 <div className="text-center">
@@ -2421,7 +2384,7 @@ export default function MenuPage() {
 
       {/* Account Creation Success - Yellow Banner (Processing) */}
       {showAccountCreated && !accountCreationComplete && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-700"></div>
@@ -2440,7 +2403,7 @@ export default function MenuPage() {
 
       {/* Flow 4 Success Banner - create_account_only (no order) */}
       {flow4Success && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
               <span className="text-3xl">✓</span>
@@ -2462,7 +2425,7 @@ export default function MenuPage() {
 
       {/* UNIFIED Order Success Banner - Flow 5 (create_account_and_pay), Flow 6 (pay_with_account), Flow 7 (pay_with_topup) */}
       {(flow5Success || flow6Success || flow7Success) && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-[9020] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
               <span className="text-3xl">✓</span>
@@ -2488,7 +2451,7 @@ export default function MenuPage() {
 
       {/* Waiter Called Success Banner */}
       {waiterCalledSuccess && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-4 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-[9020] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
               <span className="text-3xl">🔔</span>
@@ -2561,8 +2524,8 @@ export default function MenuPage() {
 
       {/* Topup Success Banner */}
       {showTopupSuccess && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
+        <div className="fixed top-0 left-0 right-0 z-[9010] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="text-3xl">✓</span>
               <div>
@@ -2574,13 +2537,26 @@ export default function MenuPage() {
                 </p>
               </div>
             </div>
+            <button
+              onClick={() => {
+                setShowTopupSuccess(false);
+                setFlow5Success(true);
+                console.log('[TOPUP BANNER] Dismissed manually, showing unified success banner');
+              }}
+              className="text-white hover:bg-white/20 rounded-full p-1 transition-colors flex-shrink-0"
+              aria-label="Dismiss"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
         </div>
       )}
 
       {/* Account Creation Success - Blue Banner (Account Credentials) */}
       {showAccountCreated && accountCreationComplete && newAccountCredentials && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-4 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -2820,7 +2796,7 @@ export default function MenuPage() {
 
       {/* Wallet Status Display - Shows when credentials are loaded */}
       {walletCredentials && (
-        <div className="fixed top-[80px] left-0 right-0 z-[9998] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 shadow-lg">
+        <div className="fixed top-[80px] left-0 right-0 z-[8990] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <span className="text-lg">✓</span>
