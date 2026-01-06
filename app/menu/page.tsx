@@ -136,6 +136,11 @@ export default function MenuPage() {
 
   // State for import account modal (email verification system)
   const [showImportModal, setShowImportModal] = useState(false);
+
+  // State for external wallet warning modal (FreeNow collision issue)
+  const [showExternalWalletWarning, setShowExternalWalletWarning] = useState(false);
+  const [pendingHiveUrl, setPendingHiveUrl] = useState<string>('');
+  const [freeNowOpened, setFreeNowOpened] = useState(false);
   const [importEmail, setImportEmail] = useState('');
   const [importError, setImportError] = useState('');
   const [importAttempts, setImportAttempts] = useState(5);
@@ -705,7 +710,7 @@ export default function MenuPage() {
 
         if (data.isComplete) {
           console.warn('[BLOCKCHAIN POLL] ✓ Blockchain transactions complete - Flow 6 success!');
-          handleFlow6Success(); // Flow 6: pay_with_account
+          handleFlow6Success(); // Flow 6: pay_with_account - Show unified success banner (works for Flow 3 guest checkout too)
           clearCart(); // Clear cart only on successful blockchain completion
           clearInterval(pollInterval);
 
@@ -1760,6 +1765,7 @@ export default function MenuPage() {
     setShowGuestWarningModal(true);
   }, [cart.length]);
 
+  // Step 1: Show warning modal instead of immediately opening hive:// URL
   const handleExternalWallet = useCallback(() => {
     // For call waiter flow, always allow (no cart check)
     if (!isCallWaiterFlow && cart.length === 0) {
@@ -1767,15 +1773,24 @@ export default function MenuPage() {
       return;
     }
 
-    console.log('[EXTERNAL WALLET] User requested external wallet on Safari/iOS');
+    console.log('[EXTERNAL WALLET] User requested external wallet - showing warning modal');
 
     // Generate the hive://sign/ URL
     const hiveOpUrl = isCallWaiterFlow ? callWaiter() : orderNow();
+    setPendingHiveUrl(hiveOpUrl);
+    setFreeNowOpened(false);
+    setShowExternalWalletWarning(true);
+  }, [cart.length, orderNow, isCallWaiterFlow, callWaiter]);
+
+  // Step 2: Actually open the hive:// URL after user confirms
+  const proceedWithExternalWallet = useCallback(() => {
+    if (!pendingHiveUrl) return;
+
+    console.log('[EXTERNAL WALLET] User confirmed - opening hive:// URL');
 
     // Set a flag to detect if the page loses focus (app opened)
     let protocolHandlerWorked = false;
     let blurTime = 0;
-    let errorOccurred = false;
 
     const blurHandler = () => {
       blurTime = Date.now();
@@ -1796,10 +1811,11 @@ export default function MenuPage() {
           if (!isCallWaiterFlow) {
             clearCart();
           }
+          setShowExternalWalletWarning(false);
         } else {
-          // Short blur likely means Safari error was shown and dismissed
-          console.log('[EXTERNAL WALLET] Short blur - likely Safari error, NOT clearing cart');
-          errorOccurred = true;
+          // Short blur likely means Safari error OR FreeNow opened
+          console.log('[EXTERNAL WALLET] Short blur - likely Safari error or FreeNow, NOT clearing cart');
+          setFreeNowOpened(true); // Show "FreeNow opened?" recovery options
         }
       }
     };
@@ -1809,10 +1825,10 @@ export default function MenuPage() {
 
     // Try to open the hive:// URL
     try {
-      window.location.href = hiveOpUrl;
+      window.location.href = pendingHiveUrl;
     } catch (error) {
       console.log('[EXTERNAL WALLET] Failed to open hive:// URL:', error);
-      errorOccurred = true;
+      setFreeNowOpened(true);
     }
 
     // After 3 seconds, check if the protocol handler worked
@@ -1821,10 +1837,24 @@ export default function MenuPage() {
       window.removeEventListener('focus', focusHandler);
 
       if (!protocolHandlerWorked) {
-        console.log('[EXTERNAL WALLET] Protocol handler did not work - cart preserved');
+        console.log('[EXTERNAL WALLET] Protocol handler did not work - showing recovery options');
+        setFreeNowOpened(true);
       }
     }, 3000);
-  }, [cart.length, orderNow, clearCart, isCallWaiterFlow, callWaiter]);
+  }, [pendingHiveUrl, clearCart, isCallWaiterFlow]);
+
+  // Copy hive:// URL to clipboard for manual paste into Hive Keychain
+  const copyHiveUrlToClipboard = useCallback(async () => {
+    if (!pendingHiveUrl) return;
+    try {
+      await navigator.clipboard.writeText(pendingHiveUrl);
+      alert('Lien copié! Ouvrez Hive Keychain et collez le lien.');
+    } catch (error) {
+      console.error('[EXTERNAL WALLET] Failed to copy to clipboard:', error);
+      // Fallback: show the URL in a prompt
+      prompt('Copiez ce lien et collez-le dans Hive Keychain:', pendingHiveUrl);
+    }
+  }, [pendingHiveUrl]);
 
   // Handle import account button click
   const handleImportAccount = useCallback(() => {
@@ -2263,7 +2293,7 @@ export default function MenuPage() {
                 onTouchStart={(e) => e.stopPropagation()}
               >
                 <span>Créer un compte</span>
-                <img src="/images/favicon-32x32.png" alt="innopay" className="w-10 h-10" />
+                <img src="/images/favicon-48x48.png" alt="innopay" className="w-10 h-10" />
               </button>
 
               {/* External Wallet Button - Show when cart has items OR when triggered by order button (not just Safari detection) */}
@@ -2440,6 +2470,9 @@ export default function MenuPage() {
                 setFlow5Success(false);
                 setFlow6Success(false);
                 setFlow7Success(false);
+                // Also clear the yellow "processing" banner for Flow 3 (guest checkout)
+                setShowPaymentSuccess(false);
+                setBlockchainComplete(true);
               }}
               className="bg-white text-green-700 px-4 py-2 rounded-lg font-semibold hover:bg-green-50 transition-colors ml-4"
             >
@@ -2617,6 +2650,102 @@ export default function MenuPage() {
           onClose={() => setShowWalletBalance(false)}
           balanceSource={balanceSource || undefined}
         />
+      )}
+
+      {/* External Wallet Warning Modal - FreeNow collision workaround */}
+      {showExternalWalletWarning && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-70">
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4 shadow-2xl relative">
+            {/* Close button */}
+            <button
+              onClick={() => {
+                setShowExternalWalletWarning(false);
+                setPendingHiveUrl('');
+                setFreeNowOpened(false);
+              }}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+            >
+              ×
+            </button>
+
+            {!freeNowOpened ? (
+              // Initial warning state
+              <>
+                <div className="text-center mb-4">
+                  <span className="text-4xl">⚠️</span>
+                </div>
+                <h3 className="text-lg font-bold mb-3 text-gray-800 text-center">
+                  Portefeuille externe
+                </h3>
+                <p className="text-sm text-gray-600 mb-4 text-center">
+                  Ceci va ouvrir votre application Hive Keychain ou Ecency.
+                </p>
+                <p className="text-xs text-orange-600 mb-4 text-center bg-orange-50 p-2 rounded">
+                  <strong>Note:</strong> Si l&apos;application FreeNow (taxi) s&apos;ouvre à la place,
+                  revenez ici et utilisez les options de secours.
+                </p>
+                <div className="space-y-2">
+                  <button
+                    onClick={proceedWithExternalWallet}
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                  >
+                    Ouvrir Hive Keychain
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowExternalWalletWarning(false);
+                      setPendingHiveUrl('');
+                    }}
+                    className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-300 transition-colors text-sm"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </>
+            ) : (
+              // FreeNow opened / recovery state
+              <>
+                <div className="text-center mb-4">
+                  <span className="text-4xl">🚕</span>
+                </div>
+                <h3 className="text-lg font-bold mb-3 text-gray-800 text-center">
+                  FreeNow s&apos;est ouvert?
+                </h3>
+                <p className="text-sm text-gray-600 mb-4 text-center">
+                  Pas de souci! Utilisez une de ces alternatives:
+                </p>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => {
+                      setShowExternalWalletWarning(false);
+                      setPendingHiveUrl('');
+                      setFreeNowOpened(false);
+                      // User will use innopay flow instead
+                    }}
+                    className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                  >
+                    Payer avec Innopay
+                  </button>
+                  <button
+                    onClick={copyHiveUrlToClipboard}
+                    className="w-full bg-gray-600 text-white py-2 rounded-lg font-medium hover:bg-gray-700 transition-colors text-sm"
+                  >
+                    Copier le lien de transaction
+                  </button>
+                  <button
+                    onClick={proceedWithExternalWallet}
+                    className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-300 transition-colors text-sm"
+                  >
+                    Réessayer quand même
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-3 text-center">
+                  Astuce: Ouvrez Hive Keychain manuellement, puis collez le lien copié.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Import Account Modal */}
