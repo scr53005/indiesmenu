@@ -55,6 +55,7 @@ export async function POST() {
             data: {
               id: BigInt(transfer.id),
               from_account: transfer.from_account,
+              to_account: transfer.to_account,
               amount: transfer.amount,
               symbol: transfer.symbol,
               memo: transfer.memo,

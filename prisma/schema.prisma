@@ -11,6 +11,7 @@ datasource db {
 model transfers {
   id           BigInt    @id
   from_account String
+  to_account   String    @default("indies.cafe")
   amount       String
   symbol       String
   memo         String?

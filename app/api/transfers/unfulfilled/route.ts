@@ -13,6 +13,7 @@ export async function GET() {
       select: {
         id: true,
         from_account: true,
+        to_account: true,
         amount: true,
         symbol: true,
         memo: true,
@@ -26,6 +27,7 @@ export async function GET() {
     const formatted = unfulfilledTransfers.map(t => ({
       id: t.id.toString(),
       from_account: t.from_account,
+      to_account: t.to_account,
       amount: t.amount,
       symbol: t.symbol,
       memo: t.memo,

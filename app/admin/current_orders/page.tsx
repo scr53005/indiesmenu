@@ -9,6 +9,7 @@ import React from 'react';
 interface Transfer {
   id: string;
   from_account: string;
+  to_account: string;
   amount: string;
   symbol: string;
   memo: string;
