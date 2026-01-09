@@ -277,11 +277,14 @@ export default function MenuPage() {
           localStorage.setItem('innopay_memoPrivate', credentials.keys.memo.privateKey);
 
           // Determine flow from URL param (source of truth from innopay) or fallback to marker
-          // flowParam: '6' = Flow 6 (pay with existing account), '7' = Flow 7 (topup + pay)
+          // flowParam: '4' = Flow 4 (create account only), '6' = Flow 6 (pay with existing account), '7' = Flow 7 (topup + pay)
           let currentFlow = flowMarker; // Start with marker
 
           // Override with explicit flow parameter from innopay (more reliable)
-          if (flowParam === '6') {
+          if (flowParam === '4') {
+            currentFlow = 'flow4_create_account_only';
+            console.log('[FLOW DETECTION] Explicit flow=4 detected - Flow 4 (create account only)');
+          } else if (flowParam === '6') {
             currentFlow = 'flow6_pay_with_account';
             console.log('[FLOW DETECTION] Explicit flow=6 detected - Flow 6 (pay with existing account)');
           } else if (flowParam === '7') {
@@ -430,6 +433,29 @@ export default function MenuPage() {
                 euroBalance: credentials.euroBalance,
               });
               handleFlow5Success();
+
+            } else if (currentFlow === 'flow4_create_account_only') {
+              // FLOW 4: Create account only (no order)
+              console.log('[FLOW 4] Account created without order - credentials imported');
+
+              // Update wallet balance state
+              setWalletBalance({
+                accountName: credentials.accountName,
+                euroBalance: credentials.euroBalance
+              });
+
+              // Show MiniWallet for new users
+              setShowWalletBalance(true);
+
+              // Cart stays intact (no order)
+              console.log('[FLOW 4] Keeping cart intact - no order placed');
+
+              // Remove query params from URL while preserving table
+              cleanUrlPreservingTable('FLOW 4 ACCOUNT CREATED');
+
+              // Show Flow 4 success banner (wallet ready, no order)
+              setFlow4Success(true);
+              console.log('[FLOW 4] Showing Flow 4 success banner - wallet ready');
 
             } else {
               // Normal account creation without order (no Flow 5 marker)
@@ -2431,42 +2457,35 @@ export default function MenuPage() {
         </div>
       )}
 
-      {/* Flow 4 Success Banner - create_account_only (no order) */}
-      {flow4Success && (
-        <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">✓</span>
-              <div>
-                <p className="font-semibold text-base md:text-lg">
-                  Votre portefeuille Innopay est prêt, vous pouvez déjà commander
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setFlow4Success(false)}
-              className="bg-white text-green-700 px-4 py-2 rounded-lg font-semibold hover:bg-green-50 transition-colors ml-4"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* UNIFIED Order Success Banner - Flow 5 (create_account_and_pay), Flow 6 (pay_with_account), Flow 7 (pay_with_topup) */}
-      {(flow5Success || flow6Success || flow7Success) && (
+      {/* UNIFIED Success Banner - All Flows (4, 5, 6, 7) */}
+      {/* Flow 4: Account created only (no order) */}
+      {/* Flow 5: Account created with order payment */}
+      {/* Flow 6: Payment with existing account */}
+      {/* Flow 7: Topup + order payment */}
+      {(flow4Success || flow5Success || flow6Success || flow7Success) && (
         <div className="fixed top-0 left-0 right-0 z-[9020] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
               <span className="text-3xl">✓</span>
               <div>
-                <p className="font-semibold text-base md:text-lg">
-                  Votre commande a été transmise et est en cours de préparation
-                </p>
+                {/* Conditional message based on flow type */}
+                {flow4Success ? (
+                  // Flow 4: Account created, no order placed
+                  <p className="font-semibold text-base md:text-lg">
+                    Votre portefeuille Innopay est prêt, vous pouvez déjà commander
+                  </p>
+                ) : (
+                  // Flows 5/6/7: Order was placed and paid
+                  <p className="font-semibold text-base md:text-lg">
+                    Votre commande a été transmise et est en cours de préparation
+                  </p>
+                )}
               </div>
             </div>
             <button
               onClick={() => {
+                // Clear all flow success states
+                setFlow4Success(false);
                 setFlow5Success(false);
                 setFlow6Success(false);
                 setFlow7Success(false);
