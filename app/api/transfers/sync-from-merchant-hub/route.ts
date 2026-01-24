@@ -11,9 +11,21 @@ function getMerchantHubUrl(): string {
   return process.env.NEXT_PUBLIC_MERCHANT_HUB_URL || 'https://merchant-hub-theta.vercel.app';
 }
 
+// Determine which account to filter by (prod vs dev environment)
+function getEnvironmentAccount(): string {
+  // Check DATABASE_URL to determine if we're in dev or prod
+  const databaseUrl = process.env.DATABASE_URL || '';
+  const isDev = databaseUrl.includes('innopaydb'); // Dev database
+
+  return isDev ? 'indies-test' : 'indies.cafe';
+}
+
 export async function POST() {
   const merchantHubUrl = getMerchantHubUrl().replace(/\/$/, '');
   const consumerId = `sync-${Date.now()}`;
+  const environmentAccount = getEnvironmentAccount();
+
+  console.log(`[SYNC] Environment account: ${environmentAccount}`);
 
   try {
     // 1. Consume transfers from merchant-hub Redis Stream
@@ -38,12 +50,22 @@ export async function POST() {
 
     console.log(`[SYNC] Received ${data.transfers.length} transfers from merchant-hub`);
 
-    // 2. Insert each transfer into local DB
+    // 2. Insert each transfer into local DB (filtered by environment)
     const messagesToAck: string[] = [];
     let insertedCount = 0;
+    let filteredCount = 0;
 
     for (const transfer of data.transfers) {
       try {
+        // Filter by environment: only process transfers for our environment's account
+        if (transfer.to_account !== environmentAccount) {
+          console.log(`[SYNC] Filtered out transfer ${transfer.id} (to_account: ${transfer.to_account}, expected: ${environmentAccount})`);
+          filteredCount++;
+          // Still ACK it so it doesn't stay pending forever
+          messagesToAck.push(transfer.messageId);
+          continue;
+        }
+
         // Check if already exists
         const existing = await prisma.transfers.findUnique({
           where: { id: BigInt(transfer.id) }
@@ -64,7 +86,7 @@ export async function POST() {
               received_at: transfer.received_at ? new Date(transfer.received_at) : new Date(),
             },
           });
-          console.log(`[SYNC] Inserted transfer ${transfer.id}`);
+          console.log(`[SYNC] Inserted transfer ${transfer.id} for ${transfer.to_account}`);
           insertedCount++;
         } else {
           console.log(`[SYNC] Transfer ${transfer.id} already exists`);
@@ -106,7 +128,9 @@ export async function POST() {
       message: 'Sync completed',
       received: data.transfers.length,
       inserted: insertedCount,
+      filtered: filteredCount,
       acked: messagesToAck.length,
+      environment: environmentAccount,
     });
 
   } catch (error: any) {

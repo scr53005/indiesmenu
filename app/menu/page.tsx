@@ -82,6 +82,8 @@ export default function MenuPage() {
 
   // State for guest checkout warning modal
   const [showGuestWarningModal, setShowGuestWarningModal] = useState(false);
+
+  // Guest checkout button click state (for visual feedback while Stripe initializes)
   const [guestCheckoutStarted, setGuestCheckoutStarted] = useState(false);
 
   // State for account creation success notification
@@ -2336,8 +2338,13 @@ export default function MenuPage() {
               )}
 
               <button
-                onClick={handleGuestCheckout}
-                className="bg-gray-600 bg-opacity-60 text-gray-300 px-3 py-1.5 rounded-lg font-normal text-xs hover:bg-opacity-70 transition-colors w-[120px] text-center"
+                onClick={() => {
+                  setGuestCheckoutStarted(true);
+                  handleGuestCheckout();
+                }}
+                className={`bg-gray-600 bg-opacity-60 px-3 py-1.5 rounded-lg font-normal text-xs hover:bg-opacity-70 transition-all w-[120px] text-center ${
+                  guestCheckoutStarted ? 'italic text-gray-400' : 'text-gray-100'
+                }`}
                 style={{ whiteSpace: 'normal', lineHeight: '1.3' }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}

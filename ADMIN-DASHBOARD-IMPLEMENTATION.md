@@ -197,4 +197,88 @@ Dashboard page (`/admin/page.tsx`)
 
 ---
 
+## Merchant-Hub Integration Troubleshooting
+
+**Date:** 2026-01-24
+**Issue:** Mixed PROD/DEV transfers appearing in co page after merchant-hub Option 3 deployment
+
+### Problem Description
+
+After deploying the Redis optimization (Option 3) to merchant-hub, the co page started showing:
+1. **Mixed environment transfers** - Both `indies.cafe` (PROD) and `indies-test` (DEV) orders displayed together
+2. **Hydration issues** - Some transfers showing raw codes like "d:7" instead of dish names
+
+### Root Cause
+
+**Merchant-hub** now polls **both** production and development accounts:
+- `indies.cafe` (PROD)
+- `indies-test` (DEV)
+
+Both are published to the same Redis stream `transfers:indies`, and the sync endpoint was inserting all transfers without filtering by environment.
+
+### Solution
+
+Modified `/app/api/transfers/sync-from-merchant-hub/route.ts` to filter transfers by environment:
+
+```typescript
+// Determine which account to filter by (prod vs dev environment)
+function getEnvironmentAccount(): string {
+  // Check DATABASE_URL to determine if we're in dev or prod
+  const databaseUrl = process.env.DATABASE_URL || '';
+  const isDev = databaseUrl.includes('innopaydb'); // Dev database
+
+  return isDev ? 'indies-test' : 'indies.cafe';
+}
+```
+
+The sync endpoint now:
+1. Determines environment based on `DATABASE_URL`
+2. Filters incoming transfers by `to_account` field
+3. Only inserts transfers matching the environment's account
+4. Still ACKs filtered transfers to prevent them from staying pending
+
+### Database Cleanup
+
+If you have mixed transfers in your database, clean them up with this SQL:
+
+```sql
+-- For PRODUCTION environment (remove dev transfers)
+-- First check what will be deleted:
+SELECT id, to_account, from_account, memo, received_at
+FROM transfers
+WHERE to_account = 'indies-test'  -- Dev account transfers
+ORDER BY received_at DESC;
+
+-- If correct, delete them:
+DELETE FROM transfers WHERE to_account = 'indies-test';
+
+-- For DEV environment (remove prod transfers)
+-- First check:
+SELECT id, to_account, from_account, memo, received_at
+FROM transfers
+WHERE to_account = 'indies.cafe'  -- Prod account transfers
+ORDER BY received_at DESC;
+
+-- If correct, delete them:
+DELETE FROM transfers WHERE to_account = 'indies.cafe';
+```
+
+### Hydration Issues
+
+If transfers show codes like "d:7" instead of dish names:
+1. Check if `menuData` has loaded in the co page
+2. Verify the `memo` field contains the full order (not just shorthand)
+3. Check browser console for hydration errors
+4. Ensure the menu cache is fresh (clear cache from dashboard)
+
+### Testing
+
+After deploying the fix:
+1. ✅ Only environment-specific transfers should appear
+2. ✅ Production co page shows only `indies.cafe` transfers
+3. ✅ Dev co page shows only `indies-test` transfers
+4. ✅ All transfers hydrate correctly with dish names
+
+---
+
 **Implementation Complete!** 🎉
