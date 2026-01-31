@@ -300,10 +300,13 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
   }
   console.log(`hydrateMemo - orderContent: '${orderContent}'`); // Debug log to check the order content
   // alert(`hydrateMemo - orderContent: '${orderContent}'`); // Debug log to check the order content
+
   // Check if the orderContent is likely a codified order
-  // This regex checks for item identifiers like 'd:1' or 'b:2' and at least one semicolon.
-  if (!/(?:d:\d+|b:\d+)/.test(orderContent) || !orderContent.includes(';')) {
+  // Pattern matches 'd:X' (dish) or 'b:X' (beverage/drink)
+  // Single-item orders (like "d:7") don't have semicolons, so we only check for the pattern
+  if (!/(?:d:\d+|b:\d+)/.test(orderContent)) {
     // If not a codified memo, return it as a single 'raw' item
+    console.log(`[HYDRATE] Not a codified memo, treating as raw: '${orderContent}'`);
     return [{ type: 'raw', content: orderContent }];
   }
 

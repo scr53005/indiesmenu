@@ -13,11 +13,21 @@ function getMerchantHubUrl(): string {
 
 // Determine which account to filter by (prod vs dev environment)
 function getEnvironmentAccount(): string {
-  // Check DATABASE_URL to determine if we're in dev or prod
-  const databaseUrl = process.env.DATABASE_URL || '';
-  const isDev = databaseUrl.includes('innopaydb'); // Dev database
+  // Use HIVE_ACCOUNT environment variable if set, otherwise default to production
+  const hiveAccount = process.env.HIVE_ACCOUNT || process.env.NEXT_PUBLIC_HIVE_ACCOUNT;
 
-  return isDev ? 'indies-test' : 'indies.cafe';
+  if (hiveAccount) {
+    console.log(`[SYNC] Using HIVE_ACCOUNT from env: ${hiveAccount}`);
+    return hiveAccount;
+  }
+
+  // Fallback: Check DATABASE_URL to determine if we're in dev or prod
+  const databaseUrl = process.env.DATABASE_URL || '';
+  const isDev = databaseUrl.includes('localhost') || databaseUrl.includes('innopaydb');
+
+  const account = isDev ? 'indies-test' : 'indies.cafe';
+  console.log(`[SYNC] Using DATABASE_URL detection: ${account}`);
+  return account;
 }
 
 export async function POST() {
