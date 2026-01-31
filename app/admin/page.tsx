@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { PT_Sans } from 'next/font/google';
+import { Lato } from 'next/font/google';
 
-const ptSans = PT_Sans({
-  weight: ['400', '700'],
+const lato = Lato({
+  weight: ['300', '400', '700'],
   subsets: ['latin'],
 });
 
@@ -39,7 +39,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className={`min-h-screen bg-gray-100 ${ptSans.className}`}>
+    <div className={`min-h-screen bg-gray-100 ${lato.className}`}>
       {/* Header */}
       <div className="bg-blue-600 text-white p-6 shadow-lg">
         <div className="container mx-auto">
@@ -99,6 +99,38 @@ export default function AdminDashboard() {
             </div>
           </Link>
 
+          {/* Current Orders Card */}
+          <Link href="/admin/current_orders">
+            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-green-500 group">
+              <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">🛎️</div>
+              <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-green-600">
+                Commandes
+              </h2>
+              <p className="text-gray-600 mb-4">
+                Voir et gérer les commandes en cours
+              </p>
+              <div className="flex items-center text-green-600 font-semibold group-hover:translate-x-2 transition-transform">
+                Gérer →
+              </div>
+            </div>
+          </Link>
+
+          {/* Order History Card */}
+          <Link href="/admin/history">
+            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-purple-500 group">
+              <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">📜</div>
+              <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-purple-600">
+                Historique
+              </h2>
+              <p className="text-gray-600 mb-4">
+                Consulter l'historique des commandes
+              </p>
+              <div className="flex items-center text-purple-600 font-semibold group-hover:translate-x-2 transition-transform">
+                Consulter →
+              </div>
+            </div>
+          </Link>
+
           {/* Menu Card */}
           <Link href="/admin/carte">
             <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500 group">
@@ -126,22 +158,6 @@ export default function AdminDashboard() {
                 Gérer les allergènes et intolérances
               </p>
               <div className="flex items-center text-blue-600 font-semibold group-hover:translate-x-2 transition-transform">
-                Gérer →
-              </div>
-            </div>
-          </Link>
-
-          {/* Current Orders Card */}
-          <Link href="/admin/current_orders">
-            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-green-500 group">
-              <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">🛎️</div>
-              <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-green-600">
-                Commandes
-              </h2>
-              <p className="text-gray-600 mb-4">
-                Voir et gérer les commandes en cours
-              </p>
-              <div className="flex items-center text-green-600 font-semibold group-hover:translate-x-2 transition-transform">
                 Gérer →
               </div>
             </div>

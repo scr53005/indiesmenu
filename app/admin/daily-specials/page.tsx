@@ -3,10 +3,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { PT_Sans } from 'next/font/google';
+import { Lato } from 'next/font/google';
 
-const ptSans = PT_Sans({
-  weight: ['400', '700'],
+const lato = Lato({
+  weight: ['300', '400', '700'],
   subsets: ['latin'],
 });
 
@@ -228,7 +228,7 @@ export default function AdminDailySpecials() {
   }
 
   return (
-    <div className={`min-h-screen bg-gray-100 ${ptSans.className}`}>
+    <div className={`min-h-screen bg-gray-100 ${lato.className}`}>
       {/* Admin Header */}
       <div className="bg-blue-600 text-white p-4 shadow-lg">
         <div className="container mx-auto flex justify-between items-center">

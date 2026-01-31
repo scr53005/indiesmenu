@@ -5,6 +5,12 @@ import { getTable, hydrateMemo, HydratedOrderLine } from '@/lib/utils';
 import { MenuData } from '@/lib/data/menu';
 import 'react-toastify/dist/ReactToastify.css';
 import React from 'react';
+import { Lato } from 'next/font/google';
+
+const lato = Lato({
+  weight: ['300', '400', '700'],
+  subsets: ['latin'],
+});
 
 interface Transfer {
   id: string;
@@ -480,10 +486,21 @@ export default function CurrentOrdersPage() {
   }
 
   return (
-    <div className="container">
+    <div className={`container ${lato.className}`}>
       <ToastContainer position="top-right" />
 
-      <h1>Commandes en cours</h1>
+      {/* Navigation Header */}
+      <div className="nav-header">
+        <h1>Commandes en cours</h1>
+        <div className="nav-buttons">
+          <a href="/admin" className="nav-button dashboard-button">
+            🏠 Tableau de bord
+          </a>
+          <a href="/admin/history" className="nav-button history-button">
+            📜 Historique
+          </a>
+        </div>
+      </div>
 
       {error && (
         <div className="error-box">
@@ -678,8 +695,50 @@ export default function CurrentOrdersPage() {
           margin: 0 auto;
           padding: 20px;
         }
-        h1 {
+        .nav-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
           margin-bottom: 20px;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        h1 {
+          margin: 0;
+        }
+        .nav-buttons {
+          display: flex;
+          gap: 8px;
+        }
+        .nav-button {
+          background: #0070f3;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          cursor: pointer;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 500;
+          text-decoration: none;
+          display: inline-block;
+          transition: all 0.2s;
+        }
+        .nav-button:hover {
+          background: #005bb5;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .dashboard-button {
+          background: #666;
+        }
+        .dashboard-button:hover {
+          background: #444;
+        }
+        .history-button {
+          background: #28a745;
+        }
+        .history-button:hover {
+          background: #218838;
         }
         .error-box {
           background: #fee;
