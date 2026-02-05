@@ -42,6 +42,37 @@ def _clear_cell_margins(cell):
     tcPr.append(tcMar)
 
 
+def _set_cell_margins(cell, margin_twips=30):
+    """Set all internal cell margins to specified value in twips (2px ≈ 30 twips)."""
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    tcMar = OxmlElement('w:tcMar')
+    for name in ('top', 'left', 'bottom', 'right'):
+        node = OxmlElement(f'w:{name}')
+        node.set(qn('w:w'), str(margin_twips))
+        node.set(qn('w:type'), 'dxa')
+        tcMar.append(node)
+    tcPr.append(tcMar)
+
+
+def _set_table_borders(table):
+    """Set default single-line borders for the table."""
+    tbl = table._tbl
+    tblPr = tbl.tblPr
+    if tblPr is None:
+        tblPr = OxmlElement('w:tblPr')
+        tbl.insert(0, tblPr)
+    borders = OxmlElement('w:tblBorders')
+    for name in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        elem = OxmlElement(f'w:{name}')
+        elem.set(qn('w:val'), 'single')
+        elem.set(qn('w:sz'), '8')  # Border width in eighths of a point (8 = 1pt)
+        elem.set(qn('w:space'), '0')
+        elem.set(qn('w:color'), '000000')
+        borders.append(elem)
+    tblPr.append(borders)
+
+
 def _style_finders(img, modules_count, module_px):
     """
     Redraw the three finder patterns with a fully rounded outer border and a circular inner eye.
@@ -132,14 +163,14 @@ def generate_qr_codes_and_overlay(uri_file_path, tables_file_path, template_file
     # --- Define Positions and Sizes (Internal to each generated image - trial and error values) ---
     QR_CODE_SIZE_PIXELS = 470
     QR_POS_X = 508
-    QR_POS_Y = 84
+    QR_POS_Y = 81
 
     TABLE_NUM_TEXT_POS_X = 760
     TABLE_NUM_TEXT_POS_Y = 17
     FONT_SIZE = 34
     TEXT_COLOR = (0, 0, 0)
 
-    TABLE_NUM_HTTP_TEXT_POS_X = 882
+    TABLE_NUM_HTTP_TEXT_POS_X = 884
     TABLE_NUM_HTTP_TEXT_POS_Y = 579
     FONT_SIZE_HTTP = 18
     TEXT_COLOR_HTTP = (0, 0, 0)
@@ -280,27 +311,29 @@ def generate_qr_codes_and_overlay(uri_file_path, tables_file_path, template_file
         except Exception as e:
             print(f"Error saving temporary image {temp_output_filename}: {e}")
 
-    # --- Table layout dimensions (A4 landscape, derived from margins set above) ---
-    AVAIL_WIDTH_CM = 29.7 - 2.0 - 2.0     # 25.7 cm
-    AVAIL_HEIGHT_CM = 21.0 - 1.27 - 1.27  # 18.46 cm
-    COL_WIDTH_CM = AVAIL_WIDTH_CM / 2      # 12.85 cm — wider than the image; centering within the cell creates the gap
-    ROW_HEIGHT_CM = AVAIL_HEIGHT_CM / 2    # 9.23 cm  — images centered vertically within each row
+    # --- Table layout dimensions (sized to fit images tightly, not full page) ---
+    # Add padding for borders and spacing between images
+    COL_WIDTH_CM = TARGET_WIDTH_CM_FOR_DOCX + 0.3  # 3mm padding per cell
+    ROW_HEIGHT_CM = TARGET_HEIGHT_CM_FOR_DOCX + 0.3
 
     # --- Add Images to Word Document in 2x2 Grid ---
     for i in range(0, len(generated_image_paths), 4):
         table = document.add_table(rows=2, cols=2)
         table.autofit = False
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        _remove_table_borders(table)
+        _set_table_borders(table)  # Show borders with proper spacing
 
         for row_idx in range(2):
             table.rows[row_idx].height = Cm(ROW_HEIGHT_CM)
             for col_idx in range(2):
-                img_idx = i + row_idx * 2 + col_idx
+                # Fill column-wise in pairs: left col gets 1,2,5,6..., right col gets 3,4,7,8...
+                img_idx = i + col_idx * 2 + row_idx
                 cell = table.cell(row_idx, col_idx)
                 cell.width = Cm(COL_WIDTH_CM)
+                _clear_cell_margins(cell)  # 0 margins for correct layout
+
+                # Center images both vertically and horizontally
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                _clear_cell_margins(cell)
 
                 paragraph = cell.paragraphs[0]
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
