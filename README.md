@@ -1,160 +1,280 @@
-# Hive Transfer Fulfillment System
+# Indiesmenu - last updated 2026-02-16
+
+Full-featured restaurant menu, ordering, and kitchen management system for Indies restaurant. Part of the **Innopay hub-and-spokes ecosystem** (Spoke 1).
+
+**Production URL**: `indies.innopay.lu`
+**Tech Stack**: Next.js 15+ + TypeScript + Prisma 6 + PostgreSQL + Tailwind CSS 4
 
 ## Overview
 
-This project is a Next.js application designed to monitor Hive blockchain transfers, display them in a user interface, and allow users to mark them as "fulfilled." It appears to be tailored for a restaurant or similar service that accepts payments via Hive and needs to track orders. New transfers trigger notifications and are displayed until marked as fulfilled.
+Indiesmenu serves two audiences:
 
-## Features
+1. **Customers** (`/menu`) — Browse the menu, build a cart, and pay via the Innopay hub (Hive blockchain + Stripe). Accessed by scanning a QR code at the table.
+2. **Restaurant staff** (`/admin`) — Manage the menu, view incoming orders in real time, track history, manage allergens, and export accounting reports.
 
-- **Real-time Transfer Monitoring:** Polls the Hive blockchain (via an internal API) for new transfers to a specified account.
-- **Order Display:** Shows relevant information for each transfer, including sender, amount, memo (order details), and timestamp.
-- **Visual and Audible Notifications:** Provides toast notifications and sound alerts for new incoming orders.
-- **Order Fulfillment:** Allows users to mark transfers as "fulfilled," which updates their status in the database and removes them from the active order list.
-- **Late Order Indication:** Highlights orders that have been pending for more than 10 minutes.
-- **Database Integration:** Uses a PostgreSQL database (managed with Prisma) to store transfer data and fulfillment status.
+### Architecture
 
-## Technologies Used
+```
+┌──────────────────────────────────────────────────┐
+│  Indiesmenu (Next.js on Vercel)                  │
+│                                                   │
+│  Customer-facing:                                 │
+│    /menu — Menu, cart, checkout, payments          │
+│                                                   │
+│  Admin (kitchen backend):                         │
+│    /admin — Dashboard hub                         │
+│    /admin/current_orders — Live order queue (CO)  │
+│    /admin/history — Fulfilled order archive       │
+│    /admin/daily-specials — Plat du Jour           │
+│    /admin/carte — Menu & image management         │
+│    /admin/alergenes — Allergen management         │
+│    /admin/reporting — Accountant HBD/EUR exports  │
+└──────────────┬───────────────┬────────────────────┘
+               │               │
+               ▼               ▼
+     ┌──────────────┐  ┌───────────────┐
+     │  Innopay Hub │  │ Merchant Hub  │
+     │  (payments)  │  │ (HAF polling) │
+     │  wallet.     │  │ Redis Streams │
+     │  innopay.lu  │  │ + HAFSQL      │
+     └──────────────┘  └───────────────┘
+```
 
-- **Next.js:** React framework for server-side rendering and static site generation.
-- **React:** JavaScript library for building user interfaces.
-- **TypeScript:** Superset of JavaScript that adds static typing.
-- **Prisma:** ORM for database access and management.
-- **PostgreSQL:** Relational database used to store application data.
-- **Tailwind CSS:** (Potentially, based on `postcss.config.mjs` and common Next.js setups, though not explicitly confirmed in other files).
-- **Axios:** Promise-based HTTP client for making API requests.
-- **React Toastify:** For displaying notifications.
+## Customer Features (`/menu`)
 
-## Setup and Installation
+- **Digital menu** with categories: soups, salads, main dishes, desserts, drinks
+- **Daily specials** section with rotating dishes
+- **Shopping cart** with localStorage persistence (CartContext)
+- **Allergen display** per dish
+- **Table-based ordering** via QR codes (`/menu?table=X`)
+- **Call Waiter** button (symbolic 0.020 EURO transfer)
+- **MiniWallet** showing EURO balance, account name, quick topup link
+- **Multi-language** (French UI)
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    cd <repository-name>
-    ```
+### Payment Flows (via Innopay Hub)
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    # or
-    # yarn install
-    ```
+| Flow | Description | Trigger |
+|------|-------------|---------|
+| **3** | Guest Checkout (Stripe, no account) | No account, chooses guest |
+| **4** | Create Account Only | Clicks "Create Wallet" without ordering |
+| **5** | Create Account + Pay | No account, chooses create + pay |
+| **6** | Pay with Existing Account | Has account with sufficient balance |
+| **7** | Topup + Pay (Stripe) | Has account but insufficient balance |
+| **8** | Import Existing Account | Email verification to recover credentials |
 
-3.  **Set up environment variables:**
-    Create a `.env` file in the root of the project and add the following variables. See the "Environment Variables" section below for details.
+Flows 6 and 7 use **two-leg dual-currency** transfers: Customer -> innopay (EURO collateral) -> Restaurant (HBD preferred, EURO fallback with debt tracking).
 
-4.  **Database Setup:**
-    - Ensure you have a PostgreSQL server running.
-    - Update the `DATABASE_URL` in your `.env` file with your PostgreSQL connection string.
-    - Run database migrations to create the necessary tables:
-      ```bash
-      npx prisma migrate dev
-      ```
-    - (Optional) If you need to generate Prisma Client after changes to `schema.prisma`:
-      ```bash
-      npx prisma generate
-      ```
+## Admin Dashboard (`/admin`)
 
-5.  **Start the development server:**
-    ```bash
-    npm run dev
-    ```
-    The application should now be running on `http://localhost:3000`.
+Authentication-protected admin area with 6 dashboard cards:
+
+```
+Login -> /admin (dashboard)
+         |
+         +-> Plat du Jour        /admin/daily-specials
+         +-> Commandes            /admin/current_orders
+         +-> Historique           /admin/history
+         +-> Carte & Images       /admin/carte
+         +-> Allergenes           /admin/alergenes
+         +-> Comptabilite         /admin/reporting
+```
+
+### Current Orders (`/admin/current_orders`)
+
+The operational heart of the system — the **CO page** (Current Orders):
+
+- **Real-time order display** via merchant-hub polling (6-second intervals)
+- **Distributed poller election**: Coordinates with merchant-hub using Redis SETNX. First CO page to open becomes the poller; others subscribe to Redis Streams.
+- **Kitchen workflow**: Two-step fulfillment (transmit to kitchen -> mark as served)
+- **Order grouping**: Groups EURO + HBD transfers for same order (dual-currency)
+- **Memo hydration**: Decodes dehydrated memos (`d:1,q:2;b:3;`) into dish names using menu data
+- **Late order highlighting**: Visual alerts for orders older than 10 minutes
+- **Audio reminders**: Bell sounds every 30 seconds for untransmitted orders
+- **Environment filtering**: Only shows transfers matching the current environment (`indies.cafe` in prod, `indies-test` in dev)
+
+### Order History (`/admin/history`)
+
+- Date-grouped expandable sections
+- Auto-refresh every 10 seconds
+- Incremental loading in 3-day chunks
+- Hydrated memos with color coding (dishes vs. drinks)
+
+### Daily Specials (`/admin/daily-specials`)
+
+- CRUD for rotating daily menu items
+- Displayed on customer menu and TV/print display pages
+
+### Menu & Images (`/admin/carte`)
+
+- Full CRUD for dishes (name, price, category, description, ingredients)
+- Image upload, matching, and optimization
+- Menu cache management
+
+### Allergens (`/admin/alergenes`)
+
+- Manage allergen information per dish
+- Ingredient-level allergen tracking
+
+### Reporting / Comptabilite (`/admin/reporting`)
+
+Accountant export page for HBD transaction history with EUR conversion:
+
+- **Date range picker** (defaults to current month)
+- **Data source**: merchant-hub `GET /api/reporting` (HAFSQL) + local `POST /api/admin/rates` (EUR/USD rates from `currency_conversion` DB)
+- **Summary bar**: Transaction count, total HBD, total EUR
+- **Data table**: Date, Time, Transaction ID, Sender, HBD Amount, EUR/USD Rate, EUR Amount
+- **CSV export**: Semicolon-separated with UTF-8 BOM (European Excel compatible)
+- **PDF export**: Landscape layout via jspdf + jspdf-autotable
+- **Conversion**: `amount_eur = amount_hbd / eur_usd_rate`
+
+## API Routes
+
+### Menu & Dishes
+- `GET /api/menu` — Full menu with 7-day cache
+- `GET/POST /api/dishes` — Dish listing
+- `GET/POST /api/daily-specials` — Daily specials CRUD
+
+### Admin
+- `POST /api/admin/auth` — Admin authentication
+- `GET/POST /api/admin/dishes` — Dish CRUD
+- `PUT/DELETE /api/admin/dishes/[id]` — Single dish operations
+- `POST /api/admin/drinks` — Drink management
+- `GET/POST /api/admin/alergenes` — Allergen management
+- `GET/POST /api/admin/ingredients` — Ingredient management
+- `POST /api/admin/match-images` — Auto-match images to dishes
+- `POST /api/admin/update-images` — Update dish images
+- `GET /api/admin/detect-new-images` — Detect unmatched image files
+- `DELETE /api/admin/cache` — Clear menu cache
+- `POST /api/admin/rates` — EUR/USD rates for specific dates (reporting)
+
+### Transfers & Orders (Merchant-Hub Integration)
+- `POST /api/transfers/sync-from-merchant-hub` — Consume from Redis Stream, insert to DB, ACK
+- `GET /api/transfers/unfulfilled` — Fetch pending orders
+- `GET /api/transfers/check` — Check transfer status
+- `POST /api/fulfill` — Mark order as fulfilled
+- `GET /api/orders/history` — Fulfilled orders with pagination
+
+### Balance & Currency
+- `GET /api/balance/euro` — Fetch EURO token balance from Hive-Engine
+- `GET /api/currency` — EUR/USD exchange rate
+- `GET /api/poll-hbd` — Poll for HBD transfers (legacy)
+- `GET /api/poll-euro` — Poll for EURO transfers (legacy)
+- `GET /api/baseline-euro` — EURO baseline (legacy)
+
+## Other Pages
+
+- `/display/printout` — A3 landscape printout of daily specials (for TV screens or printing)
+- `/admin/login` — Admin authentication page
+
+## Database Schema (Prisma 6)
+
+**Core Models**:
+- `Category` — Menu categories (soups, salads, mains, etc.)
+- `Dish` — Menu items with pricing, allergens, images, ingredients
+- `DailySpecial` — Rotating daily menu items
+- `Transfer` — Blockchain transfers consumed from merchant-hub (id, from_account, to_account, amount, symbol, memo, parsed_memo, received_at, fulfilled_at)
+- `currency_conversion` — Historical EUR/USD rates (used by reporting)
+
+## Technology Stack
+
+| Category | Technology |
+|----------|------------|
+| Framework | Next.js 15.5 (Turbopack in dev) |
+| Language | TypeScript 5 |
+| Database | PostgreSQL + Prisma 6.11 |
+| Styling | Tailwind CSS 4 |
+| State | React Query 5.90 (TanStack Query) |
+| Blockchain | @hiveio/dhive 1.3 |
+| Image Processing | Sharp 0.34 |
+| PDF Export | jspdf + jspdf-autotable |
+| Notifications | react-toastify |
+| HTTP Client | Axios |
+| Testing | Jest 30 + ts-jest |
+| Deployment | Vercel |
+
+## Setup
+
+### Prerequisites
+
+- Node.js 20+
+- PostgreSQL database
+- Access to the Innopay hub (for payment flows)
+- Access to merchant-hub (for order polling)
+
+### Installation
+
+```bash
+npm install
+```
 
 ### Environment Variables
 
-Create a `.env` file in the project root with the following:
-
 ```env
-# URL for your PostgreSQL database
+# PostgreSQL database
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE_NAME"
 
-# The Hive account to monitor for incoming transfers
-NEXT_PUBLIC_HIVE_ACCOUNT="your-hive-account"
+# Innopay Hub URL
+NEXT_PUBLIC_HUB_URL=http://localhost:3000  # or https://wallet.innopay.lu
 
-# (Potentially other variables if used by Neon serverless or Vercel Postgres in production)
-# e.g. POSTGRES_PRISMA_URL, POSTGRES_URL_NON_POOLING for Vercel deployments
+# Merchant Hub URL
+NEXT_PUBLIC_MERCHANT_HUB_URL=http://localhost:3002  # or production URL
+
+# Hive account to monitor
+NEXT_PUBLIC_HIVE_ACCOUNT=indies.cafe
 ```
-*Note: The `package.json` mentions `@neondatabase/serverless` and `@vercel/postgres`. If deploying to these platforms, additional or different environment variables might be required for the database connection.*
 
-## API Endpoints
+### Database Migrations
 
-### 1. `GET /api/poll-hbd`
-   - **Description:** Polls for new HBD (Hive Backed Dollar) transfers to the `NEXT_PUBLIC_HIVE_ACCOUNT`.
-   - **Query Parameters:**
-     - `lastId` (string, optional): The ID of the last transfer received. The API will return transfers newer than this ID. Defaults to '0' if not provided.
-   - **Responses:**
-     - `200 OK`:
-       ```json
-       {
-         "transfers": [
-           {
-             "id": "string", // Transfer ID
-             "from_account": "string",
-             "amount": "string",
-             "symbol": "string", // e.g., "HBD"
-             "memo": "string", // Raw memo
-             "parsedMemo": "string | object", // Potentially parsed memo
-             "received_at": "string" // ISO 8601 timestamp
-           }
-         ],
-         "latestId": "string", // The ID of the most recent transfer polled
-         "error": "string" // Optional error message
-       }
-       ```
-     - `500 Internal Server Error`: If an error occurs during polling.
+```bash
+# Development
+npm run migrate:dev
 
-### 2. `POST /api/fulfill`
-   - **Description:** Marks a specific transfer as fulfilled.
-   - **Request Body:**
-     ```json
-     {
-       "id": "string" // The ID of the transfer to fulfill
-     }
-     ```
-   - **Responses:**
-     - `200 OK`:
-       ```json
-       {
-         "message": "Transfer fulfilled"
-       }
-       ```
-     - `400 Bad Request`: If `id` is not provided.
-     - `404 Not Found`: If the transfer ID does not exist or is already fulfilled.
-     - `500 Internal Server Error`: If an error occurs during the update.
+# Production (also runs during vercel-build)
+npm run migrate:deploy
+```
 
-## Database Schema
+### Run
 
-The database schema is defined in `prisma/schema.prisma` and includes the following main models:
+```bash
+npx next dev -p 3001
+# -> http://localhost:3001 or -> http://192.168.x.y:3001 from a smartphone on the same LAN
+```
 
--   **`transfers`**: Stores information about Hive transfers.
-    -   `id`: BigInt (Primary Key) - The unique ID of the transfer.
-    -   `from_account`: String - The Hive account that sent the transfer.
-    -   `amount`: String - The amount of the transfer.
-    -   `symbol`: String - The currency symbol (e.g., "HBD").
-    -   `memo`: String? - The memo attached to the transfer.
-    -   `parsed_memo`: String? - A parsed version of the memo.
-    -   `fulfilled`: Boolean? (default: `false`) - Whether the transfer has been marked as fulfilled.
-    -   `received_at`: DateTime? (default: `now()`) - Timestamp when the transfer was recorded.
-    -   `fulfilled_at`: DateTime? - Timestamp when the transfer was marked as fulfilled.
+### Build & Deploy
 
--   **`restaurants`**: (Potentially for multi-tenant features, not fully clear from frontend)
-    -   `id`: Int (Primary Key)
-    -   `name`: String (Unique)
-    -   `display_name`: String
-    -   `description`: String?
-    -   ... and relations to `user_restaurant_authorizations`.
+```bash
+# Local build
+npm run build
 
--   **`users`**: (Potentially for user authentication and authorization, not fully clear from frontend)
-    -   `id`: Int (Primary Key)
-    -   `hive_username`: String (Unique)
-    -   `display_name`: String?
-    -   `email`: String?
-    -   ... and relations to `user_restaurant_authorizations`.
+# Vercel build (runs migrations + prisma generate + next build)
+npm run vercel-build
+```
 
--   **`user_restaurant_authorizations`**: Links users to restaurants with specific roles.
-    -   `id`: Int (Primary Key)
-    -   `user_id`: Int (Foreign Key to `users`)
-    -   `restaurant_id`: Int (Foreign Key to `restaurants`)
-    -   `role`: String (e.g., "admin")
+### Image Optimization Scripts
 
-*This README provides a general overview. For more detailed information, please refer to the source code.*
+```bash
+npm run optimize-images           # Optimize all images
+npm run optimize-images:preview   # Dry run
+npm run optimize-images:backup    # With backup
+npm run migrate-images            # Convert to WebP
+npm run migrate-images:preview    # Dry run
+```
+
+## QR Code Generation
+
+Table QR codes are generated using scripts in `scripts/qrcodes/`:
+
+```bash
+cd scripts/qrcodes
+python generateqrs.py
+```
+
+Requires `templateQR.png`, `indiestables.csv`, and `indiesuri.txt`. Outputs a `.docx` with one QR code per table, linking to `https://indies.innopay.lu/menu?table=N`.
+
+## Related Projects
+
+- **[innopay](../innopay)** — Central payment hub (Stripe, Hive blockchain, account management)
+- **[merchant-hub](../merchant-hub)** — Centralized HAF polling, Redis Streams, system health dashboard, reporting API
+- **[croque-bedaine](../croque-bedaine)** — Spoke 2 (Vite + React + Supabase + shadcn/ui)
+
+See `ADMIN-DASHBOARD-IMPLEMENTATION.md` for detailed implementation notes on the admin dashboard and merchant-hub integration.

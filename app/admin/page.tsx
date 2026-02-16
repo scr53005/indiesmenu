@@ -163,6 +163,22 @@ export default function AdminDashboard() {
             </div>
           </Link>
 
+          {/* Accountant Reporting Card */}
+          <Link href="/admin/reporting">
+            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-emerald-500 group">
+              <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">📊</div>
+              <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-emerald-600">
+                Comptabilité
+              </h2>
+              <p className="text-gray-600 mb-4">
+                Rapports de paiements HBD et export comptable
+              </p>
+              <div className="flex items-center text-emerald-600 font-semibold group-hover:translate-x-2 transition-transform">
+                Consulter →
+              </div>
+            </div>
+          </Link>
+
         </div>
 
         {/* Quick Links */}

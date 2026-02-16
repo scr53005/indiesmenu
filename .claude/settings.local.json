@@ -5,7 +5,9 @@
       "Bash(npx prisma migrate:*)",
       "Bash(grep:*)",
       "Bash(cat:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm install:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

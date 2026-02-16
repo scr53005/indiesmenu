@@ -140,3 +140,71 @@ export async function fetchCurrencyRate(today: Date): Promise<CurrencyRate> {
     };
   }
 }
+
+/**
+ * Fetches EUR/USD rates for a specific set of dates (used by accountant reporting).
+ *
+ * Strategy:
+ * 1. Batch-query currency_conversion table for all requested dates
+ * 2. For missing dates (weekends, holidays), use the nearest preceding rate in DB
+ * 3. Returns a Map<dateString, eurUsdRate>
+ *
+ * @param dates - Array of date strings in YYYY-MM-DD format
+ * @returns Map from date string to EUR/USD rate
+ */
+export async function fetchRatesForDates(dates: string[]): Promise<Map<string, number>> {
+  const rateMap = new Map<string, number>();
+  if (dates.length === 0) return rateMap;
+
+  // Step 1: Batch-query DB for all requested dates
+  const dateObjects = dates.map(d => new Date(d + 'T00:00:00.000Z'));
+  try {
+    const existingRates = await prisma.currency_conversion.findMany({
+      where: {
+        date: { in: dateObjects },
+      },
+    });
+
+    for (const rate of existingRates) {
+      const dateStr = rate.date.toISOString().split('T')[0];
+      rateMap.set(dateStr, parseFloat(rate.conversion_rate.toString()));
+    }
+  } catch (dbError) {
+    console.warn('[CURRENCY] Failed to batch-fetch rates from DB:', dbError);
+  }
+
+  // Step 2: For missing dates, find the nearest preceding rate in DB
+  const missingDates = dates.filter(d => !rateMap.has(d));
+
+  for (const dateStr of missingDates) {
+    try {
+      const nearestRate = await prisma.currency_conversion.findFirst({
+        where: {
+          date: { lte: new Date(dateStr + 'T23:59:59.999Z') },
+        },
+        orderBy: { date: 'desc' },
+      });
+
+      if (nearestRate) {
+        rateMap.set(dateStr, parseFloat(nearestRate.conversion_rate.toString()));
+      } else {
+        // No rate at all in DB before this date, try the earliest available
+        const earliestRate = await prisma.currency_conversion.findFirst({
+          orderBy: { date: 'asc' },
+        });
+        if (earliestRate) {
+          rateMap.set(dateStr, parseFloat(earliestRate.conversion_rate.toString()));
+        } else {
+          // No rates in DB at all, use default
+          console.warn(`[CURRENCY] No rate found for ${dateStr}, using default 1.0`);
+          rateMap.set(dateStr, 1.0);
+        }
+      }
+    } catch (dbError) {
+      console.warn(`[CURRENCY] Failed to find nearest rate for ${dateStr}:`, dbError);
+      rateMap.set(dateStr, 1.0);
+    }
+  }
+
+  return rateMap;
+}
