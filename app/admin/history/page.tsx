@@ -354,6 +354,7 @@ export default function OrderHistory() {
           max-width: 1200px;
           margin: 0 auto;
           padding: 20px;
+          color: #333;
         }
 
         .nav-header {
@@ -367,6 +368,7 @@ export default function OrderHistory() {
 
         h1 {
           margin: 0;
+          color: #111;
         }
 
         .nav-buttons {
@@ -417,6 +419,7 @@ export default function OrderHistory() {
         .day-header {
           cursor: pointer;
           background: #f0f0f0;
+          color: #222;
           padding: 10px 15px;
           margin: 0;
           border-radius: 5px;
@@ -438,6 +441,7 @@ export default function OrderHistory() {
           border: 1px solid #ddd;
           padding: 8px;
           text-align: left;
+          color: #333;
         }
 
         .orders-table th {

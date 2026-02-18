@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { PT_Sans } from 'next/font/google';
 
@@ -24,28 +24,109 @@ interface DailySpecials {
   soupes: Dish[];
 }
 
+/**
+ * Check if it's currently happy hour in Luxembourg time.
+ * Happy hour: Monday–Friday, 14:45–18:00 (Europe/Luxembourg).
+ */
+function isHappyHour(): boolean {
+  const now = new Date();
+  const luxTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Luxembourg' }));
+  const day = luxTime.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+  const hours = luxTime.getHours();
+  const minutes = luxTime.getMinutes();
+  const timeInMinutes = hours * 60 + minutes;
+
+  const isWeekday = day >= 1 && day <= 5;
+  const isAfternoon = timeInMinutes >= 14 * 60 + 45 && timeInMinutes < 18 * 60;
+
+  return isWeekday && isAfternoon;
+}
+
+function HappyHourDisplay() {
+  return (
+    <div className={`min-h-screen bg-black text-white relative overflow-hidden ${ptSans.className}`}>
+      {/* Decorative Corners */}
+      <div className="absolute top-0 left-0 w-32 h-32">
+        <Image src="/images/decorations/top-left.jpg" alt="" fill className="object-contain" />
+      </div>
+      <div className="absolute top-0 right-0 w-32 h-32">
+        <Image src="/images/decorations/top-right.jpg" alt="" fill className="object-contain" />
+      </div>
+      <div className="absolute bottom-0 left-0 w-32 h-32">
+        <Image src="/images/decorations/bottom-left.jpg" alt="" fill className="object-contain" />
+      </div>
+      <div className="absolute bottom-0 right-0 w-32 h-32">
+        <Image src="/images/decorations/bottom-right.jpg" alt="" fill className="object-contain" />
+      </div>
+
+      {/* Top logos: Innopay (left), Satispay (right) */}
+      <div className="absolute top-4 left-36 w-24 h-24 z-20">
+        <Image src="/images/innopay-logo.png" alt="Innopay" fill className="object-contain" />
+      </div>
+      <div className="absolute top-4 right-36 w-24 h-24 z-20">
+        <Image src="/images/satispay-logo.png" alt="Satispay" fill className="object-contain" />
+      </div>
+
+      {/* Bottom logos: Edenred (left), Pluxee (right) */}
+      <div className="absolute bottom-16 left-36 w-24 h-24 z-20">
+        <Image src="/images/Edenred.svg" alt="Edenred" fill className="object-contain" />
+      </div>
+      <div className="absolute bottom-16 right-36 w-20 h-20 z-20">
+        <Image src="/images/pluxee-logo.jpeg" alt="Pluxee" fill className="object-contain" />
+      </div>
+
+      {/* Happy Hour image centered, preserving proportions */}
+      <div className="relative z-10 flex items-center justify-center min-h-screen p-16">
+        <div className="relative w-full max-w-4xl aspect-auto">
+          <Image
+            src="/images/happyhour.jpeg"
+            alt="Happy Hour"
+            width={1200}
+            height={800}
+            className="w-full h-auto object-contain"
+            priority
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PlatDuJourDisplay() {
   const [data, setData] = useState<DailySpecials | null>(null);
   const [loading, setLoading] = useState(true);
+  const [happyHour, setHappyHour] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const response = await fetch('/api/daily-specials');
+      const result = await response.json();
+      setData(result);
+    } catch (error) {
+      console.error('Error fetching daily specials:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await fetch('/api/daily-specials');
-        const result = await response.json();
-        setData(result);
-      } catch (error) {
-        console.error('Error fetching daily specials:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
+    // Check happy hour state immediately and on each tick
+    setHappyHour(isHappyHour());
     fetchData();
-    // Refresh every 5 minutes
-    const interval = setInterval(fetchData, 60 * 60 * 1000);
+
+    // Refresh data and re-check happy hour every 15 minutes
+    const interval = setInterval(() => {
+      setHappyHour(isHappyHour());
+      fetchData();
+    }, 15 * 60 * 1000);
+
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]);
+
+  // Show happy hour display when applicable
+  if (happyHour) {
+    return <HappyHourDisplay />;
+  }
 
   if (loading) {
     return (
@@ -61,7 +142,7 @@ export default function PlatDuJourDisplay() {
 
   return (
     <div className={`min-h-screen bg-black text-white relative overflow-hidden ${ptSans.className}`}>
-    
+
     {/* Decorative Corners - NO CHANGE */}
     <div className="absolute top-0 left-0 w-32 h-32">
       <Image src="/images/decorations/top-left.jpg" alt="" fill className="object-contain" />
@@ -84,9 +165,8 @@ export default function PlatDuJourDisplay() {
       <Image src="/images/decorations/bottom-center.jpg" alt="" fill className="object-contain" />
     </div>
 
-    {/* 🌟 New: Bottom Logos Container 🌟 */}
-    {/* We place this before the content container so it sits behind the main text (z-10) */}
-    <div className="absolute bottom-16 w-full px-8"> 
+    {/* Bottom Logos Container */}
+    <div className="absolute bottom-16 w-full px-8">
       <div className="container mx-auto flex justify-between">
         {/* Left Bottom Logo (Edenred) */}
         <div className="flex gap-4 items-center">
@@ -94,7 +174,7 @@ export default function PlatDuJourDisplay() {
             <Image src="/images/Edenred.svg" alt="Edenred" fill className="object-contain" />
           </div>
         </div>
-        
+
         {/* Right Bottom Logo (Pluxee) */}
         <div className="flex gap-4 items-center">
           <div className="w-20 h-20 relative">
@@ -103,22 +183,18 @@ export default function PlatDuJourDisplay() {
         </div>
       </div>
     </div>
-    {/* 🌟 End: Bottom Logos Container 🌟 */}
 
 
     <div className="relative z-10 container mx-auto px-8 py-12">
-      
+
       {/* Header with logos */}
       <div className="flex justify-between items-start mb-2">
-        
+
         {/* Left logo (ONLY INNOPAY) */}
         <div className="flex gap-4 items-center">
           <div className="w-24 h-24 relative">
             <Image src="/images/innopay-logo.png" alt="Innopay" fill className="object-contain" />
           </div>
-          {/* <div className="w-24 h-24 relative">
-            <Image src="/images/Edenred.svg" alt="Edenred" fill className="object-contain" />
-          </div> */} {/* <-- MOVED TO BOTTOM */}
         </div>
 
         {/* Center title - NO CHANGE */}
@@ -128,23 +204,20 @@ export default function PlatDuJourDisplay() {
 
         {/* Right logo (ONLY SATISPAY) */}
         <div className="flex gap-4 items-center">
-          {/* <div className="w-24 h-24 relative">
-            <Image src="/images/pluxee-logo.jpeg" alt="Pluxee" fill className="object-contain" />
-          </div> */} {/* <-- MOVED TO BOTTOM */}
           <div className="w-24 h-24 relative">
             <Image src="/images/satispay-logo.png" alt="Satispay" fill className="object-contain" />
           </div>
         </div>
       </div>
 
-      {/* --- SUGGESTION Section (Optional: add the previous changes here) --- */}
-      <div className="mb-4"> 
+      {/* --- SUGGESTION Section --- */}
+      <div className="mb-4">
         <h2 className="text-4xl font-bold text-red-500 text-center mb-2 underline">
           SUGGESTION
         </h2>
         {data?.suggestions && data.suggestions.length > 0 && (
-          <div className="text-center -mt-2"> 
-            <p className="text-5xl font-bold text-yellow-300 leading-tight"> 
+          <div className="text-center -mt-2">
+            <p className="text-5xl font-bold text-yellow-300 leading-tight">
               {data.suggestions.map((sugg, index) => (
                 <span key={sugg.dish_id}>
                   {index > 0 && <span className="text-yellow-400"><br/>et<br/></span>}
@@ -162,8 +235,8 @@ export default function PlatDuJourDisplay() {
           </div>
         )}
       </div>
-      
-      {/* --- LES PLATS DU JOUR Section - NO CHANGE --- */}
+
+      {/* --- LES PLATS DU JOUR Section --- */}
       <div className="mb-6">
         <h2 className="text-4xl font-bold text-red-500 text-center mb-2 mt-4 underline">
           LES PLATS DU JOUR
@@ -200,6 +273,6 @@ export default function PlatDuJourDisplay() {
       </div>
     </div>
 </div>
-   
+
   );
 }

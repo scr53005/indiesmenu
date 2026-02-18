@@ -694,6 +694,7 @@ export default function CurrentOrdersPage() {
           max-width: 800px;
           margin: 0 auto;
           padding: 20px;
+          color: #333;
         }
         .nav-header {
           display: flex;
@@ -705,6 +706,7 @@ export default function CurrentOrdersPage() {
         }
         h1 {
           margin: 0;
+          color: #111;
         }
         .nav-buttons {
           display: flex;
