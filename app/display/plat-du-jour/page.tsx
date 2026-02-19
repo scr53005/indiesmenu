@@ -63,7 +63,7 @@ function HappyHourDisplay() {
       <div className="absolute top-4 left-36 w-24 h-24 z-20">
         <Image src="/images/innopay-logo.png" alt="Innopay" fill className="object-contain" />
       </div>
-      <div className="absolute top-4 right-36 w-24 h-24 z-20">
+      <div className="absolute top-4 right-36 w-[64px] h-[64px] z-0">
         <Image src="/images/satispay-logo.png" alt="Satispay" fill className="object-contain" />
       </div>
 
@@ -71,7 +71,7 @@ function HappyHourDisplay() {
       <div className="absolute bottom-16 left-36 w-24 h-24 z-20">
         <Image src="/images/Edenred.svg" alt="Edenred" fill className="object-contain" />
       </div>
-      <div className="absolute bottom-16 right-36 w-20 h-20 z-20">
+      <div className="absolute bottom-16 right-36 w-[60px] h-[60px] z-0">
         <Image src="/images/pluxee-logo.jpeg" alt="Pluxee" fill className="object-contain" />
       </div>
 
@@ -177,7 +177,7 @@ export default function PlatDuJourDisplay() {
 
         {/* Right Bottom Logo (Pluxee) */}
         <div className="flex gap-4 items-center">
-          <div className="w-20 h-20 relative">
+          <div className="w-[60px] h-[60px] relative">
             <Image src="/images/pluxee-logo.jpeg" alt="Pluxee" fill className="object-contain" />
           </div>
         </div>
@@ -204,7 +204,7 @@ export default function PlatDuJourDisplay() {
 
         {/* Right logo (ONLY SATISPAY) */}
         <div className="flex gap-4 items-center">
-          <div className="w-24 h-24 relative">
+          <div className="w-[64px] h-[64px] relative">
             <Image src="/images/satispay-logo.png" alt="Satispay" fill className="object-contain" />
           </div>
         </div>

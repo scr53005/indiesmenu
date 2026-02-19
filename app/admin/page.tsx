@@ -81,11 +81,11 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <div className="container mx-auto p-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto auto-rows-fr">
 
           {/* Daily Specials Card */}
-          <Link href="/admin/daily-specials">
-            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500 group">
+          <Link href="/admin/daily-specials" className="h-full">
+            <div className="h-full bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500 group">
               <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">📅</div>
               <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-blue-600">
                 Plat du Jour
@@ -100,8 +100,8 @@ export default function AdminDashboard() {
           </Link>
 
           {/* Current Orders Card */}
-          <Link href="/admin/current_orders">
-            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-green-500 group">
+          <Link href="/admin/current_orders" className="h-full">
+            <div className="h-full bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-green-500 group">
               <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">🛎️</div>
               <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-green-600">
                 Commandes
@@ -116,8 +116,8 @@ export default function AdminDashboard() {
           </Link>
 
           {/* Order History Card */}
-          <Link href="/admin/history">
-            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-purple-500 group">
+          <Link href="/admin/history" className="h-full">
+            <div className="h-full bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-purple-500 group">
               <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">📜</div>
               <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-purple-600">
                 Historique
@@ -132,8 +132,8 @@ export default function AdminDashboard() {
           </Link>
 
           {/* Menu Card */}
-          <Link href="/admin/carte">
-            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500 group">
+          <Link href="/admin/carte" className="h-full">
+            <div className="h-full bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500 group">
               <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">📋</div>
               <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-blue-600">
                 Carte & Images
@@ -148,8 +148,8 @@ export default function AdminDashboard() {
           </Link>
 
           {/* Allergens Card */}
-          <Link href="/admin/alergenes">
-            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500 group">
+          <Link href="/admin/alergenes" className="h-full">
+            <div className="h-full bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500 group">
               <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">⚠️</div>
               <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-blue-600">
                 Allergènes
@@ -164,8 +164,8 @@ export default function AdminDashboard() {
           </Link>
 
           {/* Accountant Reporting Card */}
-          <Link href="/admin/reporting">
-            <div className="bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-emerald-500 group">
+          <Link href="/admin/reporting" className="h-full">
+            <div className="h-full bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-emerald-500 group">
               <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">📊</div>
               <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-emerald-600">
                 Comptabilité

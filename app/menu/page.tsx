@@ -241,7 +241,36 @@ export default function MenuPage() {
     console.log('[CREDENTIAL CHECK] 🔧 DEBUG LOG:', debugLog);
     console.log('[CREDENTIAL CHECK] accountCreated:', accountCreated, 'existingAccount:', existingAccount, 'orderSuccess:', orderSuccess, 'credentialToken:', credentialToken, 'sessionId:', sessionId, 'flowMarker:', flowMarker, 'flowParam:', flowParam);
 
-    // For Flow 7, we get order_success=true and session_id from Stripe redirect
+    // FLOW 7 PURE: If flow marker is flow7_topup_and_pay AND we have order_success,
+    // credentials are already in localStorage — no need to fetch from innopay
+    if (orderSuccess === 'true' && flowMarker === 'flow7_topup_and_pay') {
+      console.log('[FLOW 7 RETURN] Pure Flow 7 return - credentials already in localStorage');
+      const accountName = localStorage.getItem('innopay_accountName');
+      if (accountName) {
+        // Clear cart in both React state AND localStorage (belt and suspenders)
+        clearCart();
+        localStorage.setItem('cart', '[]');
+        console.log('[FLOW 7 RETURN] Cart cleared (state + localStorage)');
+
+        // Clear flow marker - flow is complete
+        localStorage.removeItem('innopay_flow_pending');
+
+        // Show success banner BEFORE cleaning URL (so state updates are batched)
+        handleFlow7Success();
+
+        // Remove query params from URL while preserving table
+        cleanUrlPreservingTable('FLOW 7 RETURN');
+
+        // Update balance: fetch fresh from Hive-Engine via the useBalance hook
+        // The webhook transferred change to the account, so real balance is on-chain
+        setWalletBalance({ accountName, euroBalance: 0 }); // Placeholder until refresh
+        setShowWalletBalance(true);
+
+        console.log('[FLOW 7 RETURN] Order paid by webhook - cart cleared, banner shown');
+      }
+      return; // Don't fall through to credential fetch
+    }
+
     // For Flow 5, we get credential_token from webhook
     const hasCredentials = credentialToken || sessionId;
 
@@ -508,26 +537,6 @@ export default function MenuPage() {
     }
   }, []);
 
-  // 🔧 DEBUG: Load Eruda for mobile debugging (COMMENTED OUT FOR PRODUCTION)
-  // Uncomment for mobile debugging only
-  // useEffect(() => {
-  //   const script = document.createElement('script');
-  //   script.src = 'https://cdn.jsdelivr.net/npm/eruda';
-  //   script.onload = () => {
-  //     if ((window as any).eruda) {
-  //       (window as any).eruda.init();
-  //       console.log('🔧 Eruda mobile debugger loaded - tap floating button to open console');
-  //     }
-  //   };
-  //   document.body.appendChild(script);
-
-  //   return () => {
-  //     // Cleanup on unmount
-  //     if (script.parentNode) {
-  //       script.parentNode.removeChild(script);
-  //     }
-  //   };
-  // }, []);
 
   // Load import attempts counter from localStorage
   useEffect(() => {

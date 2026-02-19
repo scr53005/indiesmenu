@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "vercel-build": "npx prisma migrate deploy && npx prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
@@ -37,7 +37,6 @@
     "react-dom": "^19.0.0",
     "react-toastify": "^11.0.5",
     "sharp": "^0.34.2",
-    "xlsx": "^0.18.5",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
@@ -52,7 +51,6 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/xml2js": "^0.4.14",
-    "jest": "^30.0.3",
     "pg": "^8.16.0",
     "prisma": "6.11.1",
     "qrcode": "^1.5.4",
