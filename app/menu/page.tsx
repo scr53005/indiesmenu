@@ -555,11 +555,14 @@ export default function MenuPage() {
     const topupSuccess = searchParams.get('topup_success');
     const sessionId = searchParams.get('session_id');
     const amountParam = searchParams.get('amount');
+    const flowParam = searchParams.get('flow');
+    const isFlow4 = flowParam === 'create_account_only';
 
     console.log('[TOPUP RETURN] Check:', {
       topupSuccess,
       sessionId,
       amountParam,
+      flowParam,
       cartLength: cart.length
     });
 
@@ -619,20 +622,23 @@ export default function MenuPage() {
                 euroBalance: optimisticBalance
               });
             } else {
-              // FLOW 4: create_account_only - fetch actual balance from API
-              console.log('[FLOW 4] create_account_only flow - setting balance from credentials');
+              // No amount param - fetch actual balance from API
+              console.log('[TOPUP RETURN] No amount param - setting balance from credentials');
               // Save credentials balance to localStorage
               localStorage.setItem('innopay_lastBalance', (credentials.euroBalance || 0).toString());
               setWalletBalance({
                 accountName: credentials.accountName,
                 euroBalance: credentials.euroBalance || 0
               });
-              // Show MiniWallet for new users (Bug fix #3)
+            }
+
+            // Show MiniWallet for new users on Flow 4
+            if (isFlow4) {
               setShowWalletBalance(true);
             }
 
-            // Clear cart only if this was create_account_and_pay (has amount param)
-            if (amountParam) {
+            // Clear cart only if this was create_account_and_pay (not Flow 4)
+            if (!isFlow4) {
               console.log('[TOPUP RETURN] Clearing cart after successful create_account_and_pay');
               clearCart();
             } else {
@@ -640,12 +646,12 @@ export default function MenuPage() {
             }
 
             // Show success banner (Flow 4 vs others)
-            if (amountParam) {
-              setShowTopupSuccess(true);
-            } else {
+            if (isFlow4) {
               // FLOW 4: Create account only (no order)
               setFlow4Success(true);
               console.log('[FLOW 4] Account created successfully, showing Flow 4 success banner');
+            } else {
+              setShowTopupSuccess(true);
             }
 
             // Clear params from URL while preserving table
@@ -656,8 +662,8 @@ export default function MenuPage() {
               console.log('[TOPUP RETURN] Fetching fresh balance');
               refetchBalance();
               setShowTopupSuccess(false);
-              // Show unified success banner after topup banner disappears
-              if (amountParam) {
+              // Show unified success banner after topup banner disappears (not for Flow 4 — already showing its own banner)
+              if (!isFlow4) {
                 console.log('[FLOW 5] Showing unified success banner after topup');
                 setFlow5Success(true);
               }
@@ -2293,7 +2299,7 @@ export default function MenuPage() {
                     // Normal order flow
                     orderAmount = getTotalEurPrice();
                     discount = getDiscountAmount();
-                    customMemo = getMemo();
+                    customMemo = getMemoWithDistriate();
                     console.log(`[${new Date().toISOString()}] [INDIESMENU] Opening account creation with params:`, {
                       orderAmount,
                       discount,
