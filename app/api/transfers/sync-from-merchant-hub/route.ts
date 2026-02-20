@@ -17,7 +17,7 @@ function getEnvironmentAccount(): string {
   const hiveAccount = process.env.HIVE_ACCOUNT || process.env.NEXT_PUBLIC_HIVE_ACCOUNT;
 
   if (hiveAccount) {
-    console.log(`[SYNC] Using HIVE_ACCOUNT from env: ${hiveAccount}`);
+    console.warn(`[SYNC] Using HIVE_ACCOUNT from env: ${hiveAccount}`);
     return hiveAccount;
   }
 
@@ -26,22 +26,28 @@ function getEnvironmentAccount(): string {
   const isDev = databaseUrl.includes('localhost') || databaseUrl.includes('innopaydb');
 
   const account = isDev ? 'indies-test' : 'indies.cafe';
-  console.log(`[SYNC] Using DATABASE_URL detection: ${account}`);
+  console.warn(`[SYNC] Using DATABASE_URL detection: ${account}`);
   return account;
+}
+
+// Determine environment label for consumer group separation
+function getEnvLabel(account: string): 'prod' | 'dev' {
+  return account === 'indies.cafe' ? 'prod' : 'dev';
 }
 
 export async function POST() {
   const merchantHubUrl = getMerchantHubUrl().replace(/\/$/, '');
   const consumerId = `sync-${Date.now()}`;
   const environmentAccount = getEnvironmentAccount();
+  const env = getEnvLabel(environmentAccount);
 
-  console.log(`[SYNC] Environment account: ${environmentAccount}`);
+  console.warn(`[SYNC] Environment account: ${environmentAccount}, env: ${env}`);
 
   try {
     // 1. Consume transfers from merchant-hub Redis Stream
     // NOTE: Polling is handled separately by the page via /api/poll (only if this page is the elected poller)
     const consumeRes = await fetch(
-      `${merchantHubUrl}/api/transfers/consume?restaurantId=indies&consumerId=${consumerId}&count=50`
+      `${merchantHubUrl}/api/transfers/consume?restaurantId=indies&consumerId=${consumerId}&count=50&env=${env}`
     );
 
     if (!consumeRes.ok) {
@@ -58,7 +64,7 @@ export async function POST() {
       });
     }
 
-    console.log(`[SYNC] Received ${data.transfers.length} transfers from merchant-hub`);
+    console.warn(`[SYNC] Received ${data.transfers.length} transfers from merchant-hub`);
 
     // 2. Insert each transfer into local DB (filtered by environment)
     const messagesToAck: string[] = [];
@@ -69,7 +75,7 @@ export async function POST() {
       try {
         // Filter by environment: only process transfers for our environment's account
         if (transfer.to_account !== environmentAccount) {
-          console.log(`[SYNC] Filtered out transfer ${transfer.id} (to_account: ${transfer.to_account}, expected: ${environmentAccount})`);
+          console.warn(`[SYNC] Filtered out transfer ${transfer.id} (to_account: ${transfer.to_account}, expected: ${environmentAccount})`);
           filteredCount++;
           // Do NOT ACK — another environment's consumer needs this transfer
           continue;
@@ -95,10 +101,10 @@ export async function POST() {
               received_at: transfer.received_at ? new Date(transfer.received_at) : new Date(),
             },
           });
-          console.log(`[SYNC] Inserted transfer ${transfer.id} for ${transfer.to_account}`);
+          console.warn(`[SYNC] Inserted transfer ${transfer.id} for ${transfer.to_account}`);
           insertedCount++;
         } else {
-          console.log(`[SYNC] Transfer ${transfer.id} already exists`);
+          console.warn(`[SYNC] Transfer ${transfer.id} already exists`);
         }
 
         // Mark for ACK (whether new or existing)
@@ -119,12 +125,13 @@ export async function POST() {
           body: JSON.stringify({
             restaurantId: 'indies',
             messageIds: messagesToAck,
+            env,
           }),
         });
 
         if (ackRes.ok) {
           const ackData = await ackRes.json();
-          console.log(`[SYNC] ACKed ${ackData.acknowledged}/${messagesToAck.length} messages`);
+          console.warn(`[SYNC] ACKed ${ackData.acknowledged}/${messagesToAck.length} messages`);
         } else {
           console.error(`[SYNC] ACK failed:`, await ackRes.text());
         }

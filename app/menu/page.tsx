@@ -85,6 +85,13 @@ export default function MenuPage() {
 
   // Guest checkout button click state (for visual feedback while Stripe initializes)
   const [guestCheckoutStarted, setGuestCheckoutStarted] = useState(false);
+  // Prevents double-click on the guest checkout confirm button (duplicate Stripe sessions)
+  const [guestCheckoutProcessing, setGuestCheckoutProcessing] = useState(false);
+
+  // Kitchen closed state — blocks dish orders after hours for dine-in customers
+  const [isKitchenClosed, setIsKitchenClosed] = useState(false);
+  const [kitchenCloseTime, setKitchenCloseTime] = useState('21h30');
+  const [kitchenClosedBannerMinimized, setKitchenClosedBannerMinimized] = useState(false);
 
   // State for account creation success notification
   const [showAccountCreated, setShowAccountCreated] = useState(false);
@@ -820,6 +827,16 @@ export default function MenuPage() {
           console.log('Outside meal service - defaulting to drinks');
         }
 
+        // Kitchen closing: Mon-Fri 21h30, Saturday 22h00 (closed Sunday)
+        const dayOfWeek = luxDate.getDay(); // 0=Sun, 6=Sat
+        const isSaturday = dayOfWeek === 6;
+        const kitchenCloseMinutes = isSaturday ? 22 * 60 : 21 * 60 + 30;
+        if (totalMinutes >= kitchenCloseMinutes) {
+          setIsKitchenClosed(true);
+          setKitchenCloseTime(isSaturday ? '22h00' : '21h30');
+          console.log(`Kitchen closed (${isSaturday ? 'Saturday 22h00' : 'weekday 21h30'})`);
+        }
+
         console.log("Fetched conversion rate:", data.conversion_rate);
       } catch (e: any) {
         setError(e.message);
@@ -1064,6 +1081,12 @@ export default function MenuPage() {
 
   // Updated handleAddItem to correctly process options passed from MenuItem
   const handleAddItem = useCallback((item: FormattedDish | FormattedDrink, options?: { [key: string]: string }) => {
+    // Block dish orders after kitchen closes (dine-in only)
+    if (isKitchenClosed && table && item.type === 'dish') {
+      setKitchenClosedBannerMinimized(false);
+      return;
+    }
+
     let cartItemId = item.id;
     let cartItemName = item.name;
     let cartItemPrice: string = '0.00';
@@ -1120,7 +1143,7 @@ export default function MenuPage() {
       conversion_rate: menu?.conversion_rate,
       discount: cartItemDiscount, // Pass discount to cart
     });
-  }, [addItem, menu]);
+  }, [addItem, menu, isKitchenClosed, table]);
 
   const handleCallWaiter = useCallback(async () => {
     console.log('[CALL WAITER] Initiating call waiter flow');
@@ -2100,6 +2123,8 @@ export default function MenuPage() {
   }, [importEmail]);
 
   const proceedWithGuestCheckout = useCallback(async () => {
+    if (guestCheckoutProcessing) return; // Prevent duplicate Stripe sessions
+    setGuestCheckoutProcessing(true);
     try {
       // Hide wallet notification banner when guest checkout starts
       setGuestCheckoutStarted(true);
@@ -2161,11 +2186,12 @@ export default function MenuPage() {
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
 
+      setGuestCheckoutProcessing(false); // Re-enable button on error
       // Show detailed error in alert for debugging in production
       const errorDetails = error.message || 'Unknown error';
       alert(`Erreur lors de la création de la session de paiement.\n\nDétails: ${errorDetails}\n\nVeuillez réessayer ou contacter le support.`);
     }
-  }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table]);
+  }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table, guestCheckoutProcessing]);
 
 
   const toggleCategory = useCallback((categoryId: number) => {
@@ -2546,6 +2572,55 @@ export default function MenuPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Kitchen Closed Banner — dine-in customers after hours */}
+      {isKitchenClosed && table && (
+        kitchenClosedBannerMinimized ? (
+          // Minimized: small red pill in lower-left corner
+          <div
+            className="fixed bottom-5 left-5 z-[9010] cursor-pointer"
+            onClick={() => setKitchenClosedBannerMinimized(false)}
+          >
+            <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-3 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-semibold hover:from-red-700 hover:to-red-800 transition-all">
+              <span>🍳</span>
+              <span>Cuisine fermée</span>
+            </div>
+          </div>
+        ) : (
+          // Maximized: draggable blood-red banner
+          <Draggable
+            className="z-[9010]"
+            initialPosition={{ x: 16, y: 0 }}
+            style={{ bottom: '80px', left: '0px', top: 'auto', maxWidth: '340px' }}
+          >
+            <div className="bg-gradient-to-br from-red-800 to-red-950 text-white rounded-xl shadow-2xl border border-red-700/50 overflow-hidden">
+              {/* Header with minimize button */}
+              <div className="flex items-center justify-between px-4 pt-3 pb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-white opacity-50 text-xs flex-shrink-0">⋮⋮</span>
+                  <span className="text-lg">🍳</span>
+                  <span className="font-bold text-sm">Cuisine fermée / Kitchen closed</span>
+                </div>
+                <button
+                  onClick={() => setKitchenClosedBannerMinimized(true)}
+                  className="text-white/60 hover:text-white text-lg font-bold ml-2 leading-none"
+                >
+                  ▾
+                </button>
+              </div>
+              {/* Bilingual message */}
+              <div className="px-4 pb-3 pt-1 space-y-2">
+                <p className="text-sm text-red-100 italic leading-snug">
+                  La cuisine a fermé à {kitchenCloseTime}. Mais on dit qu&apos;une bière nourrit autant qu&apos;un steak.
+                </p>
+                <p className="text-xs text-red-200/70 italic leading-snug">
+                  The kitchen closed at {kitchenCloseTime}. But they say a beer is as nourishing as a steak.
+                </p>
+              </div>
+            </div>
+          </Draggable>
+        )
       )}
 
       {/* DEV ONLY: Clear localStorage button */}
@@ -2944,13 +3019,21 @@ export default function MenuPage() {
 
             <div className="flex flex-col gap-3 mt-6">
               <button
+                disabled={guestCheckoutProcessing}
                 onClick={() => {
                   setShowGuestWarningModal(false);
                   proceedWithGuestCheckout();
                 }}
-                className="bg-black text-gray-300 px-4 py-3 rounded-lg font-semibold hover:bg-gray-900 transition-colors"
+                className={`px-4 py-3 rounded-lg font-semibold transition-colors ${
+                  guestCheckoutProcessing
+                    ? 'bg-gray-500 text-gray-400 cursor-not-allowed'
+                    : 'bg-black text-gray-300 hover:bg-gray-900'
+                }`}
               >
-                Continuer et payer <span className="text-red-500">{(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)} €</span>
+                {guestCheckoutProcessing
+                  ? 'Redirection...'
+                  : <>Continuer et payer <span className="text-red-500">{(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)} €</span></>
+                }
               </button>
 
               <button
@@ -3105,17 +3188,18 @@ export default function MenuPage() {
                 {openCategories.has(category.id) && (
                   <div className="category-items-grid">
                     {category.items.map((item: FormattedDish) => (
-                      <MenuItem
-                        key={item.id}
-                        item={item}
-                        selectedCuisson={selectedCuisson}
-                        handleCuissonChange={handleCuissonChange}
-                        handleAddItem={handleAddItem}
-                        selectedSizes={{}} // Not used for dishes currently
-                        handleSizeChange={() => {}} // Not used for dishes currently
-                        selectedIngredients={selectedIngredients}
-                        handleIngredientChange={handleIngredientChange}
-                      />
+                      <div key={item.id} className={isKitchenClosed && table ? 'opacity-50' : ''}>
+                        <MenuItem
+                          item={item}
+                          selectedCuisson={selectedCuisson}
+                          handleCuissonChange={handleCuissonChange}
+                          handleAddItem={handleAddItem}
+                          selectedSizes={{}} // Not used for dishes currently
+                          handleSizeChange={() => {}} // Not used for dishes currently
+                          selectedIngredients={selectedIngredients}
+                          handleIngredientChange={handleIngredientChange}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
