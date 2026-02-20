@@ -1259,7 +1259,7 @@ export default function MenuPage() {
             amountEuro: callWaiterAmount,
             eurUsdRate: eurUsdRate,
             orderMemo: callWaiterMemo,
-            distriateSuffix: '-'  // Minimal suffix (API requires truthy value)
+            distriateSuffix: '-inno-'  // Must contain -inno- to pass merchant-hub memo filter
           };
 
           console.log('[CALL WAITER] Payment payload:', paymentPayload);
