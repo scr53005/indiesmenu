@@ -71,8 +71,7 @@ export async function POST() {
         if (transfer.to_account !== environmentAccount) {
           console.log(`[SYNC] Filtered out transfer ${transfer.id} (to_account: ${transfer.to_account}, expected: ${environmentAccount})`);
           filteredCount++;
-          // Still ACK it so it doesn't stay pending forever
-          messagesToAck.push(transfer.messageId);
+          // Do NOT ACK — another environment's consumer needs this transfer
           continue;
         }
 
