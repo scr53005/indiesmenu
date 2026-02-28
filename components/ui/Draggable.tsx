@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 interface DraggableProps {
   children: React.ReactNode;
@@ -21,11 +21,12 @@ export default function Draggable({
 }: DraggableProps) {
   const [position, setPosition] = useState(initialPosition);
   const [isDragging, setIsDragging] = useState(false);
+  const [hasBeenDragged, setHasBeenDragged] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const elementRef = useRef<HTMLDivElement>(null);
 
-  // Constrain position to keep element center visible on screen
-  const constrainPosition = (newX: number, newY: number) => {
+  // Constrain position to keep entire element within screen bounds (with small margin)
+  const constrainPosition = useCallback((newX: number, newY: number) => {
     if (!elementRef.current) return { x: newX, y: newY };
 
     const rect = elementRef.current.getBoundingClientRect();
@@ -33,67 +34,68 @@ export default function Draggable({
     const elementHeight = rect.height;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
+    const margin = 8;
 
-    // Ensure at least 40% of the element width is visible horizontally
-    const minVisibleWidth = elementWidth * 0.4;
-    const maxX = viewportWidth - minVisibleWidth;
-    const minX = -(elementWidth - minVisibleWidth);
-
-    // Ensure at least 60% of the element height is visible vertically
-    const minVisibleHeight = elementHeight * 0.6;
-    const maxY = viewportHeight - minVisibleHeight;
-    const minY = -(elementHeight - minVisibleHeight);
+    const minX = margin;
+    const maxX = viewportWidth - elementWidth - margin;
+    const minY = margin;
+    const maxY = viewportHeight - elementHeight - margin;
 
     return {
       x: Math.max(minX, Math.min(maxX, newX)),
       y: Math.max(minY, Math.min(maxY, newY)),
     };
-  };
+  }, []);
 
-  // Handle mouse drag start
+  // On first drag, read the actual rendered position from the DOM
+  const initPositionFromDOM = useCallback((clientX: number, clientY: number) => {
+    if (!hasBeenDragged && elementRef.current) {
+      const rect = elementRef.current.getBoundingClientRect();
+      const actualX = rect.left;
+      const actualY = rect.top;
+      setPosition({ x: actualX, y: actualY });
+      setHasBeenDragged(true);
+      dragOffset.current = {
+        x: clientX - actualX,
+        y: clientY - actualY,
+      };
+    } else {
+      dragOffset.current = {
+        x: clientX - position.x,
+        y: clientY - position.y,
+      };
+    }
+  }, [hasBeenDragged, position]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (disabled) return;
+    initPositionFromDOM(e.clientX, e.clientY);
     setIsDragging(true);
-    dragOffset.current = {
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    };
   };
 
-  // Handle touch drag start
   const handleTouchStart = (e: React.TouchEvent) => {
     if (disabled) return;
     const touch = e.touches[0];
+    initPositionFromDOM(touch.clientX, touch.clientY);
     setIsDragging(true);
-    dragOffset.current = {
-      x: touch.clientX - position.x,
-      y: touch.clientY - position.y,
-    };
   };
 
-  // Handle dragging (mouse and touch)
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging) {
-        const rawPosition = {
-          x: e.clientX - dragOffset.current.x,
-          y: e.clientY - dragOffset.current.y,
-        };
-        const constrainedPosition = constrainPosition(rawPosition.x, rawPosition.y);
-        setPosition(constrainedPosition);
-        onPositionChange?.(constrainedPosition);
+        const raw = { x: e.clientX - dragOffset.current.x, y: e.clientY - dragOffset.current.y };
+        const constrained = constrainPosition(raw.x, raw.y);
+        setPosition(constrained);
+        onPositionChange?.(constrained);
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (isDragging && e.touches.length > 0) {
-        const rawPosition = {
-          x: e.touches[0].clientX - dragOffset.current.x,
-          y: e.touches[0].clientY - dragOffset.current.y,
-        };
-        const constrainedPosition = constrainPosition(rawPosition.x, rawPosition.y);
-        setPosition(constrainedPosition);
-        onPositionChange?.(constrainedPosition);
+        const raw = { x: e.touches[0].clientX - dragOffset.current.x, y: e.touches[0].clientY - dragOffset.current.y };
+        const constrained = constrainPosition(raw.x, raw.y);
+        setPosition(constrained);
+        onPositionChange?.(constrained);
       }
     };
 
@@ -114,17 +116,24 @@ export default function Draggable({
         document.removeEventListener('touchend', handleEnd);
       };
     }
-  }, [isDragging, onPositionChange]);
+  }, [isDragging, onPositionChange, constrainPosition]);
+
+  // Before first drag: use CSS style props. After first drag: use pixel position.
+  const positionStyle = hasBeenDragged
+    ? { left: `${position.x}px`, top: `${position.y}px` }
+    : { left: style.left, top: style.top, bottom: style.bottom, right: style.right };
+
+  // Strip positioning props from style to avoid conflicts after dragging
+  const { left, top, bottom, right, ...restStyle } = style;
 
   return (
     <div
       ref={elementRef}
       className={className}
       style={{
-        ...style,
+        ...restStyle,
+        ...positionStyle,
         position: 'fixed',
-        left: position.x === 0 && !isDragging ? style.left : `${position.x}px`,
-        top: position.y === 0 && !isDragging ? style.top : `${position.y}px`,
         cursor: disabled ? 'default' : isDragging ? 'grabbing' : 'grab',
         touchAction: 'none',
         userSelect: 'none',

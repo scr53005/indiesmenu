@@ -13,7 +13,14 @@ interface CartItem {
   options: { [key: string]: string }; // e.g., { size: 'large', cuisson: 'medium' }
   conversion_rate?: number; // Optional conversion rate for this item, if applicable
   discount: number; // Discount multiplier (e.g., 0.9 = 10% off, 1.0 = no discount)
+  comment?: string; // Per-item note, max 80 chars (e.g., "no onions", "2 ice cubes")
 };
+
+export interface DelayedTiming {
+  type: 'pickup' | 'dinein';  // P@ or T@
+  hour: number;
+  minute: number;
+}
 
 interface CartContextType {
   cart: CartItem[];
@@ -33,6 +40,9 @@ interface CartContextType {
   getMemo: () => string;
   getMemoWithDistriate: () => string; // Returns memo with distriate suffix (for Flow 7)
   setTable: (tableId: string) => void;
+  updateComment: (id: string, comment: string) => void;
+  delayedTiming: DelayedTiming | null;
+  setDelayedTiming: (timing: DelayedTiming | null) => void;
 }
 
 const CartContext = createContext<CartContextType>({
@@ -53,6 +63,9 @@ const CartContext = createContext<CartContextType>({
   getMemo: () => '',
   getMemoWithDistriate: () => '',
   setTable: () => {},
+  updateComment: () => {},
+  delayedTiming: null,
+  setDelayedTiming: () => {},
 });
 
 export const useCart = () => useContext(CartContext);
@@ -61,6 +74,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [tableState, setTableState] = useState<string>(''); // Renamed to avoid conflict with context value
   const [conversionRate, setConversionRate] = useState<number>(1.0); // Default conversion rate
+  const [delayedTiming, setDelayedTiming] = useState<DelayedTiming | null>(null);
   const searchParams = useSearchParams();
   const urlTable = searchParams.get('table');
 
@@ -152,8 +166,15 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     });
   }, []); // Empty dependency array. 'options' and 'table' are arguments, not dependencies.
 
+  const updateComment = useCallback((id: string, comment: string) => {
+    setCart(prevCart => prevCart.map(item =>
+      item.id === id ? { ...item, comment: comment.slice(0, 80) } : item
+    ));
+  }, []);
+
   const clearCart = useCallback(() => {
     setCart([]);
+    setDelayedTiming(null);
   }, []); // Empty dependency array
 
   // Memoize total calculations for stability
@@ -199,22 +220,33 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   }, [getTotalEurPrice, getTotalEurPriceNoDiscount]);
 
   const getMemo = useCallback(() => {
-    // Prepare the items array for dehydration
+    // Prepare the items array for dehydration (including comments)
     const itemsToDehydrate = cart.map(item => ({
       id: item.id,
       name: item.name,
       price: item.price,
       quantity: item.quantity,
-      options: item.options
+      options: item.options,
+      comment: item.comment,
     }));
 
     // Dehydrate the items list to a string
     let dehydratedItemsString = dehydrateMemo(itemsToDehydrate);
     dehydratedItemsString = dehydratedItemsString.endsWith(';') ? dehydratedItemsString : dehydratedItemsString + ';';
-    const memoWithTableInfo = dehydratedItemsString + (tableState ? ` TABLE ${tableState} ` : ' No table specified ');
+
+    // Insert timing token if delayed ordering is set
+    let timingToken = '';
+    if (delayedTiming) {
+      const prefix = delayedTiming.type === 'pickup' ? 'P' : 'T';
+      const hh = delayedTiming.hour.toString().padStart(2, '0');
+      const mm = delayedTiming.minute.toString().padStart(2, '0');
+      timingToken = ` ${prefix}@${hh}h${mm}`;
+    }
+
+    const memoWithTableInfo = dehydratedItemsString + timingToken + (tableState ? ` TABLE ${tableState} ` : ' No table specified ');
 
     return memoWithTableInfo;
-  }, [cart, tableState]);
+  }, [cart, tableState, delayedTiming]);
 
   const getMemoWithDistriate = useCallback(() => {
     // Get base memo and add distriate suffix (same pattern as orderNow)
@@ -292,7 +324,10 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
         getDiscountAmount,
         getMemo,
         getMemoWithDistriate,
-        setTable
+        setTable,
+        updateComment,
+        delayedTiming,
+        setDelayedTiming,
       }}
     >
       {children}

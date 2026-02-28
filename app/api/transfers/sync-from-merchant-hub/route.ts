@@ -75,7 +75,7 @@ export async function POST() {
       try {
         // Filter by environment: only process transfers for our environment's account
         if (transfer.to_account !== environmentAccount) {
-          console.warn(`[SYNC] Filtered out transfer ${transfer.id} (to_account: ${transfer.to_account}, expected: ${environmentAccount})`);
+          // console.warn(`[SYNC] Filtered out transfer ${transfer.id} (to_account: ${transfer.to_account}, expected: ${environmentAccount})`);
           filteredCount++;
           // Do NOT ACK — another environment's consumer needs this transfer
           continue;

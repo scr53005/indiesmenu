@@ -50,12 +50,16 @@ export function generateReceiptHtml(data: PrintData): string {
       return '<div style="border-bottom: 2px solid #000; margin: 8px 0;"></div>';
     }
     if (line.type === 'item') {
-      return `
-        <div style="display: flex; margin-bottom: 10px; align-items: flex-start; line-height: 1.1;">
+      let html = `
+        <div style="display: flex; margin-bottom: ${line.comment ? '2px' : '10px'}; align-items: flex-start; line-height: 1.1;">
           <div style="font-weight: 900; font-size: 32px; min-width: 40px;">${line.quantity > 0 ? line.quantity : ''}</div>
           <div style="font-weight: 900; font-size: 28px; flex: 1;">${line.description}</div>
         </div>
       `;
+      if (line.comment) {
+        html += `<div style="font-size: 20px; font-style: italic; padding-left: 40px; margin-bottom: 10px; color: #333;">&gt;&gt; ${line.comment}</div>`;
+      }
+      return html;
     }
     return `<div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">${line.content}</div>`;
   }).join('');

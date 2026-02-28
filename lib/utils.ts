@@ -89,12 +89,64 @@ export async function getLatestEurUsdRate(today: Date): Promise<CurrencyRate> {
   }
 }
 
+// ============================================================================
+// COMMENT ENCODING (Base64 for security — no cleartext in memos)
+// ============================================================================
+
+/**
+ * Encode a comment as Base64 for safe embedding in memos.
+ * Uses encodeURIComponent first to handle Unicode (accents, emojis),
+ * then Base64-encodes the result. Output uses only [A-Za-z0-9+/=].
+ */
+export function encodeComment(text: string): string {
+  if (!text) return '';
+  const truncated = text.slice(0, 80);
+  return btoa(encodeURIComponent(truncated));
+}
+
+/**
+ * Decode a Base64-encoded comment back to readable text.
+ * Strips HTML tags as defense-in-depth before returning.
+ */
+export function decodeComment(encoded: string): string {
+  if (!encoded) return '';
+  try {
+    const decoded = decodeURIComponent(atob(encoded));
+    return decoded.replace(/<[^>]*>/g, '');
+  } catch {
+    return '';
+  }
+}
+
+// ============================================================================
+// ORDER TIMING EXTRACTION (P@HHhMM = takeaway, T@HHhMM = dine-in)
+// ============================================================================
+
+export interface OrderTiming {
+  type: 'pickup' | 'dinein';
+  time: string; // e.g., '12h30'
+}
+
+const ORDER_TIMING_REGEX = /\s*([PT])@(\d{2}h\d{2})/;
+
+/**
+ * Extract order timing from a memo string.
+ * P@12h30 = pickup/takeaway, T@12h30 = dine-in
+ */
+export function getOrderTiming(memo: string): OrderTiming | null {
+  const match = memo.match(ORDER_TIMING_REGEX);
+  if (!match) return null;
+  return {
+    type: match[1] === 'P' ? 'pickup' : 'dinein',
+    time: match[2],
+  };
+}
+
 // Helper for option short codes for memo
 const optionShortCodes: { [key: string]: string } = {
   size: 's',
   cuisson: 'c', // Cuisson for meat dishes
   ingredient: 'i', // Ingredient for drinks with choose_one selection mode
-  // Add other short codes as needed based on your item options
 };
 
 export function generateHiveTransferUrl(params: HiveTransferParams): string {
@@ -277,6 +329,12 @@ export function dehydrateMemo(cart: CartItem[]): string {
     if (item.quantity > 1) {
       itemMemo += `,q:${item.quantity}`;
     }
+
+    // Per-item comment (Base64-encoded)
+    if ((item as any).comment) {
+      itemMemo += `,n:${encodeComment((item as any).comment)}`;
+    }
+
     cartMemoParts.push(itemMemo);
   });
 
@@ -287,19 +345,22 @@ export function dehydrateMemo(cart: CartItem[]): string {
 
 // --- NEW TYPE for structured memo content ---
 export type HydratedOrderLine =
-  | { type: 'item'; quantity: number; description: string; categoryType: 'dish' | 'drink' }
+  | { type: 'item'; quantity: number; description: string; categoryType: 'dish' | 'drink'; comment?: string }
   | { type: 'separator' }
   | { type: 'raw'; content: string }; // For non-codified memos
 
 // --- MODIFIED hydrateMemo function to return structured data ---
 export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderLine[] {
-  const tableIndex = rawMemo.lastIndexOf('TABLE ');
   let orderContent = rawMemo;
+
+  // Strip order timing token (P@HHhMM or T@HHhMM) before parsing items
+  orderContent = orderContent.replace(ORDER_TIMING_REGEX, '').trim();
+
+  const tableIndex = orderContent.lastIndexOf('TABLE ');
   if (tableIndex !== -1) {
-    orderContent = rawMemo.substring(0, tableIndex).trim();
+    orderContent = orderContent.substring(0, tableIndex).trim();
   }
-  console.log(`hydrateMemo - orderContent: '${orderContent}'`); // Debug log to check the order content
-  // alert(`hydrateMemo - orderContent: '${orderContent}'`); // Debug log to check the order content
+  console.log(`hydrateMemo - orderContent: '${orderContent}'`);
 
   // Check if the orderContent is likely a codified order
   // Pattern matches 'd:X' (dish) or 'b:X' (beverage/drink)
@@ -328,8 +389,10 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
     const options: { [key: string]: string } = {};
     let quantity = 1;
 
+    let comment: string | undefined;
     for (let i = 1; i < parts.length; i++) {
-      const [key, value] = parts[i].split(':');
+      const [key, ...valueParts] = parts[i].split(':');
+      const value = valueParts.join(':');
       if (key === 'q') {
         quantity = parseInt(value, 10);
       } else if (key === 's') {
@@ -338,6 +401,8 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
         options.cuisson = value; // Cuisson for meat dishes
       } else if (key === 'i') {
         options.ingredient = value; // Ingredient for drinks
+      } else if (key === 'n') {
+        comment = decodeComment(value);
       }
     }
 
@@ -364,10 +429,10 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
           // Capitalize first letter of cuisson for display (e.g., "Rare", "Medium")
           description = `${description} (${options.cuisson.charAt(0).toUpperCase() + options.cuisson.slice(1)})`;
         }        
-        hydratedParts.push({ type: 'item', categoryType: 'dish', quantity, description: dish.name + (options.cuisson ? ` (${options.cuisson})` : '')  });
+        hydratedParts.push({ type: 'item', categoryType: 'dish', quantity, description: dish.name + (options.cuisson ? ` (${options.cuisson})` : ''), ...(comment && { comment }) });
         hasDishes = true;
       } else {
-        hydratedParts.push({ type: 'item', categoryType: 'dish', quantity, description: `Unknown Dish ID: ${dehydratedBaseId}` });
+        hydratedParts.push({ type: 'item', categoryType: 'dish', quantity, description: `Unknown Dish ID: ${dehydratedBaseId}`, ...(comment && { comment }) });
         hasDishes = true;
       }
     } else if (typePrefix === 'b') {
@@ -387,10 +452,10 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
             description = `${description} (Size: ${options.size})`;
           }
         }
-        hydratedParts.push({ type: 'item', categoryType: 'drink', quantity, description });
+        hydratedParts.push({ type: 'item', categoryType: 'drink', quantity, description, ...(comment && { comment }) });
         hasDrinks = true;
       } else {
-        hydratedParts.push({ type: 'item', categoryType: 'drink', quantity, description: `Unknown Drink ID: ${dehydratedBaseId}` });
+        hydratedParts.push({ type: 'item', categoryType: 'drink', quantity, description: `Unknown Drink ID: ${dehydratedBaseId}`, ...(comment && { comment }) });
         hasDrinks = true;
       }
     }

@@ -244,25 +244,45 @@ body {
   background-color: #5a6268;
 }
 
-/* Options area - naturally positioned on the third row by 'grid-area: options' */
+/* Options area - naturally positioned on the second row by 'grid-area: options' */
 .cart-item-options {
     grid-area: options;
     font-size: 0.85em;
     color: #555;
-    margin-top: 10px; /* Space from buttons above */
-    padding-top: 10px;
-    border-top: 1px dashed #eee; /* Visual separation for options on a new row */
-    display: flex; /* Uses flexbox to lay out option tags */
-    flex-wrap: wrap; /* Allows option tags to wrap to the next line if needed */
-    gap: 8px; /* Space between individual option tags */
-    padding-left: 5px; /* Slight indent for visual alignment */
+    margin-top: 2px;
+    padding-top: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-left: 5px;
+    align-items: center;
 }
 
 .option-tag {
     background-color: #e9e9e9;
     padding: 2px 6px;
     border-radius: 3px;
-    white-space: nowrap; /* Prevents text within an option tag from wrapping */
+    white-space: nowrap;
+}
+
+.cart-comment-input {
+    flex: 1;
+    min-width: 60px;
+    border: 1.5px solid #999;
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 0.85em;
+    color: #000;
+    background: #fff;
+    outline: none;
+}
+.cart-comment-input:focus {
+    border-color: #0070f3;
+    box-shadow: 0 0 0 1px rgba(0, 112, 243, 0.2);
+}
+.cart-comment-input::placeholder {
+    color: #666;
+    font-style: italic;
 }
 
 .cart-summary-row {

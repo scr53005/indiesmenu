@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
-import { getTable, hydrateMemo, HydratedOrderLine } from '@/lib/utils';
+import { getTable, hydrateMemo, HydratedOrderLine, getOrderTiming, OrderTiming } from '@/lib/utils';
 import { MenuData } from '@/lib/data/menu';
 import { generateReceiptHtml } from '@/lib/print-utils';
 import 'react-toastify/dist/ReactToastify.css';
@@ -56,6 +56,7 @@ export default function CurrentOrdersPage() {
   const wakeUpInterval = useRef<NodeJS.Timeout | null>(null);
   const previousTransfersRef = useRef<Set<string>>(new Set());
   const printedRef = useRef<Set<string>>(new Set()); // Track what has been printed
+  const previouslyDelayedRef = useRef<Set<string>>(new Set()); // Track delayed orders for promotion detection
 
   const isDev = process.env.NODE_ENV === 'development';
 
@@ -258,6 +259,55 @@ export default function CurrentOrdersPage() {
     });
   }, [transfers]);
 
+  // Split orders into immediate vs delayed based on timing token
+  const { immediateOrders, delayedOrders } = useMemo(() => {
+    const immediate: GroupedOrder[] = [];
+    const delayed: (GroupedOrder & { timing: OrderTiming; targetMinutes: number })[] = [];
+
+    groupedOrders.forEach(order => {
+      const timing = getOrderTiming(order.memo);
+      if (timing) {
+        const [h, m] = timing.time.split('h').map(Number);
+        const targetMinutes = h * 60 + m;
+        const now = new Date();
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        // Promote to immediate if within 30 minutes of target
+        if (targetMinutes - nowMinutes <= 30) {
+          immediate.push(order);
+        } else {
+          delayed.push({ ...order, timing, targetMinutes });
+        }
+      } else {
+        immediate.push(order);
+      }
+    });
+
+    // Sort delayed by target time ascending (soonest on top)
+    delayed.sort((a, b) => a.targetMinutes - b.targetMinutes);
+
+    return { immediateOrders: immediate, delayedOrders: delayed };
+  }, [groupedOrders]);
+
+  // Promotion detection: trigger bell + print when delayed orders move to immediate
+  useEffect(() => {
+    immediateOrders.forEach(order => {
+      const orderId = order.primaryTransfer.id;
+      if (previouslyDelayedRef.current.has(orderId)) {
+        previouslyDelayedRef.current.delete(orderId);
+        if (canPlayAudioRef.current) playBellSoundsRef.current();
+        if (!printedRef.current.has(orderId)) {
+          const success = printOrderRef.current(order.primaryTransfer);
+          if (success) printedRef.current.add(orderId);
+        }
+        if (!reminderIntervalsRef.current.has(orderId)) {
+          const intervalId = setInterval(() => { if (canPlayAudioRef.current) playBellSoundsRef.current(); }, 30000);
+          reminderIntervalsRef.current.set(orderId, intervalId);
+        }
+      }
+    });
+    previouslyDelayedRef.current = new Set(delayedOrders.map(o => o.primaryTransfer.id));
+  }, [immediateOrders, delayedOrders]);
+
   const triggerPoll = useCallback(async () => {
     const merchantHubUrl = getMerchantHubUrl().replace(/\/$/, '');
     try {
@@ -285,9 +335,20 @@ export default function CurrentOrdersPage() {
       // 3. Detect new transfers by comparing with previous set
       const newTransfers = hydrated.filter(t => !previousTransfersRef.current.has(t.id));
 
-      if (newTransfers.length > 0) {
+      // Only bell/print for immediate orders (no timing, or within 30 min of target)
+      const newImmediateTransfers = newTransfers.filter(tx => {
+        const timing = getOrderTiming(tx.memo);
+        if (!timing) return true; // No timing = immediate
+        const [h, m] = timing.time.split('h').map(Number);
+        const targetMinutes = h * 60 + m;
+        const now = new Date();
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        return targetMinutes - nowMinutes <= 30;
+      });
+
+      if (newImmediateTransfers.length > 0) {
         if (canPlayAudioRef.current) playBellSoundsRef.current();
-        newTransfers.forEach(tx => {
+        newImmediateTransfers.forEach(tx => {
           if (!tx.isCallWaiter && !printedRef.current.has(tx.id)) {
             const success = printOrderRef.current(tx);
             if (success) printedRef.current.add(tx.id);
@@ -344,7 +405,8 @@ export default function CurrentOrdersPage() {
     try {
       for (const transferId of allTransferIds) {
         const res = await fetch(`/api/fulfill`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: transferId }) });
-        if (!res.ok) throw new Error(`Failed to fulfill transfer ${transferId}`);
+        // 404 = already fulfilled or not in local DB (e.g. grouped EURO transfer) — not an error
+        if (!res.ok && res.status !== 404) throw new Error(`Failed to fulfill transfer ${transferId}`);
         const intervalId = reminderIntervalsRef.current.get(transferId);
         if (intervalId) { clearInterval(intervalId); reminderIntervalsRef.current.delete(transferId); }
       }
@@ -386,73 +448,122 @@ export default function CurrentOrdersPage() {
       {!loading && (
         <div className="order-count-prominent">
           {groupedOrders.length === 0 ? "Pas de commandes en attente" : (
-            <>{groupedOrders.length} commande{groupedOrders.length > 1 ? 's' : ''} en cours
+            <>{immediateOrders.length} commande{immediateOrders.length !== 1 ? 's' : ''} en cours
+              {delayedOrders.length > 0 && <span className="delayed-count"> + {delayedOrders.length} différée{delayedOrders.length !== 1 ? 's' : ''}</span>}
               {isDev && groupedOrders.length !== transfers.length && <span className="dev-transfers-total">({transfers.length} transferts)</span>}
             </>
           )}
         </div>
       )}
       {!loading && groupedOrders.length > 0 && (
-        <ul>
-          {groupedOrders.map(groupedOrder => {
-            const { memo, primaryTransfer, hbdTransfer, allTransferIds } = groupedOrder;
-            const transfer = primaryTransfer;
-            const now = new Date();
-            const receivedTime = new Date(transfer.received_at);
-            const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
-            const isLate = timeDiffSeconds > 600;
-            const { date, time } = formatDateTime(transfer.received_at);
+        <div className="orders-layout">
+          {/* Main column — immediate orders */}
+          <div className="orders-main">
+            <ul>
+              {immediateOrders.map(groupedOrder => {
+                const { memo, primaryTransfer, hbdTransfer, allTransferIds } = groupedOrder;
+                const transfer = primaryTransfer;
+                const now = new Date();
+                const receivedTime = new Date(transfer.received_at);
+                const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
+                const isLate = timeDiffSeconds > 600;
+                const { date, time } = formatDateTime(transfer.received_at);
+                const timing = getOrderTiming(memo);
 
-            return (
-              <li key={primaryTransfer.id} className={transfer.isCallWaiter ? 'call-waiter-item' : (isLate ? 'late-order-card' : '')}>
-                <div className="order-section">
-                  <p className="section-label">Commande:</p>
-                  <div className={`order-details-container ${transfer.isCallWaiter ? 'call-waiter-content' : ''}`}>
-                    {transfer.parsedMemo && transfer.parsedMemo.length > 0 ? (
-                      transfer.parsedMemo.map((line, idx) => (
-                        <React.Fragment key={idx}>
-                          {line.type === 'item' ? (
-                            <div className="order-item-line">
-                              <span className="order-item-quantity">{line.quantity}</span>
-                              <span className={`order-item-description ${line.categoryType === 'drink' ? 'drink-item' : line.categoryType === 'dish' ? 'dish-item' : ''}`}>
-                                {line.description}
-                              </span>
-                            </div>
-                          ) : line.type === 'separator' ? <hr className="order-separator" /> : (
-                            <div className="order-item-description full-width-raw">{line.content}</div>
-                          )}
-                        </React.Fragment>
-                      ))
-                    ) : <div className="order-item-description">{transfer.memo}</div>}
+                return (
+                  <li key={primaryTransfer.id} className={transfer.isCallWaiter ? 'call-waiter-item' : (isLate ? 'late-order-card' : '')}>
+                    {timing && <div className={`promoted-badge ${timing.type === 'pickup' ? 'promoted-pickup' : 'promoted-dinein'}`}>⏰ {timing.type === 'pickup' ? 'À emporter' : 'Sur place'} {timing.time}</div>}
+                    <div className="order-section">
+                      <p className="section-label">Commande:</p>
+                      <div className={`order-details-container ${transfer.isCallWaiter ? 'call-waiter-content' : ''}`}>
+                        {transfer.parsedMemo && transfer.parsedMemo.length > 0 ? (
+                          transfer.parsedMemo.map((line, idx) => (
+                            <React.Fragment key={idx}>
+                              {line.type === 'item' ? (
+                                <div className="order-item-line">
+                                  <span className="order-item-quantity">{line.quantity}</span>
+                                  <span className={`order-item-description ${line.categoryType === 'drink' ? 'drink-item' : line.categoryType === 'dish' ? 'dish-item' : ''}`}>
+                                    {line.description}
+                                    {line.comment && <span className="order-item-comment"> — {line.comment}</span>}
+                                  </span>
+                                </div>
+                              ) : line.type === 'separator' ? <hr className="order-separator" /> : (
+                                <div className="order-item-description full-width-raw">{line.content}</div>
+                              )}
+                            </React.Fragment>
+                          ))
+                        ) : <div className="order-item-description">{transfer.memo}</div>}
+                      </div>
+                    </div>
+                    <div className="order-info-grid">
+                      <div className="info-item"><span className="info-label">Table:</span><strong>{getTable(transfer.memo) || '-'}</strong></div>
+                      <div className={`info-item ${isLate ? 'late-order' : ''}`}><span className="info-label">Heure:</span><strong className={isLate ? 'late-time' : 'normal-time'}>{time}</strong></div>
+                      <div className="info-item"><span className="info-label">Client:</span><strong className="account-name">@{transfer.from_account || 'inconnu'}</strong></div>
+                      {isDev && (
+                        <>
+                          <div className="info-item"><span className="info-label">Montant:</span><div><strong>{transfer.amount} {transfer.symbol}</strong>{hbdTransfer && <div className="secondary-amount">+ {hbdTransfer.amount} {hbdTransfer.symbol}</div>}</div></div>
+                          <div className="info-item"><span className="info-label">Identifiant:</span><strong className="identifier-text">{getIdentifier(memo) || '-'}</strong></div>
+                          <div className="info-item"><span className="info-label">Compte destinataire:</span><strong className="account-name">@{transfer.to_account || '-'}</strong></div>
+                        </>
+                      )}
+                    </div>
+                    {isDev && (
+                      <p className="debug-info">ID: <strong>{allTransferIds.join(', ')}</strong>{allTransferIds.length > 1 && <span className="grouped-label">({allTransferIds.length} transferts groupés)</span>}</p>
+                    )}
+                    {!isDev && <p className="debug-info"><span className="date-label">Date: {date}</span></p>}
+                    <div className="action-buttons">
+                      <button onClick={() => printOrder(transfer)} className="print-button">🖨️ Imprimer</button>
+                      <button onClick={() => handleFulfill(memo, allTransferIds)} className="fulfill-button">Servi !</button>
+                    </div>
+                  </li>
+                );
+              })}
+              {immediateOrders.length === 0 && <li className="no-immediate">Aucune commande immédiate</li>}
+            </ul>
+          </div>
+
+          {/* Sidebar — delayed orders */}
+          {delayedOrders.length > 0 && (
+            <div className="orders-delayed">
+              <div className="delayed-header">⏳ En attente ({delayedOrders.length})</div>
+              {delayedOrders.map(delayedOrder => {
+                const { memo, primaryTransfer, allTransferIds, timing, targetMinutes } = delayedOrder;
+                const transfer = primaryTransfer;
+                const isPickup = timing.type === 'pickup';
+                const table = getTable(memo);
+                const now = new Date();
+                const nowMinutes = now.getHours() * 60 + now.getMinutes();
+                const minutesUntil = targetMinutes - nowMinutes;
+
+                return (
+                  <div key={primaryTransfer.id} className={`delayed-card ${isPickup ? 'delayed-pickup' : 'delayed-dinein'}`}>
+                    <div className="delayed-card-header">
+                      <span className="delayed-time-badge">{isPickup ? '📦' : '🍽️'} {timing.time}</span>
+                      <span className="delayed-countdown">{minutesUntil > 0 ? `${minutesUntil}min` : 'bientôt'}</span>
+                    </div>
+                    <div className="delayed-type">{isPickup ? 'À emporter' : 'Sur place'}</div>
+                    <div className="delayed-items">
+                      {transfer.parsedMemo && transfer.parsedMemo.map((line, idx) => (
+                        line.type === 'item' ? (
+                          <div key={idx} className="delayed-item-line">
+                            <span>{line.quantity}</span> <span>{line.description}{line.comment && <em> — {line.comment}</em>}</span>
+                          </div>
+                        ) : null
+                      ))}
+                    </div>
+                    {!isPickup && table && (
+                      <div className="delayed-table">Table {table} <span className="delayed-table-hint">?</span></div>
+                    )}
+                    <div className="delayed-client">@{transfer.from_account}</div>
                   </div>
-                </div>
-                <div className="order-info-grid">
-                  <div className="info-item"><span className="info-label">Table:</span><strong>{getTable(transfer.memo) || '-'}</strong></div>
-                  <div className={`info-item ${isLate ? 'late-order' : ''}`}><span className="info-label">Heure:</span><strong className={isLate ? 'late-time' : 'normal-time'}>{time}</strong></div>
-                  <div className="info-item"><span className="info-label">Client:</span><strong className="account-name">@{transfer.from_account || 'inconnu'}</strong></div>
-                  {isDev && (
-                    <>
-                      <div className="info-item"><span className="info-label">Montant:</span><div><strong>{transfer.amount} {transfer.symbol}</strong>{hbdTransfer && <div className="secondary-amount">+ {hbdTransfer.amount} {hbdTransfer.symbol}</div>}</div></div>
-                      <div className="info-item"><span className="info-label">Identifiant:</span><strong className="identifier-text">{getIdentifier(memo) || '-'}</strong></div>
-                      <div className="info-item"><span className="info-label">Compte destinataire:</span><strong className="account-name">@{transfer.to_account || '-'}</strong></div>
-                    </>
-                  )}
-                </div>
-                {isDev && (
-                  <p className="debug-info">ID: <strong>{allTransferIds.join(', ')}</strong>{allTransferIds.length > 1 && <span className="grouped-label">({allTransferIds.length} transferts groupés)</span>}</p>
-                )}
-                {!isDev && <p className="debug-info"><span className="date-label">Date: {date}</span></p>}
-                <div className="action-buttons">
-                  <button onClick={() => printOrder(transfer)} className="print-button">🖨️ Imprimer</button>
-                  <button onClick={() => handleFulfill(memo, allTransferIds)} className="fulfill-button">Servi !</button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
       <style jsx>{`
-        .container { max-width: 900px; margin: 0 auto; padding: 10px 20px; color: #333; }
+        .container { max-width: 900px; margin: 0 auto; padding: 10px 20px; color: #333; background: #f9f9f9; color-scheme: light; }
         .nav-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 12px; }
         h1 { margin: 0; color: #111; font-size: 1.5rem; }
         .nav-buttons { display: flex; gap: 8px; }
@@ -473,7 +584,7 @@ export default function CurrentOrdersPage() {
         .poller-active { color: #008000; font-weight: bold; }
         .poller-passive { color: #666; }
         ul { list-style: none; padding: 0; }
-        li { border: 1px solid #ddd; padding: 12px 16px; margin-bottom: 12px; border-radius: 8px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        li { border: 1px solid #ddd; padding: 12px 16px; margin-bottom: 12px; border-radius: 8px; background: #fff; color: #333; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .late-order-card { background: #fee; border: 2px solid #f44; animation: pulse-late 2s infinite alternate; }
         @keyframes pulse-late { from { border-color: #f44; } to { border-color: #f88; } }
         .order-section { margin-bottom: 8px; }
@@ -500,6 +611,7 @@ export default function CurrentOrdersPage() {
         .order-item-line { display: grid; grid-template-columns: 25px 1fr; gap: 5px; align-items: baseline; margin-bottom: 1px; }
         .order-item-quantity { font-weight: bold; color: #555; text-align: right; font-size: 14px; }
         .order-item-description { font-weight: bold; color: #333; font-size: 14px; }
+        .order-item-comment { font-weight: normal; font-style: italic; color: #666; font-size: 12px; }
         .drink-item { color: #008000; }
         .dish-item { color: #8B0000; }
         .full-width-raw { grid-column: span 2; }
@@ -507,6 +619,46 @@ export default function CurrentOrdersPage() {
         .call-waiter-item { background-color: #ffe0e0; border-color: red; animation: pulse-red 1.5s infinite alternate; }
         .call-waiter-content .order-item-quantity, .call-waiter-content .order-item-description, .call-waiter-content .full-width-raw { color: red; font-weight: bold; }
         @keyframes pulse-red { 0% { box-shadow: 0 0 5px rgba(255, 0, 0, 0.5); transform: scale(1); } 100% { box-shadow: 0 0 20px rgba(255, 0, 0, 1); transform: scale(1.02); } }
+
+        /* Two-column layout */
+        .orders-layout { display: flex; gap: 16px; align-items: flex-start; }
+        .orders-main { flex: 3; min-width: 0; }
+        .orders-delayed { flex: 1; min-width: 200px; max-width: 260px; position: sticky; top: 10px; }
+        .delayed-count { color: #6b7c3f; font-size: 13px; font-weight: 600; }
+        .delayed-header { font-size: 14px; font-weight: 700; color: #444; background: #eee; margin-bottom: 10px; padding: 6px 10px; border-radius: 6px; text-align: center; }
+        .no-immediate { text-align: center; color: #777; font-style: italic; padding: 20px; border: 1px dashed #ccc; border-radius: 8px; background: #fff; }
+
+        /* Promoted delayed orders badge (now in main column) */
+        .promoted-badge { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 4px; margin-bottom: 6px; display: inline-block; color: #fff; }
+        .promoted-pickup { background: #6b7c3f; }
+        .promoted-dinein { background: #6b3fa0; }
+
+        /* Delayed order cards — explicit colors on every element for theme safety */
+        .delayed-card { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+        .delayed-pickup { background: #6b7c3f; color: #fff; }
+        .delayed-dinein { background: #6b3fa0; color: #fff; }
+        .delayed-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: #fff; }
+        .delayed-time-badge { font-size: 16px; font-weight: 800; color: #fff; }
+        .delayed-countdown { font-size: 11px; color: #fff; opacity: 0.85; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 10px; }
+        .delayed-type { font-size: 11px; color: rgba(255,255,255,0.8); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .delayed-items { font-size: 12px; color: #fff; margin-bottom: 6px; }
+        .delayed-item-line { margin-bottom: 2px; color: #fff; }
+        .delayed-item-line em { color: rgba(255,255,255,0.8); font-size: 11px; }
+        .delayed-table { font-size: 12px; color: rgba(255,255,255,0.9); margin-bottom: 4px; }
+        .delayed-table-hint { display: inline-block; background: rgba(255,255,255,0.3); color: #fff; font-weight: 800; font-size: 10px; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 50%; margin-left: 4px; }
+        .delayed-client { font-size: 11px; font-family: monospace; color: rgba(255,255,255,0.75); margin-bottom: 6px; }
+        .delayed-actions { display: flex; gap: 6px; }
+        .delayed-print-btn { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.3); padding: 3px 8px; font-size: 12px; border-radius: 4px; cursor: pointer; }
+        .delayed-print-btn:hover { background: rgba(255,255,255,0.35); color: #fff; transform: none; box-shadow: none; }
+        .delayed-fulfill-btn { flex: 1; background: rgba(255,255,255,0.25); color: #fff; border: 1px solid rgba(255,255,255,0.4); padding: 3px 8px; font-size: 12px; font-weight: 600; border-radius: 4px; cursor: pointer; }
+        .delayed-fulfill-btn:hover { background: rgba(255,255,255,0.4); color: #fff; transform: none; box-shadow: none; }
+
+        /* Responsive: stack vertically on narrow screens, delayed at bottom */
+        @media (max-width: 768px) {
+          .orders-layout { flex-direction: column; }
+          .orders-delayed { order: 1; max-width: none; position: static; }
+          .orders-main { order: 0; }
+        }
       `}</style>
     </div>
   );

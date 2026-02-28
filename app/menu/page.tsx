@@ -7,10 +7,13 @@ import { useCart } from '@/app/context/CartContext';
 import { useBalance, useInvalidateBalance } from '@/hooks/useBalance';
 import MenuItem from '@/components/menu/MenuItem';
 import CartItemDisplay from '@/components/menu/CartItemDisplay';
+import DelayedOrderPanel from '@/components/menu/DelayedOrderPanel';
+import WalletNotificationBanner from '@/components/menu/WalletNotificationBanner';
 import MiniWallet, { WalletReopenButton } from '@/components/ui/MiniWallet';
 import Draggable from '@/components/ui/Draggable';
 import BottomBanner from '@/components/ui/BottomBanner';
-import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation } from '@/lib/utils'; // Import currency rate and innopay URL utilities
+import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment } from '@/lib/utils';
+import { isKitchenOpen, getKitchenCloseTime } from '@/lib/config/kitchen-hours';
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
@@ -25,7 +28,7 @@ interface GroupedCategory<T> {
 }
 
 export default function MenuPage() {
-  const { cart, table, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable } = useCart();
+  const { cart, table, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable, updateComment, delayedTiming, setDelayedTiming } = useCart();
   // Use the imported MenuData type for the menu state
   const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [], conversion_rate: 1.0000 }); // Initialize with empty data
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +95,11 @@ export default function MenuPage() {
   const [isKitchenClosed, setIsKitchenClosed] = useState(false);
   const [kitchenCloseTime, setKitchenCloseTime] = useState('21h30');
   const [kitchenClosedBannerMinimized, setKitchenClosedBannerMinimized] = useState(false);
+  const [showDelayedPanel, setShowDelayedPanel] = useState(false);
+  const pendingDishRef = useRef<{ item: any; options?: { [key: string]: string } } | null>(null);
+  const [showWaiterModal, setShowWaiterModal] = useState(false);
+  const [waiterReason, setWaiterReason] = useState('');
+  const [waiterConfirmed, setWaiterConfirmed] = useState(false);
 
   // State for account creation success notification
   const [showAccountCreated, setShowAccountCreated] = useState(false);
@@ -827,14 +835,13 @@ export default function MenuPage() {
           console.log('Outside meal service - defaulting to drinks');
         }
 
-        // Kitchen closing: Mon-Fri 21h30, Saturday 22h00 (closed Sunday)
+        // Kitchen closure check using config
         const dayOfWeek = luxDate.getDay(); // 0=Sun, 6=Sat
-        const isSaturday = dayOfWeek === 6;
-        const kitchenCloseMinutes = isSaturday ? 22 * 60 : 21 * 60 + 30;
-        if (totalMinutes >= kitchenCloseMinutes) {
+        if (!isKitchenOpen(dayOfWeek, totalMinutes)) {
           setIsKitchenClosed(true);
-          setKitchenCloseTime(isSaturday ? '22h00' : '21h30');
-          console.log(`Kitchen closed (${isSaturday ? 'Saturday 22h00' : 'weekday 21h30'})`);
+          const closeTime = getKitchenCloseTime(dayOfWeek, totalMinutes);
+          setKitchenCloseTime(closeTime || 'fermée');
+          console.log(`Kitchen closed (closeTime: ${closeTime})`);
         }
 
         console.log("Fetched conversion rate:", data.conversion_rate);
@@ -1081,9 +1088,10 @@ export default function MenuPage() {
 
   // Updated handleAddItem to correctly process options passed from MenuItem
   const handleAddItem = useCallback((item: FormattedDish | FormattedDrink, options?: { [key: string]: string }) => {
-    // Block dish orders after kitchen closes (dine-in only)
-    if (isKitchenClosed && table && item.type === 'dish') {
-      setKitchenClosedBannerMinimized(false);
+    // Kitchen closed + no delayed timing: store pending dish and auto-open delayed ordering panel
+    if (isKitchenClosed && table && item.type === 'dish' && !delayedTiming) {
+      pendingDishRef.current = { item, options };
+      setShowDelayedPanel(true);
       return;
     }
 
@@ -1143,9 +1151,9 @@ export default function MenuPage() {
       conversion_rate: menu?.conversion_rate,
       discount: cartItemDiscount, // Pass discount to cart
     });
-  }, [addItem, menu, isKitchenClosed, table]);
+  }, [addItem, menu, isKitchenClosed, table, delayedTiming]);
 
-  const handleCallWaiter = useCallback(async () => {
+  const handleCallWaiter = useCallback(async (reason?: string) => {
     console.log('[CALL WAITER] Initiating call waiter flow');
 
     // Check if user has wallet credentials in localStorage
@@ -1155,7 +1163,8 @@ export default function MenuPage() {
 
     // Call waiter parameters (0.02 EURO tokens, special memo)
     const callWaiterAmount = 0.02;
-    const callWaiterMemo = 'Un serveur est appelé ' + (table ? `TABLE ${table}` : '');
+    const reasonEncoded = reason?.trim() ? ` n:${encodeComment(reason.trim())}` : '';
+    const callWaiterMemo = `Un serveur est appelé${reasonEncoded} ` + (table ? `TABLE ${table}` : '');
 
     console.log('[CALL WAITER] Order details:', {
       hasAccount: !!accountName,
@@ -1933,6 +1942,70 @@ export default function MenuPage() {
     setMultipleAccounts([]);
   }, [importDisabled]);
 
+  // Handle "Créer un compte" button in wallet notification banner
+  const handleCreateAccount = useCallback(() => {
+    const baseUrl = typeof window !== 'undefined'
+      ? `${getInnopayUrl()}/user`
+      : 'https://wallet.innopay.lu/user';
+
+    let orderAmount, discount, customMemo;
+
+    if (isCallWaiterFlow) {
+      orderAmount = '0.02';
+      discount = '0';
+      const reasonEncoded = waiterReason?.trim() ? ` n:${encodeComment(waiterReason.trim())}` : '';
+      customMemo = `Un serveur est appelé${reasonEncoded} ` + (table ? `TABLE ${table}` : '');
+      console.log(`[${new Date().toISOString()}] [CALL WAITER] Opening account creation for call waiter`);
+    } else {
+      orderAmount = getTotalEurPrice();
+      discount = getDiscountAmount();
+      customMemo = getMemoWithDistriate();
+      console.log(`[${new Date().toISOString()}] [INDIESMENU] Opening account creation with params:`, {
+        orderAmount,
+        discount,
+        memoLength: customMemo.length,
+        memo: customMemo.substring(0, 100) + (customMemo.length > 100 ? '...' : '')
+      });
+    }
+
+    const params = new URLSearchParams();
+    params.set('restaurant', 'indies');
+    params.set('restaurant_account', recipient);
+    params.set('table', table);
+    params.set('order_amount', orderAmount);
+    if (parseFloat(discount) > 0) {
+      params.set('discount', discount);
+    }
+    params.set('memo', customMemo);
+
+    const returnUrl = `${window.location.origin}/menu`;
+    params.set('return_url', returnUrl);
+    console.log('[FLOW 5] Return URL set:', returnUrl);
+
+    localStorage.setItem('innopay_flow_pending', 'flow5_create_and_pay');
+    console.log('[FLOW 5] Set flow marker: flow5_create_and_pay');
+
+    window.location.href = `${baseUrl}?${params.toString()}`;
+  }, [isCallWaiterFlow, waiterReason, table, recipient, getTotalEurPrice, getDiscountAmount, getMemoWithDistriate]);
+
+  // Handle dismissing wallet notification banner
+  const handleDismissBanner = useCallback(() => {
+    setShowWalletNotification(false);
+    setIsCallWaiterFlow(false);
+    console.log('Notification dismissed temporarily - will show again on next order attempt');
+  }, []);
+
+  // Handle guest checkout from wallet notification banner
+  const handleBannerGuestCheckout = useCallback(() => {
+    if (isCallWaiterFlow) {
+      // Waiter flow: skip cart check, show warning modal directly
+      setShowGuestWarningModal(true);
+    } else {
+      setGuestCheckoutStarted(true);
+      handleGuestCheckout();
+    }
+  }, [handleGuestCheckout, isCallWaiterFlow]);
+
   // Handle email submission (request verification code)
   const handleRequestCode = useCallback(async () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -2129,17 +2202,27 @@ export default function MenuPage() {
       // Hide wallet notification banner when guest checkout starts
       setGuestCheckoutStarted(true);
 
-      // Use no-discount price + 5% processing fee
-      const amountEuroNoDiscount = parseFloat(getTotalEurPriceNoDiscount());
-      const amountEuroWithFee = amountEuroNoDiscount * 1.05;
+      let amountEuroWithFee: number;
+      let customMemo: string;
 
-      // Generate distriate suffix for guest checkout tracking
-      const { distriate } = await import('@/lib/utils');
-      const distriateSuffix = distriate('gst'); // 'gst' tag for guest checkout
-      const baseMemo = getMemo();
-      const customMemo = `${baseMemo} ${distriateSuffix}`;
-
-      console.log('Guest checkout:', { amountEuroWithFee, memo: customMemo, distriateSuffix });
+      if (isCallWaiterFlow) {
+        // Waiter service: flat 1€ fee (includes CC commission)
+        amountEuroWithFee = 1.00;
+        const { distriate } = await import('@/lib/utils');
+        const distriateSuffix = distriate('gst');
+        const reasonEncoded = waiterReason?.trim() ? ` n:${encodeComment(waiterReason.trim())}` : '';
+        customMemo = `Un serveur est appelé${reasonEncoded} ${table ? `TABLE ${table}` : ''} ${distriateSuffix}`.replace(/\s+/g, ' ').trim();
+        console.log('Guest checkout (waiter):', { amountEuroWithFee, memo: customMemo });
+      } else {
+        // Normal order: no-discount price + 5% processing fee
+        const amountEuroNoDiscount = parseFloat(getTotalEurPriceNoDiscount());
+        amountEuroWithFee = amountEuroNoDiscount * 1.05;
+        const { distriate } = await import('@/lib/utils');
+        const distriateSuffix = distriate('gst');
+        const baseMemo = getMemo();
+        customMemo = `${baseMemo} ${distriateSuffix}`;
+        console.log('Guest checkout:', { amountEuroWithFee, memo: customMemo, distriateSuffix });
+      }
 
       const innopayUrl = getInnopayUrl();
 
@@ -2187,11 +2270,12 @@ export default function MenuPage() {
       console.error('Error stack:', error.stack);
 
       setGuestCheckoutProcessing(false); // Re-enable button on error
+      setShowGuestWarningModal(false); // Close modal so user can retry
       // Show detailed error in alert for debugging in production
       const errorDetails = error.message || 'Unknown error';
       alert(`Erreur lors de la création de la session de paiement.\n\nDétails: ${errorDetails}\n\nVeuillez réessayer ou contacter le support.`);
     }
-  }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table, guestCheckoutProcessing]);
+  }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table, guestCheckoutProcessing, isCallWaiterFlow, waiterReason]);
 
 
   const toggleCategory = useCallback((categoryId: number) => {
@@ -2253,165 +2337,25 @@ export default function MenuPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
-      {/* Wallet Notification Banner */}
-      {showWalletNotification && !walletCredentials && !guestCheckoutStarted && !showPaymentSuccess && !flow4Success && (
-        <Draggable
-          className="z-[8990] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg rounded-lg"
-          style={{
-            top: cart.length === 0 && welcomeCarouselHeight > 0
-              ? `${totalFixedHeaderHeight + welcomeCarouselHeight}px`
-              : `${totalFixedHeaderHeight}px`,
-            width: '100%',
-            maxWidth: '896px', // max-w-4xl = 56rem = 896px
-          }}
-          initialPosition={{ x: 0, y: 0 }}
-        >
-          <div className="max-w-4xl mx-auto flex items-center gap-4">
-            {/* Drag handle indicator */}
-            <div className="text-white opacity-50 text-xs flex-shrink-0">
-              ⋮⋮
-            </div>
-
-            {/* Left zone: Text - takes most space */}
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm md:text-base">
-                {isSafariBanner && cart.length === 0
-                  ? "💳 Si vous n'avez pas de portefeuille compatible Innopay, nous conseillons de créer un compte avant de commander!"
-                  : "💳 Pour commander, créez votre portefeuille Innopay"
-                }
-              </p>
-              {(!isSafariBanner || cart.length > 0) && (
-                <p className="text-xs md:text-sm opacity-90 mt-1">
-                  Gratuit et instantané - Pas besoin d'installer d'application
-                </p>
-              )}
-            </div>
-
-            {/* Center zone: Buttons stacked */}
-            <div className="flex flex-col items-center gap-2 flex-shrink-0">
-              {/* Import Account Button */}
-              <button
-                onClick={handleImportAccount}
-                disabled={importDisabled}
-                className={`px-3 py-1.5 rounded-lg font-normal text-xs transition-colors w-[120px] text-center ${
-                  importDisabled
-                    ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                    : 'bg-sky-200 text-gray-800 hover:bg-sky-300'
-                }`}
-                style={{ whiteSpace: 'normal', lineHeight: '1.3' }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-              >
-                Importer un compte
-              </button>
-
-              <button
-                onClick={() => {
-                  // Build base URL based on environment
-                  const baseUrl = typeof window !== 'undefined'
-                    ? `${getInnopayUrl()}/user`
-                    : 'https://wallet.innopay.lu/user';
-
-                  // Get parameters based on flow type
-                  let orderAmount, discount, customMemo;
-
-                  if (isCallWaiterFlow) {
-                    // Call waiter flow - fixed parameters
-                    orderAmount = '0.02';
-                    discount = '0';
-                    customMemo = 'Un serveur est appelé ' + (table ? `TABLE ${table}` : '');
-                    console.log(`[${new Date().toISOString()}] [CALL WAITER] Opening account creation for call waiter`);
-                  } else {
-                    // Normal order flow
-                    orderAmount = getTotalEurPrice();
-                    discount = getDiscountAmount();
-                    customMemo = getMemoWithDistriate();
-                    console.log(`[${new Date().toISOString()}] [INDIESMENU] Opening account creation with params:`, {
-                      orderAmount,
-                      discount,
-                      memoLength: customMemo.length,
-                      memo: customMemo.substring(0, 100) + (customMemo.length > 100 ? '...' : '')
-                    });
-                  }
-
-                  // Build URL with parameters
-                  const params = new URLSearchParams();
-                  params.set('restaurant', 'indies'); // Restaurant identifier for innopay hub
-                  params.set('restaurant_account', recipient); // Hive account for payment destination
-                  params.set('table', table); // Add table parameter for restaurant context
-                  params.set('order_amount', orderAmount);
-                  if (parseFloat(discount) > 0) {
-                    params.set('discount', discount);
-                  }
-                  params.set('memo', customMemo);
-
-                  // Add return_url to preserve environment (dev/prod) for redirect back
-                  const returnUrl = `${window.location.origin}/menu`;
-                  params.set('return_url', returnUrl);
-                  console.log('[FLOW 5] Return URL set:', returnUrl);
-
-                  // Set Flow 5 marker for account creation with order
-                  localStorage.setItem('innopay_flow_pending', 'flow5_create_and_pay');
-                  console.log('[FLOW 5] Set flow marker: flow5_create_and_pay');
-
-                  // Navigate in same window (like guest checkout)
-                  window.location.href = `${baseUrl}?${params.toString()}`;
-                }}
-                className="bg-white text-blue-600 px-4 py-3 rounded-lg font-bold text-base hover:bg-blue-50 transition-colors w-[180px] text-center flex items-center justify-center gap-2"
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-              >
-                <span>Créer un compte</span>
-                <img src="/images/favicon-48x48.png" alt="innopay" className="w-10 h-10" />
-              </button>
-
-              {/* External Wallet Button - Show when cart has items OR when triggered by order button (not just Safari detection) */}
-              {(!isSafariBanner || cart.length > 0) && (
-                <button
-                  onClick={handleExternalWallet}
-                  className="bg-black text-red-500 px-4 py-3 rounded-lg font-semibold text-sm hover:bg-gray-900 transition-colors w-[180px] text-center"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                  title="Use external wallet app like Hive Keychain or Ecency / Utiliser une app portefeuille externe comme Hive Keychain ou Ecency"
-                >
-                  Portefeuille externe
-                </button>
-              )}
-
-              <button
-                onClick={() => {
-                  setGuestCheckoutStarted(true);
-                  handleGuestCheckout();
-                }}
-                className={`bg-gray-600 bg-opacity-60 px-3 py-1.5 rounded-lg font-normal text-xs hover:bg-opacity-70 transition-all w-[120px] text-center ${
-                  guestCheckoutStarted ? 'italic text-gray-400' : 'text-gray-100'
-                }`}
-                style={{ whiteSpace: 'normal', lineHeight: '1.3' }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-              >
-                Commandez sans compte
-              </button>
-            </div>
-
-            {/* Right zone: Close button - minimal width */}
-            <div className="flex-shrink-0 w-2">
-              <button
-                onClick={() => {
-                  setShowWalletNotification(false);
-                  setIsCallWaiterFlow(false); // Reset call waiter flow flag
-                  console.log('Notification dismissed temporarily - will show again on next order attempt');
-                }}
-                className="text-white hover:text-blue-200 transition-colors p-1"
-                aria-label="Fermer"
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        </Draggable>
+      {/* Wallet Notification Banner — memoized component for fast re-display */}
+      {showWalletNotification && !walletCredentials && !showPaymentSuccess && !flow4Success && (
+        <WalletNotificationBanner
+          topOffset={cart.length === 0 && welcomeCarouselHeight > 0
+            ? `${totalFixedHeaderHeight + welcomeCarouselHeight}px`
+            : `${totalFixedHeaderHeight}px`}
+          isSafariBanner={isSafariBanner}
+          cartEmpty={cart.length === 0}
+          isCallWaiterFlow={isCallWaiterFlow}
+          importDisabled={importDisabled}
+          guestCheckoutStarted={guestCheckoutStarted}
+          table={table}
+          recipient={recipient}
+          onImportAccount={handleImportAccount}
+          onCreateAccount={handleCreateAccount}
+          onExternalWallet={handleExternalWallet}
+          onGuestCheckout={handleBannerGuestCheckout}
+          onDismiss={handleDismissBanner}
+        />
       )}
 
       {/* Payment Success Banner - Two States */}
@@ -2594,28 +2538,39 @@ export default function MenuPage() {
             initialPosition={{ x: 16, y: 0 }}
             style={{ bottom: '80px', left: '0px', top: 'auto', maxWidth: '340px' }}
           >
-            <div className="bg-gradient-to-br from-red-800 to-red-950 text-white rounded-xl shadow-2xl border border-red-700/50 overflow-hidden">
-              {/* Header with minimize button */}
-              <div className="flex items-center justify-between px-4 pt-3 pb-1">
+            <div
+              className="bg-gradient-to-br from-red-800 to-red-950 text-white rounded-xl shadow-2xl border border-red-700/50 overflow-hidden"
+              ref={(el) => {
+                if (el) {
+                  const timer = setTimeout(() => setKitchenClosedBannerMinimized(true), 5000);
+                  (el as any).__autoMinTimer = timer;
+                }
+                return () => {
+                  if (el && (el as any).__autoMinTimer) clearTimeout((el as any).__autoMinTimer);
+                };
+              }}
+            >
+              {/* Header — entire row is tap target to minimize */}
+              <div
+                className="flex items-center justify-between px-4 pt-3 pb-2 cursor-pointer active:bg-white/10"
+                onClick={() => setKitchenClosedBannerMinimized(true)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
                 <div className="flex items-center gap-2">
                   <span className="text-white opacity-50 text-xs flex-shrink-0">⋮⋮</span>
                   <span className="text-lg">🍳</span>
                   <span className="font-bold text-sm">Cuisine fermée / Kitchen closed</span>
                 </div>
-                <button
-                  onClick={() => setKitchenClosedBannerMinimized(true)}
-                  className="text-white/60 hover:text-white text-lg font-bold ml-2 leading-none"
-                >
-                  ▾
-                </button>
+                <span className="text-white/60 text-lg font-bold ml-2 leading-none">▾</span>
               </div>
               {/* Bilingual message */}
               <div className="px-4 pb-3 pt-1 space-y-2">
                 <p className="text-sm text-red-100 italic leading-snug">
-                  La cuisine a fermé à {kitchenCloseTime}. Mais on dit qu&apos;une bière nourrit autant qu&apos;un steak.
+                  La cuisine a fermé à {kitchenCloseTime} mais vous pouvez commander pour plus tard en utilisant la commande différée 🕔
                 </p>
                 <p className="text-xs text-red-200/70 italic leading-snug">
-                  The kitchen closed at {kitchenCloseTime}. But they say a beer is as nourishing as a steak.
+                  The kitchen closed at {kitchenCloseTime} but you can order for later using the delayed order feature 🕔
                 </p>
               </div>
             </div>
@@ -3001,48 +2956,89 @@ export default function MenuPage() {
         </div>
       )}
 
-      {/* Guest Checkout Warning Modal */}
+      {/* Guest Checkout Warning Modal — adapts for waiter flow vs normal order */}
       {showGuestWarningModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-60">
           <div className="bg-gray-700 text-gray-300 rounded-lg p-6 max-w-md mx-4 shadow-xl">
-            <h3 className="text-lg font-semibold mb-4 text-center">Commander sans compte</h3>
+            {isCallWaiterFlow ? (
+              <>
+                <h3 className="text-lg font-semibold mb-4 text-center">Appeler un serveur sans compte</h3>
 
-            <p className="text-sm mb-3">
-              Commander sans compte implique une <span className="text-red-600 font-semibold">charge supplémentaire de <span className="text-red-500 font-bold">5%</span></span> liée aux commissions de carte bancaire.
-            </p>
+                <p className="text-sm mb-3">
+                  Appeler un serveur sans compte coûte <span className="text-red-500 font-bold">1.00€</span> (commission carte bancaire).
+                </p>
 
-            {parseFloat(getDiscountAmount()) > 0 && (
-              <p className="text-sm mb-4">
-                En commandant sans créer un compte vous <span className="text-red-600 font-semibold">renoncez à un discount de: <span className="text-red-500 font-bold">{getDiscountAmount()} €</span></span>
-              </p>
+                <p className="text-sm mb-4">
+                  En créant un compte Innopay <span className="text-green-400 font-semibold">gratuit</span>, ce service ne coûte que <span className="text-green-400 font-bold">0.02€</span>.
+                </p>
+
+                <div className="flex flex-col gap-3 mt-6">
+                  <button
+                    disabled={guestCheckoutProcessing}
+                    onClick={() => proceedWithGuestCheckout()}
+                    className={`px-4 py-3 rounded-lg font-semibold transition-colors ${
+                      guestCheckoutProcessing
+                        ? 'bg-gray-500 text-gray-400 cursor-not-allowed animate-pulse'
+                        : 'bg-black text-gray-300 hover:bg-gray-900'
+                    }`}
+                  >
+                    {guestCheckoutProcessing
+                      ? <>Redirection vers le paiement<span className="inline-block ml-1 animate-bounce">...</span></>
+                      : <>Continuer et payer <span className="text-red-500">1.00€</span></>
+                    }
+                  </button>
+
+                  {!guestCheckoutProcessing && (
+                    <button
+                      onClick={() => setShowGuestWarningModal(false)}
+                      className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
+                    >
+                      Créer un compte (0.02€)
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold mb-4 text-center">Commander sans compte</h3>
+
+                <p className="text-sm mb-3">
+                  Commander sans compte implique une <span className="text-red-600 font-semibold">charge supplémentaire de <span className="text-red-500 font-bold">5%</span></span> liée aux commissions de carte bancaire.
+                </p>
+
+                {parseFloat(getDiscountAmount()) > 0 && (
+                  <p className="text-sm mb-4">
+                    En commandant sans créer un compte vous <span className="text-red-600 font-semibold">renoncez à un discount de: <span className="text-red-500 font-bold">{getDiscountAmount()} €</span></span>
+                  </p>
+                )}
+
+                <div className="flex flex-col gap-3 mt-6">
+                  <button
+                    disabled={guestCheckoutProcessing}
+                    onClick={() => proceedWithGuestCheckout()}
+                    className={`px-4 py-3 rounded-lg font-semibold transition-colors ${
+                      guestCheckoutProcessing
+                        ? 'bg-gray-500 text-gray-400 cursor-not-allowed animate-pulse'
+                        : 'bg-black text-gray-300 hover:bg-gray-900'
+                    }`}
+                  >
+                    {guestCheckoutProcessing
+                      ? <>Redirection vers le paiement<span className="inline-block ml-1 animate-bounce">...</span></>
+                      : <>Continuer et payer <span className="text-red-500">{(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)} €</span></>
+                    }
+                  </button>
+
+                  {!guestCheckoutProcessing && (
+                    <button
+                      onClick={() => setShowGuestWarningModal(false)}
+                      className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
+                    >
+                      Revenir pour bénéficier
+                    </button>
+                  )}
+                </div>
+              </>
             )}
-
-            <div className="flex flex-col gap-3 mt-6">
-              <button
-                disabled={guestCheckoutProcessing}
-                onClick={() => {
-                  setShowGuestWarningModal(false);
-                  proceedWithGuestCheckout();
-                }}
-                className={`px-4 py-3 rounded-lg font-semibold transition-colors ${
-                  guestCheckoutProcessing
-                    ? 'bg-gray-500 text-gray-400 cursor-not-allowed'
-                    : 'bg-black text-gray-300 hover:bg-gray-900'
-                }`}
-              >
-                {guestCheckoutProcessing
-                  ? 'Redirection...'
-                  : <>Continuer et payer <span className="text-red-500">{(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)} €</span></>
-                }
-              </button>
-
-              <button
-                onClick={() => setShowGuestWarningModal(false)}
-                className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
-              >
-                Revenir pour bénéficier
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -3080,28 +3076,286 @@ export default function MenuPage() {
       {/* Fixed Cart Section */}
       {cart.length > 0 && (
         <div ref={cartRef} className="fixed-cart-container">
-          <div className="cart-header">Votre Ordre ({getTotalItems()} items) <br/><span className="text-sm">Les prix affichés incluent le discount</span></div>
+          <div className="cart-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left' }}>
+            <div>
+              <span>Votre Ordre ({getTotalItems()} items)</span>
+              <br/><span className="text-sm">Les prix affichés incluent le discount</span>
+            </div>
+            <button
+              onClick={() => setShowDelayedPanel(!showDelayedPanel)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: delayedTiming ? (delayedTiming.type === 'pickup' ? '#6b7c3f' : '#6b3fa0') : 'rgba(255,255,255,0.15)',
+                border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8,
+                padding: '4px 10px', color: 'white', fontSize: '0.8rem',
+                cursor: 'pointer', fontWeight: 600, transition: 'background 0.2s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              &#128340;{' '}
+              {delayedTiming
+                ? `${delayedTiming.hour.toString().padStart(2, '0')}h${delayedTiming.minute.toString().padStart(2, '0')}`
+                : 'Différée'}
+            </button>
+          </div>
           <div ref={cartItemsListRef} className="cart-items-list">
             {cart.map(item => (
               // Use the memoized CartItemDisplay component
               <CartItemDisplay
-                key={item.id} // Ensure key is unique based on ID + options
+                key={item.id}
                 item={item}
                 tableParam={table}
                 updateQuantity={updateQuantity}
                 removeItem={removeItem}
+                updateComment={updateComment}
               />
             ))}
           </div>
           <div className="cart-summary-row">
             <span className="cart-total-text">Total: {getTotalEurPrice()}&nbsp;€</span>
-            <button onClick={handleCallWaiter} className="call-waiter-button">
+            <button onClick={() => { setWaiterReason(''); setWaiterConfirmed(false); setShowWaiterModal(true); }} className="call-waiter-button">
               Serveur&nbsp;!
             </button>
             <button onClick={handleOrder} className="order-now-button" disabled={orderProcessing}>
               {orderProcessing ? `${orderElapsedSeconds}s` : 'Commandez'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Delayed Order Panel */}
+      <DelayedOrderPanel
+        isOpen={showDelayedPanel}
+        onClose={() => setShowDelayedPanel(false)}
+        onConfirm={(timing) => {
+          setDelayedTiming(timing);
+          setShowDelayedPanel(false);
+          // If a dish was pending (user tapped dish during closed hours), add it now
+          if (pendingDishRef.current) {
+            const { item, options: pendingOptions } = pendingDishRef.current;
+            pendingDishRef.current = null;
+            const dishItem = item as any;
+            let cartItemId = dishItem.id;
+            const cartItemName = dishItem.name;
+            const cartItemPrice = dishItem.price || '0.00';
+            const cartItemDiscount = dishItem.discount ?? 1.0;
+            const itemOptions = pendingOptions || {};
+            if (itemOptions.cuisson) {
+              cartItemId = `${dishItem.id}-${itemOptions.cuisson.toLowerCase().replace(/\s/g, '-')}`;
+            }
+            addItem({
+              id: cartItemId,
+              name: cartItemName,
+              price: cartItemPrice,
+              quantity: 1,
+              options: itemOptions,
+              conversion_rate: menu?.conversion_rate,
+              discount: cartItemDiscount,
+            });
+          }
+        }}
+        cartHasDishes={isKitchenClosed || cart.some(item => item.id.startsWith('dish-'))}
+        currentDay={new Date().getDay()}
+        hasTable={!!table}
+      />
+
+      {/* Call Waiter Modal — two modes: input (centered modal) and confirmed (top strip) */}
+      {showWaiterModal && !waiterConfirmed && (
+        <>
+          <div
+            onClick={() => setShowWaiterModal(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.35)',
+              zIndex: 9998,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 9999,
+              width: 280,
+              borderRadius: 18,
+              overflow: 'hidden',
+              background: 'rgba(255, 252, 248, 0.95)',
+              backdropFilter: 'blur(24px) saturate(1.4)',
+              WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.22), 0 1.5px 4px rgba(0,0,0,0.08)',
+              border: '1px solid rgba(180, 160, 130, 0.25)',
+              colorScheme: 'light',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '14px 16px 10px',
+                borderBottom: '1px solid rgba(180, 160, 130, 0.15)',
+                gap: 7,
+              }}
+            >
+              <span style={{ fontSize: 18 }}>🔔</span>
+              <span
+                style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: '#3a2e1e',
+                }}
+              >
+                Appeler un serveur
+              </span>
+            </div>
+
+            {/* Reason input */}
+            <div style={{ padding: '14px 20px 10px' }}>
+              <input
+                type="text"
+                placeholder="Motif (optionnel)..."
+                maxLength={80}
+                value={waiterReason}
+                onChange={(e) => setWaiterReason(e.target.value)}
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1.5px solid #999',
+                  fontSize: 15,
+                  color: '#000',
+                  background: '#fff',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = '#dc3545'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(220,53,69,0.15)'; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = '#999'; e.currentTarget.style.boxShadow = 'none'; }}
+              />
+            </div>
+
+            {/* Actions: Confirm + red X cancel on same row */}
+            <div style={{ padding: '4px 20px 14px', display: 'flex', gap: 10, alignItems: 'center' }}>
+              <button
+                onClick={() => {
+                  // Check if user has credentials — if yes, direct payment; if no, show strip + banner
+                  const accountName = localStorage.getItem('innopay_accountName');
+                  const activeKey = localStorage.getItem('innopay_activePrivate');
+                  const masterPassword = localStorage.getItem('innopay_masterPassword');
+
+                  if (accountName && (activeKey || masterPassword)) {
+                    // Has credentials — direct payment flow
+                    setShowWaiterModal(false);
+                    handleCallWaiter(waiterReason);
+                  } else {
+                    // No credentials — transform to strip + show wallet banner
+                    setWaiterConfirmed(true);
+                    setIsCallWaiterFlow(true);
+                    setShowWalletNotification(true);
+                    setIsSafariBanner(false);
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 12,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)',
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(220, 53, 69, 0.35)',
+                }}
+              >
+                🔔 Appeler (0.02€)
+              </button>
+              <button
+                onClick={() => setShowWaiterModal(false)}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: '#dc3545',
+                  color: '#fff',
+                  fontSize: 18,
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  boxShadow: '0 2px 6px rgba(220, 53, 69, 0.35)',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Call Waiter — confirmed strip (non-blocking, stays at top) */}
+      {showWaiterModal && waiterConfirmed && (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            top: `${totalFixedHeaderHeight + 8}px`,
+            zIndex: 9997,
+            width: '90%',
+            maxWidth: 400,
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)',
+            color: '#fff',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            boxShadow: '0 4px 20px rgba(220, 53, 69, 0.4)',
+            colorScheme: 'light',
+          }}
+        >
+          <span style={{ fontSize: 20, flexShrink: 0 }}>🔔</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Serveur demandé</div>
+            {waiterReason?.trim() && (
+              <div style={{ fontSize: 12, opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {waiterReason.trim()}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              setShowWaiterModal(false);
+              setWaiterConfirmed(false);
+              setIsCallWaiterFlow(false);
+              setShowWalletNotification(false);
+            }}
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              border: '1.5px solid rgba(255,255,255,0.5)',
+              background: 'transparent',
+              color: '#fff',
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -3188,7 +3442,7 @@ export default function MenuPage() {
                 {openCategories.has(category.id) && (
                   <div className="category-items-grid">
                     {category.items.map((item: FormattedDish) => (
-                      <div key={item.id} className={isKitchenClosed && table ? 'opacity-50' : ''}>
+                      <div key={item.id}>
                         <MenuItem
                           item={item}
                           selectedCuisson={selectedCuisson}
