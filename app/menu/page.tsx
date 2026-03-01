@@ -13,7 +13,7 @@ import MiniWallet, { WalletReopenButton } from '@/components/ui/MiniWallet';
 import Draggable from '@/components/ui/Draggable';
 import BottomBanner from '@/components/ui/BottomBanner';
 import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment } from '@/lib/utils';
-import { isKitchenOpen, getKitchenCloseTime } from '@/lib/config/kitchen-hours';
+import { isKitchenOpen, getKitchenCloseTime, isRestaurantOpen, getNextOpenDay } from '@/lib/config/kitchen-hours';
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
@@ -91,7 +91,10 @@ export default function MenuPage() {
   // Prevents double-click on the guest checkout confirm button (duplicate Stripe sessions)
   const [guestCheckoutProcessing, setGuestCheckoutProcessing] = useState(false);
 
-  // Kitchen closed state — blocks dish orders after hours for dine-in customers
+  // Restaurant / kitchen closed states
+  const [isRestaurantClosed, setIsRestaurantClosed] = useState(false);
+  const [nextOpenInfo, setNextOpenInfo] = useState<{ fr: string; en: string; openTime: string } | null>(null);
+  const [showClosedPopup, setShowClosedPopup] = useState(false);
   const [isKitchenClosed, setIsKitchenClosed] = useState(false);
   const [kitchenCloseTime, setKitchenCloseTime] = useState('21h30');
   const [kitchenClosedBannerMinimized, setKitchenClosedBannerMinimized] = useState(false);
@@ -835,9 +838,13 @@ export default function MenuPage() {
           console.log('Outside meal service - defaulting to drinks');
         }
 
-        // Kitchen closure check using config
+        // Restaurant & kitchen closure checks
         const dayOfWeek = luxDate.getDay(); // 0=Sun, 6=Sat
-        if (!isKitchenOpen(dayOfWeek, totalMinutes)) {
+        if (!isRestaurantOpen(dayOfWeek, totalMinutes)) {
+          setIsRestaurantClosed(true);
+          setNextOpenInfo(getNextOpenDay(dayOfWeek));
+          console.log('Restaurant closed');
+        } else if (!isKitchenOpen(dayOfWeek, totalMinutes)) {
           setIsKitchenClosed(true);
           const closeTime = getKitchenCloseTime(dayOfWeek, totalMinutes);
           setKitchenCloseTime(closeTime || 'fermée');
@@ -1156,6 +1163,13 @@ export default function MenuPage() {
   const handleCallWaiter = useCallback(async (reason?: string) => {
     console.log('[CALL WAITER] Initiating call waiter flow');
 
+    // Restaurant closed — can't call waiter
+    if (isRestaurantClosed) {
+      setShowClosedPopup(true);
+      setShowWaiterModal(false);
+      return;
+    }
+
     // Check if user has wallet credentials in localStorage
     const accountName = localStorage.getItem('innopay_accountName');
     const activeKey = localStorage.getItem('innopay_activePrivate');
@@ -1419,6 +1433,18 @@ export default function MenuPage() {
     if (cart.length === 0) {
       // No items in cart, show alert
       alert('Rien a commander !');
+      return;
+    }
+
+    // Restaurant closed: dishes → auto-delayed, drinks-only → closed popup
+    if (isRestaurantClosed && !delayedTiming) {
+      const hasDishes = cart.some(item => item.id.startsWith('dish-'));
+      if (hasDishes) {
+        setShowDelayedPanel(true);
+        return;
+      }
+      // Drinks-only cart while restaurant is closed
+      setShowClosedPopup(true);
       return;
     }
 
@@ -1829,7 +1855,7 @@ export default function MenuPage() {
         setIsSafariBanner(false); // This is a protocol handler failure, not Safari detection
       }
     }, 3000);
-  }, [cart.length, orderNow, clearCart, walletCredentials]);
+  }, [cart, cart.length, orderNow, clearCart, walletCredentials, isRestaurantClosed, delayedTiming]);
 
   const handleGuestCheckout = useCallback(() => {
     if (cart.length === 0) {
@@ -1855,7 +1881,7 @@ export default function MenuPage() {
     setPendingHiveUrl(hiveOpUrl);
     setFreeNowOpened(false);
     setShowExternalWalletWarning(true);
-  }, [cart.length, orderNow, isCallWaiterFlow, callWaiter]);
+  }, [cart.length, orderNow, isCallWaiterFlow, callWaiter, isRestaurantClosed]);
 
   // Step 2: Actually open the hive:// URL after user confirms
   const proceedWithExternalWallet = useCallback(() => {
@@ -2516,6 +2542,67 @@ export default function MenuPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Restaurant Closed Popup — shown when trying to order drinks outside opening hours */}
+      {showClosedPopup && nextOpenInfo && (
+        <>
+          <div
+            onClick={() => setShowClosedPopup(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.5)',
+              zIndex: 9998,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 9999,
+              width: 300,
+              borderRadius: 18,
+              overflow: 'hidden',
+              background: 'rgba(255, 252, 248, 0.97)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.25)',
+              border: '1px solid rgba(180, 160, 130, 0.25)',
+              padding: '24px 20px',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🚪</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#3a2e1e', marginBottom: 8 }}>
+              Le restaurant est fermé
+            </div>
+            <div style={{ fontSize: 13, color: '#5a4a3a', lineHeight: 1.5, marginBottom: 6 }}>
+              Merci de nous rendre visite à nouveau <strong>{nextOpenInfo.fr}</strong> à partir de <strong>{nextOpenInfo.openTime}</strong>.
+            </div>
+            <div style={{ fontSize: 12, color: '#8b7a6a', lineHeight: 1.5, fontStyle: 'italic', marginBottom: 16 }}>
+              The restaurant is closed. Please visit us again <strong>{nextOpenInfo.en}</strong> from <strong>{nextOpenInfo.openTime}</strong>.
+            </div>
+            <button
+              onClick={() => setShowClosedPopup(false)}
+              style={{
+                padding: '10px 28px',
+                borderRadius: 12,
+                border: 'none',
+                background: 'linear-gradient(135deg, #8b6e4e 0%, #a0845c 100%)',
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(139, 110, 78, 0.35)',
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </>
       )}
 
       {/* Kitchen Closed Banner — dine-in customers after hours */}

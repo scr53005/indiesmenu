@@ -7,7 +7,7 @@ import { getValidTimeSlots } from '@/lib/config/kitchen-hours';
 interface DelayedOrderPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (timing: { type: 'pickup' | 'dinein'; hour: number; minute: number }) => void;
+  onConfirm: (timing: { type: 'pickup' | 'dinein'; hour: number; minute: number; date: string }) => void;
   cartHasDishes: boolean;
   currentDay: number;
   hasTable: boolean;
@@ -42,8 +42,13 @@ export default function DelayedOrderPanel({
 
   const isPickup = orderType === 'pickup';
 
+  // All slots share the same date (getValidTimeSlots returns one day's worth)
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const targetDate = validSlots.length > 0 ? validSlots[0].date : todayStr;
+
   const handleConfirm = () => {
-    onConfirm({ type: orderType, hour: selectedHour, minute: selectedMinute });
+    onConfirm({ type: orderType, hour: selectedHour, minute: selectedMinute, date: targetDate });
   };
 
   return (
@@ -89,16 +94,21 @@ export default function DelayedOrderPanel({
           }}
         >
           <span style={{ fontSize: 18 }}>&#128340;</span>
-          <span
-            style={{
-              fontSize: 15,
-              fontWeight: 700,
-              letterSpacing: '-0.01em',
-              color: '#3a2e1e',
-            }}
-          >
-            Commande différée
-          </span>
+          <div style={{ textAlign: 'center' }}>
+            <span
+              style={{
+                fontSize: 15,
+                fontWeight: 700,
+                letterSpacing: '-0.01em',
+                color: '#3a2e1e',
+              }}
+            >
+              Commande différée
+            </span>
+            <div style={{ fontSize: 12, color: '#8b6e4e', fontWeight: 600, marginTop: 2 }}>
+              {new Date(targetDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </div>
+          </div>
         </div>
 
         {/* ── Toggle Switch ── */}

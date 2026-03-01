@@ -37,9 +37,9 @@ function getEnvLabel(account: string): 'prod' | 'dev' {
 
 export async function POST() {
   const merchantHubUrl = getMerchantHubUrl().replace(/\/$/, '');
-  const consumerId = `sync-${Date.now()}`;
   const environmentAccount = getEnvironmentAccount();
   const env = getEnvLabel(environmentAccount);
+  const consumerId = `sync-${env}`; // stable ID per environment (avoids orphan consumers)
 
   console.warn(`[SYNC] Environment account: ${environmentAccount}, env: ${env}`);
 
@@ -75,9 +75,10 @@ export async function POST() {
       try {
         // Filter by environment: only process transfers for our environment's account
         if (transfer.to_account !== environmentAccount) {
-          // console.warn(`[SYNC] Filtered out transfer ${transfer.id} (to_account: ${transfer.to_account}, expected: ${environmentAccount})`);
           filteredCount++;
-          // Do NOT ACK — another environment's consumer needs this transfer
+          // ACK anyway — each env has its own consumer group, so this message
+          // will never be relevant to us and would otherwise loop via XAUTOCLAIM
+          messagesToAck.push(transfer.messageId);
           continue;
         }
 

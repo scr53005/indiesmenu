@@ -119,27 +119,44 @@ export function decodeComment(encoded: string): string {
 }
 
 // ============================================================================
-// ORDER TIMING EXTRACTION (P@HHhMM = takeaway, T@HHhMM = dine-in)
+// ORDER TIMING EXTRACTION
+//   New format: P@2026-03-02@12h30 (with date)
+//   Legacy format: P@12h30 (same-day, no date — backwards compatible)
 // ============================================================================
 
 export interface OrderTiming {
   type: 'pickup' | 'dinein';
   time: string; // e.g., '12h30'
+  date: string | null; // ISO date YYYY-MM-DD, null for legacy memos
 }
 
-const ORDER_TIMING_REGEX = /\s*([PT])@(\d{2}h\d{2})/;
+// New format with date: P@2026-03-02@12h30
+const ORDER_TIMING_REGEX_NEW = /\s*([PT])@(\d{4}-\d{2}-\d{2})@(\d{2}h\d{2})/;
+// Legacy format without date: P@12h30
+const ORDER_TIMING_REGEX_LEGACY = /\s*([PT])@(\d{2}h\d{2})/;
 
 /**
  * Extract order timing from a memo string.
- * P@12h30 = pickup/takeaway, T@12h30 = dine-in
+ * Supports both new (with date) and legacy (time-only) formats.
  */
 export function getOrderTiming(memo: string): OrderTiming | null {
-  const match = memo.match(ORDER_TIMING_REGEX);
-  if (!match) return null;
-  return {
-    type: match[1] === 'P' ? 'pickup' : 'dinein',
-    time: match[2],
-  };
+  const newMatch = memo.match(ORDER_TIMING_REGEX_NEW);
+  if (newMatch) {
+    return {
+      type: newMatch[1] === 'P' ? 'pickup' : 'dinein',
+      date: newMatch[2],
+      time: newMatch[3],
+    };
+  }
+  const legacyMatch = memo.match(ORDER_TIMING_REGEX_LEGACY);
+  if (legacyMatch) {
+    return {
+      type: legacyMatch[1] === 'P' ? 'pickup' : 'dinein',
+      date: null,
+      time: legacyMatch[2],
+    };
+  }
+  return null;
 }
 
 // Helper for option short codes for memo
@@ -353,8 +370,8 @@ export type HydratedOrderLine =
 export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderLine[] {
   let orderContent = rawMemo;
 
-  // Strip order timing token (P@HHhMM or T@HHhMM) before parsing items
-  orderContent = orderContent.replace(ORDER_TIMING_REGEX, '').trim();
+  // Strip order timing token (P@YYYY-MM-DD@HHhMM or legacy P@HHhMM) before parsing items
+  orderContent = orderContent.replace(ORDER_TIMING_REGEX_NEW, '').replace(ORDER_TIMING_REGEX_LEGACY, '').trim();
 
   const tableIndex = orderContent.lastIndexOf('TABLE ');
   if (tableIndex !== -1) {

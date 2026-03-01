@@ -20,6 +20,7 @@ export interface DelayedTiming {
   type: 'pickup' | 'dinein';  // P@ or T@
   hour: number;
   minute: number;
+  date: string; // ISO date YYYY-MM-DD
 }
 
 interface CartContextType {
@@ -235,12 +236,13 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     dehydratedItemsString = dehydratedItemsString.endsWith(';') ? dehydratedItemsString : dehydratedItemsString + ';';
 
     // Insert timing token if delayed ordering is set
+    // Format: P@YYYY-MM-DD@HHhMM or T@YYYY-MM-DD@HHhMM
     let timingToken = '';
     if (delayedTiming) {
       const prefix = delayedTiming.type === 'pickup' ? 'P' : 'T';
       const hh = delayedTiming.hour.toString().padStart(2, '0');
       const mm = delayedTiming.minute.toString().padStart(2, '0');
-      timingToken = ` ${prefix}@${hh}h${mm}`;
+      timingToken = ` ${prefix}@${delayedTiming.date}@${hh}h${mm}`;
     }
 
     const memoWithTableInfo = dehydratedItemsString + timingToken + (tableState ? ` TABLE ${tableState} ` : ' No table specified ');

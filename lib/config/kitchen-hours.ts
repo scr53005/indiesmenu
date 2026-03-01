@@ -1,4 +1,4 @@
-// Kitchen hours configuration for Indies Cafe
+// Kitchen & restaurant hours configuration for Indies Cafe
 // Will be refactored to DB-driven per-spoke in a later iteration
 
 export interface ServiceWindow {
@@ -21,6 +21,46 @@ export const KITCHEN_SCHEDULE: Record<number, DaySchedule> = {
   5: { lunch: { open: 690, close: 870 }, dinner: { open: 1110, close: 1290 } }, // Fri
   6: { lunch: { open: 690, close: 870 }, dinner: { open: 1110, close: 1320 } }, // Sat: 11h30-14h30, 18h30-22h00
 };
+
+// Restaurant opening hours (bar + service, independent of kitchen)
+// null = closed all day
+export const RESTAURANT_HOURS: Record<number, ServiceWindow | null> = {
+  0: null,                          // Sunday: closed
+  1: { open: 600, close: 1439 },    // Mon: 10:00-23:59
+  2: { open: 600, close: 1439 },    // Tue
+  3: { open: 600, close: 1439 },    // Wed
+  4: { open: 600, close: 1439 },    // Thu
+  5: { open: 600, close: 1439 },    // Fri
+  6: { open: 600, close: 1439 },    // Sat
+};
+
+/** Check if the restaurant is open at a given time on a given day */
+export function isRestaurantOpen(dayOfWeek: number, totalMinutes: number): boolean {
+  const hours = RESTAURANT_HOURS[dayOfWeek];
+  if (!hours) return false;
+  return totalMinutes >= hours.open && totalMinutes <= hours.close;
+}
+
+/** Get the next day the restaurant is open (name in FR and EN), plus opening time.
+ *  Returns e.g. { fr: 'demain', en: 'tomorrow' } or { fr: 'lundi', en: 'Monday' }. */
+export function getNextOpenDay(dayOfWeek: number): { fr: string; en: string; openTime: string } {
+  const frDays = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+  const enDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  for (let offset = 1; offset <= 7; offset++) {
+    const nextDay = (dayOfWeek + offset) % 7;
+    const hours = RESTAURANT_HOURS[nextDay];
+    if (hours) {
+      const h = Math.floor(hours.open / 60);
+      const m = hours.open % 60;
+      const openTime = `${h}h${m.toString().padStart(2, '0')}`;
+      const fr = offset === 1 ? 'demain' : frDays[nextDay];
+      const en = offset === 1 ? 'tomorrow' : enDays[nextDay];
+      return { fr, en, openTime };
+    }
+  }
+  return { fr: 'bientôt', en: 'soon', openTime: '10h00' };
+}
 
 /** Check if the kitchen is open at a given time on a given day */
 export function isKitchenOpen(dayOfWeek: number, totalMinutes: number): boolean {
@@ -51,38 +91,64 @@ export function getKitchenCloseTime(dayOfWeek: number, totalMinutes: number): st
   return null;
 }
 
-/** Get all valid FUTURE time slots (5-min increments) for a given day.
- *  Only returns slots that are at least 10 minutes in the future.
+export interface TimeSlot {
+  hour: number;
+  minute: number;
+  /** ISO date string (YYYY-MM-DD) for which day this slot belongs to */
+  date: string;
+}
+
+/** Get all valid FUTURE time slots (5-min increments).
+ *  If no slots remain today, advances to the next open day (up to 7 days ahead).
  *  If requireKitchen=true, only returns slots within kitchen service windows.
- *  If requireKitchen=false (drinks-only), returns all hours 8h-23h. */
-export function getValidTimeSlots(dayOfWeek: number, requireKitchen: boolean): { hour: number; minute: number }[] {
+ *  If requireKitchen=false (drinks-only), returns slots within restaurant opening hours.
+ *  Each slot includes the target date so cross-day scheduling works correctly. */
+export function getValidTimeSlots(dayOfWeek: number, requireKitchen: boolean): TimeSlot[] {
   const now = new Date();
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const minFutureMinutes = nowMinutes + 10; // at least 10 min from now
 
-  const slots: { hour: number; minute: number }[] = [];
+  // Try today first, then advance up to 6 more days to find the next open day
+  for (let offset = 0; offset < 7; offset++) {
+    const targetDay = (dayOfWeek + offset) % 7;
+    const targetDate = new Date(now);
+    targetDate.setDate(targetDate.getDate() + offset);
+    // Use local date components (not UTC) to avoid timezone shift at midnight
+    const dateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
 
-  if (!requireKitchen) {
-    for (let h = 8; h <= 23; h++) {
-      for (let m = 0; m < 60; m += 5) {
-        if (h * 60 + m >= minFutureMinutes) {
-          slots.push({ hour: h, minute: m });
+    // Only apply the "future" filter on the current day (offset=0)
+    const minMinutes = offset === 0 ? nowMinutes + 10 : 0;
+
+    // Restaurant must be open on this day for any slots
+    const restHours = RESTAURANT_HOURS[targetDay];
+    if (!restHours) continue; // e.g. Sunday — skip
+
+    const slots: TimeSlot[] = [];
+
+    if (!requireKitchen) {
+      // Drinks: any time within restaurant opening hours
+      for (let mins = restHours.open; mins <= restHours.close; mins += 5) {
+        if (mins >= minMinutes) {
+          slots.push({ hour: Math.floor(mins / 60), minute: mins % 60, date: dateStr });
+        }
+      }
+      if (slots.length > 0) return slots;
+      continue;
+    }
+
+    const schedule = KITCHEN_SCHEDULE[targetDay];
+    if (!schedule) continue;
+
+    for (const window of [schedule.lunch, schedule.dinner]) {
+      if (!window) continue;
+      for (let mins = window.open; mins < window.close; mins += 5) {
+        if (mins >= minMinutes) {
+          slots.push({ hour: Math.floor(mins / 60), minute: mins % 60, date: dateStr });
         }
       }
     }
-    return slots;
+
+    if (slots.length > 0) return slots;
   }
 
-  const schedule = KITCHEN_SCHEDULE[dayOfWeek];
-  if (!schedule) return []; // Sunday — no kitchen slots
-
-  for (const window of [schedule.lunch, schedule.dinner]) {
-    if (!window) continue;
-    for (let mins = window.open; mins < window.close; mins += 5) {
-      if (mins >= minFutureMinutes) {
-        slots.push({ hour: Math.floor(mins / 60), minute: mins % 60 });
-      }
-    }
-  }
-  return slots;
+  return [];
 }

@@ -13,6 +13,18 @@ const lato = Lato({
   subsets: ['latin'],
 });
 
+const FR_MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jui', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+/** Format ISO date "2026-03-02" as "02-Mar" */
+function formatDateShortFr(isoDate: string): string {
+  const [, m, d] = isoDate.split('-');
+  return `${d}-${FR_MONTHS[parseInt(m, 10) - 1]}`;
+}
+/** Local today as YYYY-MM-DD (avoids UTC shift from toISOString) */
+function localToday(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+
 interface Transfer {
   id: string;
   from_account: string;
@@ -262,20 +274,32 @@ export default function CurrentOrdersPage() {
   // Split orders into immediate vs delayed based on timing token
   const { immediateOrders, delayedOrders } = useMemo(() => {
     const immediate: GroupedOrder[] = [];
-    const delayed: (GroupedOrder & { timing: OrderTiming; targetMinutes: number })[] = [];
+    const delayed: (GroupedOrder & { timing: OrderTiming; targetMs: number })[] = [];
 
     groupedOrders.forEach(order => {
       const timing = getOrderTiming(order.memo);
       if (timing) {
         const [h, m] = timing.time.split('h').map(Number);
-        const targetMinutes = h * 60 + m;
         const now = new Date();
-        const nowMinutes = now.getHours() * 60 + now.getMinutes();
-        // Promote to immediate if within 30 minutes of target
-        if (targetMinutes - nowMinutes <= 30) {
+
+        // Build full target datetime
+        let target: Date;
+        if (timing.date) {
+          // New format with date: P@2026-03-02@12h30
+          const [y, mo, d] = timing.date.split('-').map(Number);
+          target = new Date(y, mo - 1, d, h, m, 0);
+        } else {
+          // Legacy format (same-day assumption): P@12h30
+          target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+        }
+
+        const diffMinutes = (target.getTime() - now.getTime()) / 60000;
+
+        // Promote to immediate if within 30 minutes of target (or past)
+        if (diffMinutes <= 30) {
           immediate.push(order);
         } else {
-          delayed.push({ ...order, timing, targetMinutes });
+          delayed.push({ ...order, timing, targetMs: target.getTime() });
         }
       } else {
         immediate.push(order);
@@ -283,7 +307,7 @@ export default function CurrentOrdersPage() {
     });
 
     // Sort delayed by target time ascending (soonest on top)
-    delayed.sort((a, b) => a.targetMinutes - b.targetMinutes);
+    delayed.sort((a, b) => a.targetMs - b.targetMs);
 
     return { immediateOrders: immediate, delayedOrders: delayed };
   }, [groupedOrders]);
@@ -340,10 +364,15 @@ export default function CurrentOrdersPage() {
         const timing = getOrderTiming(tx.memo);
         if (!timing) return true; // No timing = immediate
         const [h, m] = timing.time.split('h').map(Number);
-        const targetMinutes = h * 60 + m;
         const now = new Date();
-        const nowMinutes = now.getHours() * 60 + now.getMinutes();
-        return targetMinutes - nowMinutes <= 30;
+        let target: Date;
+        if (timing.date) {
+          const [y, mo, d] = timing.date.split('-').map(Number);
+          target = new Date(y, mo - 1, d, h, m, 0);
+        } else {
+          target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+        }
+        return (target.getTime() - now.getTime()) / 60000 <= 30;
       });
 
       if (newImmediateTransfers.length > 0) {
@@ -527,19 +556,17 @@ export default function CurrentOrdersPage() {
             <div className="orders-delayed">
               <div className="delayed-header">⏳ En attente ({delayedOrders.length})</div>
               {delayedOrders.map(delayedOrder => {
-                const { memo, primaryTransfer, allTransferIds, timing, targetMinutes } = delayedOrder;
+                const { memo, primaryTransfer, allTransferIds, timing, targetMs } = delayedOrder;
                 const transfer = primaryTransfer;
                 const isPickup = timing.type === 'pickup';
                 const table = getTable(memo);
-                const now = new Date();
-                const nowMinutes = now.getHours() * 60 + now.getMinutes();
-                const minutesUntil = targetMinutes - nowMinutes;
+                const minutesUntil = Math.round((targetMs - Date.now()) / 60000);
 
                 return (
                   <div key={primaryTransfer.id} className={`delayed-card ${isPickup ? 'delayed-pickup' : 'delayed-dinein'}`}>
                     <div className="delayed-card-header">
-                      <span className="delayed-time-badge">{isPickup ? '📦' : '🍽️'} {timing.time}</span>
-                      <span className="delayed-countdown">{minutesUntil > 0 ? `${minutesUntil}min` : 'bientôt'}</span>
+                      <span className="delayed-time-badge">{isPickup ? '📦' : '🍽️'} {timing.date && timing.date !== localToday() ? formatDateShortFr(timing.date) + ' ' : ''}{timing.time}</span>
+                      <span className="delayed-countdown">{minutesUntil <= 0 ? 'bientôt' : minutesUntil < 120 ? `${minutesUntil}min` : minutesUntil < 1440 ? `${Math.round(minutesUntil / 60)}h` : `${Math.round(minutesUntil / 1440)}j`}</span>
                     </div>
                     <div className="delayed-type">{isPickup ? 'À emporter' : 'Sur place'}</div>
                     <div className="delayed-items">
