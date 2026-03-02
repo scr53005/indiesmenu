@@ -207,15 +207,17 @@ export default function CurrentOrdersPage() {
       if (memoPrefix.includes('appel')) isCallWaiter = true;
       const orderContent = tableIndex !== -1 ? tx.memo.substring(0, tableIndex).trim() : (tx.memo || '');
 
+      // Single hydration path for all memo types (orders and call-waiter)
+      // hydrateMemo handles non-codified memos (like call-waiter) as raw with n: decoding
       if (tx.parsedMemo) {
         try {
           parsedMemo = typeof tx.parsedMemo === 'string' ? JSON.parse(tx.parsedMemo) : tx.parsedMemo;
         } catch {
-          if (menuData && !isCallWaiter) {
+          if (menuData) {
             try { parsedMemo = hydrateMemo(orderContent, menuData); } catch { parsedMemo = [{ type: 'raw', content: orderContent }]; }
           } else { parsedMemo = [{ type: 'raw', content: orderContent }]; }
         }
-      } else if (menuData && !isCallWaiter) {
+      } else if (menuData) {
         try { parsedMemo = hydrateMemo(orderContent, menuData); } catch { parsedMemo = [{ type: 'raw', content: orderContent }]; }
       } else { parsedMemo = [{ type: 'raw', content: orderContent }]; }
 
@@ -493,11 +495,25 @@ export default function CurrentOrdersPage() {
                 const { memo, primaryTransfer, hbdTransfer, allTransferIds } = groupedOrder;
                 const transfer = primaryTransfer;
                 const now = new Date();
-                const receivedTime = new Date(transfer.received_at);
-                const timeDiffSeconds = (now.getTime() - receivedTime.getTime()) / 1000;
-                const isLate = timeDiffSeconds > 600;
                 const { date, time } = formatDateTime(transfer.received_at);
                 const timing = getOrderTiming(memo);
+
+                // For delayed orders: baseline is the target time, not received_at
+                let isLate = false;
+                if (timing?.time) {
+                  const [th, tm] = timing.time.split('h').map(Number);
+                  let target: Date;
+                  if (timing.date) {
+                    const [y, mo, d] = timing.date.split('-').map(Number);
+                    target = new Date(y, mo - 1, d, th, tm, 0);
+                  } else {
+                    target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), th, tm, 0);
+                  }
+                  isLate = (now.getTime() - target.getTime()) / 1000 > 600;
+                } else {
+                  const receivedTime = new Date(transfer.received_at);
+                  isLate = (now.getTime() - receivedTime.getTime()) / 1000 > 600;
+                }
 
                 return (
                   <li key={primaryTransfer.id} className={transfer.isCallWaiter ? 'call-waiter-item' : (isLate ? 'late-order-card' : '')}>

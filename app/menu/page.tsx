@@ -154,6 +154,33 @@ export default function MenuPage() {
   const [flow7Success, setFlow7Success] = useState(false); // pay_with_topup
   const [waiterCalledSuccess, setWaiterCalledSuccess] = useState(false); // call_waiter
 
+  // Flow 6 cooldown: prevent ordering before blockchain finalizes previous payment
+  const [flow6Cooldown, setFlow6Cooldown] = useState(0); // seconds remaining
+  const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check and tick Flow 6 cooldown
+  useEffect(() => {
+    const tick = () => {
+      const cooldownUntil = localStorage.getItem('innopay_flow6_cooldown_until');
+      if (cooldownUntil) {
+        const remaining = Math.ceil((parseInt(cooldownUntil) - Date.now()) / 1000);
+        if (remaining > 0) {
+          setFlow6Cooldown(remaining);
+        } else {
+          localStorage.removeItem('innopay_flow6_cooldown_until');
+          setFlow6Cooldown(0);
+          refetchBalance();
+          if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+        }
+      } else {
+        setFlow6Cooldown(0);
+      }
+    };
+    tick();
+    cooldownTimerRef.current = setInterval(tick, 1000);
+    return () => { if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current); };
+  }, [refetchBalance]);
+
   // State for import account modal (email verification system)
   const [showImportModal, setShowImportModal] = useState(false);
 
@@ -227,6 +254,10 @@ export default function MenuPage() {
       // DON'T clear cart yet - wait for blockchain confirmation
       // Remove query params from URL while preserving table
       cleanUrlPreservingTable('PAYMENT SUCCESS CHECK');
+    } else if (paymentStatus === 'cancelled') {
+      // User cancelled at Stripe checkout - clean URL and let them try again
+      console.log('[PAYMENT CANCELLED] User cancelled at Stripe, cleaning URL');
+      cleanUrlPreservingTable('PAYMENT CANCELLED');
     } else {
       console.log('[PAYMENT SUCCESS CHECK] No success payment detected');
     }
@@ -1470,6 +1501,12 @@ export default function MenuPage() {
       // ═════════════════════════════════════════════════════════════════════════
       console.log('[WALLET PAYMENT] Customer has credentials, initiating EURO token payment');
 
+      // Block during Flow 6 cooldown (blockchain hasn't finalized yet)
+      if (flow6Cooldown > 0) {
+        console.log('[WALLET PAYMENT] Blocked — Flow 6 cooldown active:', flow6Cooldown, 's remaining');
+        return;
+      }
+
       // Start timer
       setOrderProcessing(true);
       setOrderElapsedSeconds(0);
@@ -1707,9 +1744,9 @@ export default function MenuPage() {
         localStorage.setItem('innopay_lastBalance_timestamp', Date.now().toString());
         console.log('[WALLET PAYMENT] Updated localStorage balance optimistically:', newBalance.toFixed(2));
 
-        // Force immediate fresh balance fetch from blockchain
-        console.log('[WALLET PAYMENT] Triggering fresh balance fetch from blockchain...');
-        refetchBalance();
+        // Balance will be refreshed from blockchain after the 12s cooldown expires
+        // (the trust window prevents premature fetches that would return stale data)
+        console.log('[WALLET PAYMENT] Balance refresh deferred — trust window active for 12s');
 
         // 7. Call innopay API to execute HBD/EURO transfer to restaurant
         const innopayUrl = getInnopayUrl();
@@ -1770,9 +1807,16 @@ export default function MenuPage() {
           localStorage.removeItem('innopay_flow_pending');
         }
 
+        // Set Flow 6 cooldown: prevent next Flow 6 for 12 seconds
+        // Hive block time 3s + Hive-Engine indexing 3-10s = balance not queryable yet
+        const FLOW6_COOLDOWN_MS = 12000;
+        const cooldownUntil = Date.now() + FLOW6_COOLDOWN_MS;
+        localStorage.setItem('innopay_balance_trustUntil', cooldownUntil.toString());
+        localStorage.setItem('innopay_flow6_cooldown_until', cooldownUntil.toString());
+        console.log('[FLOW 6] Cooldown set for 12s — blockchain needs time to finalize');
+
         // Show unified order success banner (replaced alert for consistency with other flows)
         setFlow6Success(true);
-        // alert('Commande envoyée avec succès!'); // OLD: Replaced with unified banner
 
       } catch (error: any) {
         console.error('[WALLET PAYMENT] Error:', error);
@@ -2261,6 +2305,10 @@ export default function MenuPage() {
       console.log('Fetching from:', `${innopayUrl}/api/checkout/guest`);
       console.log('Request body:', { amountEuro: amountEuroWithFee, recipient: 'indies.cafe', memo: customMemo, returnUrl });
 
+      // Timeout after 30 seconds to avoid infinite spinner
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
       const response = await fetch(`${innopayUrl}/api/checkout/guest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2269,8 +2317,10 @@ export default function MenuPage() {
           recipient: 'indies.cafe',
           memo: customMemo,
           returnUrl
-        })
+        }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       console.log('Response status:', response.status);
       console.log('Response ok:', response.ok);
@@ -2297,9 +2347,11 @@ export default function MenuPage() {
 
       setGuestCheckoutProcessing(false); // Re-enable button on error
       setShowGuestWarningModal(false); // Close modal so user can retry
-      // Show detailed error in alert for debugging in production
-      const errorDetails = error.message || 'Unknown error';
-      alert(`Erreur lors de la création de la session de paiement.\n\nDétails: ${errorDetails}\n\nVeuillez réessayer ou contacter le support.`);
+      const isTimeout = error instanceof DOMException && error.name === 'AbortError';
+      const errorDetails = isTimeout
+        ? 'Le processeur de paiements ne répond pas.'
+        : (error.message || 'Erreur inconnue');
+      alert(`${errorDetails}\n\nVeuillez réessayer ou contacter contact@innopay.lu`);
     }
   }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table, guestCheckoutProcessing, isCallWaiterFlow, waiterReason]);
 
@@ -3203,8 +3255,8 @@ export default function MenuPage() {
             <button onClick={() => { setWaiterReason(''); setWaiterConfirmed(false); setShowWaiterModal(true); }} className="call-waiter-button">
               Serveur&nbsp;!
             </button>
-            <button onClick={handleOrder} className="order-now-button" disabled={orderProcessing}>
-              {orderProcessing ? `${orderElapsedSeconds}s` : 'Commandez'}
+            <button onClick={handleOrder} className="order-now-button" disabled={orderProcessing || flow6Cooldown > 0}>
+              {flow6Cooldown > 0 ? `Solde... ${flow6Cooldown}s` : orderProcessing ? `${orderElapsedSeconds}s` : 'Commandez'}
             </button>
           </div>
         </div>

@@ -383,9 +383,19 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
   // Pattern matches 'd:X' (dish) or 'b:X' (beverage/drink)
   // Single-item orders (like "d:7") don't have semicolons, so we only check for the pattern
   if (!/(?:d:\d+|b:\d+)/.test(orderContent)) {
-    // If not a codified memo, return it as a single 'raw' item
-    console.log(`[HYDRATE] Not a codified memo, treating as raw: '${orderContent}'`);
-    return [{ type: 'raw', content: orderContent }];
+    // Not a codified memo (e.g., call-waiter "Un serveur est appelé n:BASE64")
+    // Decode any n:BASE64 comment token before returning as raw
+    const noteMatch = orderContent.match(/\s*n:([A-Za-z0-9+/=%]+)/);
+    let displayContent = orderContent;
+    if (noteMatch) {
+      const decoded = decodeComment(noteMatch[1]);
+      displayContent = orderContent.replace(noteMatch[0], '').trim();
+      if (decoded) displayContent += ` — ${decoded}`;
+    }
+    // Strip any distriate suffix for display
+    displayContent = displayContent.replace(/\s*\w{3}-inno-[a-z0-9]{4}-[a-z0-9]{4}\s*$/, '').trim();
+    console.log(`[HYDRATE] Not a codified memo, treating as raw: '${displayContent}'`);
+    return [{ type: 'raw', content: displayContent }];
   }
 
   const itemStrings = orderContent.split(';').filter(s => s.trim() !== '');
