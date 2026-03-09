@@ -437,7 +437,11 @@ export default function CurrentOrdersPage() {
       for (const transferId of allTransferIds) {
         const res = await fetch(`/api/fulfill`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: transferId }) });
         // 404 = already fulfilled or not in local DB (e.g. grouped EURO transfer) — not an error
-        if (!res.ok && res.status !== 404) throw new Error(`Failed to fulfill transfer ${transferId}`);
+        if (!res.ok && res.status !== 404) {
+          console.warn(`[FULFILL] Unexpected response ${res.status} for transfer ${transferId}`);
+          toast.warn('La réponse du serveur est inattendue, il s\'agit probablement d\'une erreur temporaire, veuillez attendre quelques secondes et réessayer', { autoClose: 8000 });
+          return;
+        }
         const intervalId = reminderIntervalsRef.current.get(transferId);
         if (intervalId) { clearInterval(intervalId); reminderIntervalsRef.current.delete(transferId); }
       }

@@ -509,3 +509,84 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
 
   return hydratedParts;
 }
+
+/**
+ * Extracts the "fixed part" of an order memo by stripping the two random
+ * distriate tokens (xxxx-yyyy = 9 chars) from the end.
+ * Keeps items, table, timing, and the tag prefix (e.g., "kcs-inno-").
+ *
+ * Example: "d:28; TABLE 320  kcs-inno-wb9e-a9qm" → "d:28; TABLE 320  kcs-inno-"
+ *
+ * Returns the memo unchanged if too short to contain a distriate suffix.
+ */
+export function getMemoFixedPart(memo: string | null | undefined): string {
+  try {
+    if (!memo) return '';
+    if (memo.length < 10) return memo;
+    return memo.slice(0, -9);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Checks whether the current memo looks like a duplicate of the most recent order.
+ * Compares the fixed part (sans random distriate tokens) against localStorage.
+ * Returns true if duplicate detected (same fixed memo within 15 minutes).
+ *
+ * Side effect: stores current memo + timestamp in localStorage when NOT a duplicate.
+ */
+export function checkDuplicateMemo(currentMemo: string): boolean {
+  try {
+    const currentFixed = getMemoFixedPart(currentMemo);
+    const storedFixed = localStorage.getItem('innopay_latestMemoContent');
+    const storedTime = localStorage.getItem('innopay_latestMemoDateTime');
+
+    console.log('[DEDUP L2] Checking memo — current fixed:', currentFixed.substring(0, 40) + '...');
+    console.log('[DEDUP L2] Stored fixed:', storedFixed?.substring(0, 40) ?? '(none)', '| storedTime:', storedTime);
+
+    // Different memo or no stored memo → store and proceed
+    if (!storedFixed || storedFixed !== currentFixed) {
+      console.log('[DEDUP L2] Memo differs or no stored memo — proceeding');
+      localStorage.setItem('innopay_latestMemoContent', currentFixed);
+      localStorage.setItem('innopay_latestMemoDateTime', String(Date.now()));
+      return false;
+    }
+
+    // Same memo but no timestamp → proceed
+    if (!storedTime) {
+      console.log('[DEDUP L2] Same memo but no timestamp — proceeding');
+      localStorage.setItem('innopay_latestMemoDateTime', String(Date.now()));
+      return false;
+    }
+
+    // Same memo within 15 minutes → duplicate
+    const elapsed = Date.now() - Number(storedTime);
+    console.log('[DEDUP L2] Same memo, elapsed:', Math.round(elapsed / 1000), 's');
+    if (elapsed < 15 * 60 * 1000) {
+      console.warn('[DEDUP L2] DUPLICATE DETECTED — elapsed', Math.round(elapsed / 1000), 's < 900s');
+      return true;
+    }
+
+    // Same memo but older than 15 minutes → store fresh timestamp, proceed
+    console.log('[DEDUP L2] Same memo but stale (>15min) — proceeding');
+    localStorage.setItem('innopay_latestMemoDateTime', String(Date.now()));
+    return false;
+  } catch (err) {
+    console.warn('[DEDUP L2] Error in checkDuplicateMemo, triggering modal to be safe:', err);
+    return true;
+  }
+}
+
+/**
+ * Stores memo + timestamp in localStorage. Called before the API call
+ * when the user proceeds despite a duplicate warning ("Pas grave").
+ */
+export function storeMemoBeforeOrder(currentMemo: string): void {
+  try {
+    localStorage.setItem('innopay_latestMemoContent', getMemoFixedPart(currentMemo));
+    localStorage.setItem('innopay_latestMemoDateTime', String(Date.now()));
+  } catch {
+    // Silent — localStorage may be unavailable
+  }
+}

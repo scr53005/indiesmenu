@@ -12,7 +12,7 @@ import WalletNotificationBanner from '@/components/menu/WalletNotificationBanner
 import MiniWallet, { WalletReopenButton } from '@/components/ui/MiniWallet';
 import Draggable from '@/components/ui/Draggable';
 import BottomBanner from '@/components/ui/BottomBanner';
-import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment } from '@/lib/utils';
+import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart } from '@/lib/utils';
 import { isKitchenOpen, getKitchenCloseTime, isRestaurantOpen, getNextOpenDay } from '@/lib/config/kitchen-hours';
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
@@ -90,6 +90,8 @@ export default function MenuPage() {
   const [guestCheckoutStarted, setGuestCheckoutStarted] = useState(false);
   // Prevents double-click on the guest checkout confirm button (duplicate Stripe sessions)
   const [guestCheckoutProcessing, setGuestCheckoutProcessing] = useState(false);
+  const [guestCheckoutSeconds, setGuestCheckoutSeconds] = useState(0);
+  const guestCheckoutTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Restaurant / kitchen closed states
   const [isRestaurantClosed, setIsRestaurantClosed] = useState(false);
@@ -201,6 +203,16 @@ export default function MenuPage() {
     euroBalance: number;
   }>>([]);
 
+  // State for duplicate order prevention modal
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const skipDuplicateCheckRef = useRef(false);
+
+  // State for post-order MiniWallet pulsing (Level 3 guardrail)
+  // Persistent: survives page refreshes via localStorage keys:
+  //   innopay_latestMemoContent, innopay_latestMemoDateTime, innopay_fulfilledDetectedAt
+  const [walletPulseState, setWalletPulseState] = useState<'none' | 'blue' | 'green' | 'green-slow' | 'green-solid' | 'red'>('none');
+  const pulseIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   // State for order processing timer
   const [orderProcessing, setOrderProcessing] = useState(false);
   const [orderElapsedSeconds, setOrderElapsedSeconds] = useState(0);
@@ -235,8 +247,115 @@ export default function MenuPage() {
       if (orderTimerRef.current) {
         clearInterval(orderTimerRef.current);
       }
+      if (pulseIntervalRef.current) {
+        clearInterval(pulseIntervalRef.current);
+      }
+      if (guestCheckoutTimerRef.current) {
+        clearInterval(guestCheckoutTimerRef.current);
+      }
     };
   }, []);
+
+  // Persistent pulsing state machine — polls spoke DB every 60s while innopay_latestMemoContent exists
+  // State transitions:
+  //   No transfer:   age<20m→BLUE, 20m-2h→RED, >2h→cleanup
+  //   Unfulfilled:   age<20m→GREEN, 20-30m→GREEN-SLOW, 30m-2h→RED, >2h→cleanup
+  //   Fulfilled:     SOLID GREEN for 10min from detection, then cleanup
+  const pulseCheck = useCallback(async () => {
+    const memoPrefix = localStorage.getItem('innopay_latestMemoContent');
+    const orderTime = parseInt(localStorage.getItem('innopay_latestMemoDateTime') || '0');
+    if (!memoPrefix || !orderTime) {
+      setWalletPulseState('none');
+      return;
+    }
+
+    const ageMs = Date.now() - orderTime;
+    const ageMin = ageMs / 60_000;
+    const TWO_HOURS = 120;
+
+    // Check if already in fulfilled-detected state (solid green for 10 min)
+    const fulfilledAt = parseInt(localStorage.getItem('innopay_fulfilledDetectedAt') || '0');
+    if (fulfilledAt > 0) {
+      const sinceDetected = (Date.now() - fulfilledAt) / 60_000;
+      if (sinceDetected < 10) {
+        setWalletPulseState('green-solid');
+        return;
+      }
+      // 10 min elapsed — cleanup
+      localStorage.removeItem('innopay_latestMemoContent');
+      localStorage.removeItem('innopay_latestMemoDateTime');
+      localStorage.removeItem('innopay_fulfilledDetectedAt');
+      setWalletPulseState('none');
+      return;
+    }
+
+    // Auto-cleanup after 2h regardless
+    if (ageMin > TWO_HOURS) {
+      localStorage.removeItem('innopay_latestMemoContent');
+      localStorage.removeItem('innopay_latestMemoDateTime');
+      setWalletPulseState('none');
+      return;
+    }
+
+    // Query spoke DB via check-mine
+    try {
+      const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(); // 3h window
+      const res = await fetch(`/api/transfers/check-mine?memo_prefix=${encodeURIComponent(memoPrefix)}&since=${since}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (!data.found) {
+        // No transfer in DB yet
+        setWalletPulseState(ageMin < 20 ? 'blue' : 'red');
+        return;
+      }
+
+      if (data.fulfilled) {
+        // Just detected fulfillment — start 10-min solid green window
+        localStorage.setItem('innopay_fulfilledDetectedAt', Date.now().toString());
+        setWalletPulseState('green-solid');
+        return;
+      }
+
+      // Unfulfilled — kitchen has it
+      if (ageMin < 20) {
+        setWalletPulseState('green');
+      } else if (ageMin < 30) {
+        setWalletPulseState('green-slow');
+      } else {
+        setWalletPulseState('red');
+      }
+    } catch (err) {
+      // Silent — keep current state on network error
+    }
+  }, []);
+
+  // Start pulse polling on mount (persists across refreshes) and every 60s
+  useEffect(() => {
+    // Initial check after 9s (give blockchain time on fresh orders)
+    const initialDelay = setTimeout(() => {
+      pulseCheck();
+      pulseIntervalRef.current = setInterval(pulseCheck, 60_000);
+    }, 9_000);
+
+    return () => {
+      clearTimeout(initialDelay);
+      if (pulseIntervalRef.current) clearInterval(pulseIntervalRef.current);
+    };
+  }, [pulseCheck]);
+
+  // Called after a new order to kick a fresh pulse cycle immediately
+  const startOrderPulsing = useCallback((_memoPrefix: string) => {
+    // LS already written by storeMemoBeforeOrder — just reset state and restart polling
+    localStorage.removeItem('innopay_fulfilledDetectedAt');
+    setWalletPulseState('blue');
+    if (pulseIntervalRef.current) clearInterval(pulseIntervalRef.current);
+    // First check after 9s, then every 60s
+    setTimeout(() => {
+      pulseCheck();
+      pulseIntervalRef.current = setInterval(pulseCheck, 60_000);
+    }, 9_000);
+  }, [pulseCheck]);
 
   // Check for payment success on mount
   useEffect(() => {
@@ -314,6 +433,10 @@ export default function MenuPage() {
         // The webhook transferred change to the account, so real balance is on-chain
         setWalletBalance({ accountName, euroBalance: 0 }); // Placeholder until refresh
         setShowWalletBalance(true);
+
+        // Start post-order pulsing (Level 3 guardrail) — use stored memo from before redirect
+        const storedMemoF7 = localStorage.getItem('innopay_latestMemoContent');
+        if (storedMemoF7) startOrderPulsing(storedMemoF7);
 
         console.log('[FLOW 7 RETURN] Order paid by webhook - cart cleared, banner shown');
       }
@@ -471,6 +594,10 @@ export default function MenuPage() {
               handleFlow7Success();
               console.log('[FLOW 7 SUCCESS] Order paid successfully - cart cleared, balance updated, banner shown');
 
+              // Start post-order pulsing (Level 3 guardrail) — use stored memo from before redirect
+              const storedMemo = localStorage.getItem('innopay_latestMemoContent');
+              if (storedMemo) startOrderPulsing(storedMemo);
+
               // Trigger balance refresh AFTER all state updates and localStorage writes complete
               // Increased from 3 to 5 seconds to allow Hive-Engine cache to update
               setTimeout(() => {
@@ -502,6 +629,10 @@ export default function MenuPage() {
               // Clear flow marker - flow is complete
               localStorage.removeItem('innopay_flow_pending');
               console.log('[FLOW 5 NEW ACCOUNT] Cart cleared, flow marker removed - order complete');
+
+              // Start post-order pulsing (Level 3 guardrail) — use stored memo from before redirect
+              const storedMemoF5 = localStorage.getItem('innopay_latestMemoContent');
+              if (storedMemoF5) startOrderPulsing(storedMemoF5);
 
               // Remove query params from URL while preserving table
               cleanUrlPreservingTable('FLOW 5 NEW ACCOUNT');
@@ -804,6 +935,10 @@ export default function MenuPage() {
           console.warn('[BLOCKCHAIN POLL] ✓ Blockchain transactions complete - Flow 6 success!');
           handleFlow6Success(); // Flow 6: pay_with_account - Show unified success banner (works for Flow 3 guest checkout too)
           clearCart(); // Clear cart only on successful blockchain completion
+
+          // Start post-order pulsing (Level 3 guardrail) — use stored memo from before checkout
+          const storedMemoF3 = localStorage.getItem('innopay_latestMemoContent');
+          if (storedMemoF3) startOrderPulsing(storedMemoF3);
           clearInterval(pollInterval);
 
           // Auto-hide banner after 10 seconds once blockchain is complete
@@ -1611,6 +1746,17 @@ export default function MenuPage() {
           // Generate order memo with distriate suffix (added Dec 18, 2025)
           const orderMemo = getMemoWithDistriate();
 
+          // Duplicate order check (Level 2 guardrail)
+          if (!skipDuplicateCheckRef.current && checkDuplicateMemo(orderMemo)) {
+            console.log('[FLOW 7] Duplicate memo detected, showing warning modal');
+            if (orderTimerRef.current) { clearInterval(orderTimerRef.current); orderTimerRef.current = null; }
+            setOrderProcessing(false);
+            setShowDuplicateModal(true);
+            return;
+          }
+          skipDuplicateCheckRef.current = false;
+          storeMemoBeforeOrder(orderMemo);
+
           // Build return URL for Stripe redirect after topup completion
           const returnUrl = `${window.location.origin}/menu?table=${table}`;
 
@@ -1678,6 +1824,18 @@ export default function MenuPage() {
         const orderMemo = getMemo();
 
         console.log('[WALLET PAYMENT] Payment details:', { amountEuro, orderMemo, suffix, eurUsdRate });
+
+        // Duplicate order check (Level 2 guardrail)
+        const fullMemo = `${orderMemo} ${suffix}`;
+        if (!skipDuplicateCheckRef.current && checkDuplicateMemo(fullMemo)) {
+          console.log('[FLOW 6] Duplicate memo detected, showing warning modal');
+          if (orderTimerRef.current) { clearInterval(orderTimerRef.current); orderTimerRef.current = null; }
+          setOrderProcessing(false);
+          setShowDuplicateModal(true);
+          return;
+        }
+        skipDuplicateCheckRef.current = false;
+        storeMemoBeforeOrder(fullMemo);
 
         // alert(`Étape 6: Création opération EURO (${amountEuro}€)...`);
         // 6. Create EURO transfer operation (customer → innopay)
@@ -1817,6 +1975,9 @@ export default function MenuPage() {
 
         // Show unified order success banner (replaced alert for consistency with other flows)
         setFlow6Success(true);
+
+        // Start post-order pulsing (Level 3 guardrail)
+        startOrderPulsing(getMemoFixedPart(fullMemo));
 
       } catch (error: any) {
         console.error('[WALLET PAYMENT] Error:', error);
@@ -2052,6 +2213,15 @@ export default function MenuPage() {
     params.set('return_url', returnUrl);
     console.log('[FLOW 5] Return URL set:', returnUrl);
 
+    // Duplicate order check (Level 2 guardrail)
+    if (!skipDuplicateCheckRef.current && checkDuplicateMemo(customMemo)) {
+      console.log('[FLOW 5] Duplicate memo detected, showing warning modal');
+      setShowDuplicateModal(true);
+      return;
+    }
+    skipDuplicateCheckRef.current = false;
+    storeMemoBeforeOrder(customMemo);
+
     localStorage.setItem('innopay_flow_pending', 'flow5_create_and_pay');
     console.log('[FLOW 5] Set flow marker: flow5_create_and_pay');
 
@@ -2268,6 +2438,10 @@ export default function MenuPage() {
   const proceedWithGuestCheckout = useCallback(async () => {
     if (guestCheckoutProcessing) return; // Prevent duplicate Stripe sessions
     setGuestCheckoutProcessing(true);
+    setGuestCheckoutSeconds(0);
+    guestCheckoutTimerRef.current = setInterval(() => {
+      setGuestCheckoutSeconds(s => s + 1);
+    }, 1000);
     try {
       // Hide wallet notification banner when guest checkout starts
       setGuestCheckoutStarted(true);
@@ -2293,6 +2467,15 @@ export default function MenuPage() {
         customMemo = `${baseMemo} ${distriateSuffix}`;
         console.log('Guest checkout:', { amountEuroWithFee, memo: customMemo, distriateSuffix });
       }
+
+      // Duplicate order check (Level 2 guardrail)
+      if (!skipDuplicateCheckRef.current && checkDuplicateMemo(customMemo)) {
+        console.log('[FLOW 3] Duplicate memo detected, showing warning modal');
+        setShowDuplicateModal(true);
+        return;
+      }
+      skipDuplicateCheckRef.current = false;
+      storeMemoBeforeOrder(customMemo);
 
       const innopayUrl = getInnopayUrl();
 
@@ -2345,6 +2528,7 @@ export default function MenuPage() {
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
 
+      if (guestCheckoutTimerRef.current) { clearInterval(guestCheckoutTimerRef.current); guestCheckoutTimerRef.current = null; }
       setGuestCheckoutProcessing(false); // Re-enable button on error
       setShowGuestWarningModal(false); // Close modal so user can retry
       const isTimeout = error instanceof DOMException && error.name === 'AbortError';
@@ -2857,9 +3041,136 @@ export default function MenuPage() {
         <MiniWallet
           balance={walletBalance}
           visible={showWalletBalance}
-          onClose={() => setShowWalletBalance(false)}
+          onClose={() => {
+            if (walletPulseState !== 'none') setWalletPulseState('none');
+            setShowWalletBalance(false);
+          }}
           balanceSource={balanceSource || undefined}
+          pulseState={walletPulseState}
+          onPulseReset={() => {
+            setWalletPulseState('none');
+            localStorage.removeItem('innopay_latestMemoContent');
+            localStorage.removeItem('innopay_latestMemoDateTime');
+            localStorage.removeItem('innopay_fulfilledDetectedAt');
+            if (pulseIntervalRef.current) { clearInterval(pulseIntervalRef.current); pulseIntervalRef.current = null; }
+          }}
         />
+      )}
+
+      {/* Duplicate Order Prevention Modal */}
+      {showDuplicateModal && (
+        <>
+          <div
+            onClick={() => setShowDuplicateModal(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.35)',
+              zIndex: 10010,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: '50%',
+              top: '10%',
+              transform: 'translateX(-50%)',
+              zIndex: 10011,
+              width: 280,
+              borderRadius: 18,
+              overflow: 'hidden',
+              background: 'rgba(255, 252, 248, 0.95)',
+              backdropFilter: 'blur(24px) saturate(1.4)',
+              WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.22), 0 1.5px 4px rgba(0,0,0,0.08)',
+              border: '1px solid rgba(180, 160, 130, 0.25)',
+              colorScheme: 'light',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '14px 16px 10px',
+                borderBottom: '1px solid rgba(180, 160, 130, 0.15)',
+                gap: 7,
+              }}
+            >
+              <span style={{ fontSize: 18 }}>⚠️</span>
+              <span
+                style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: '#3a2e1e',
+                }}
+              >
+                Commande similaire récente
+              </span>
+            </div>
+
+            {/* Message */}
+            <div style={{ padding: '14px 20px 10px' }}>
+              <p style={{ fontSize: 14, color: '#555', textAlign: 'center', margin: 0, lineHeight: 1.4 }}>
+                Une commande identique a été passée il y a moins de 15 minutes.
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div style={{ padding: '4px 20px 14px', display: 'flex', gap: 10, alignItems: 'center' }}>
+              <button
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setShowGuestWarningModal(false);
+                  setGuestCheckoutProcessing(false);
+                  skipDuplicateCheckRef.current = true;
+                  const hasCredentials = localStorage.getItem('innopay_accountName')
+                    && (localStorage.getItem('innopay_activePrivate') || localStorage.getItem('innopay_masterPassword'));
+                  if (hasCredentials) {
+                    handleOrder();
+                  } else {
+                    setShowWalletNotification(true);
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 12,
+                  border: 'none',
+                  background: '#555',
+                  color: '#bbb',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Pas grave
+              </button>
+              <button
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setShowGuestWarningModal(false);
+                  setGuestCheckoutProcessing(false);
+                }}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 12,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(37, 99, 235, 0.35)',
+                }}
+              >
+                Merci du rappel !
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* External Wallet Warning Modal - FreeNow collision workaround */}
@@ -3122,7 +3433,7 @@ export default function MenuPage() {
                     }`}
                   >
                     {guestCheckoutProcessing
-                      ? <>Redirection vers le paiement<span className="inline-block ml-1 animate-bounce">...</span></>
+                      ? <>Redirection vers le paiement ({guestCheckoutSeconds}s)<span className="inline-block ml-1 animate-bounce">...</span></>
                       : <>Continuer et payer <span className="text-red-500">1.00€</span></>
                     }
                   </button>
@@ -3162,7 +3473,7 @@ export default function MenuPage() {
                     }`}
                   >
                     {guestCheckoutProcessing
-                      ? <>Redirection vers le paiement<span className="inline-block ml-1 animate-bounce">...</span></>
+                      ? <>Redirection vers le paiement ({guestCheckoutSeconds}s)<span className="inline-block ml-1 animate-bounce">...</span></>
                       : <>Continuer et payer <span className="text-red-500">{(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)} €</span></>
                     }
                   </button>
@@ -3548,7 +3859,20 @@ export default function MenuPage() {
             {/* Content */}
             <div className="relative z-[13] text-center text-white px-4">
               <h1 className="text-4xl md:text-5xl font-bold drop-shadow-lg">Bienvenue à Indie's Cafe</h1>
-              <p className="mt-2 text-lg md:text-xl drop-shadow-md">Table {table} - Explorez notre menu</p>
+              <p className="mt-2 text-lg md:text-xl drop-shadow-md">
+                Table{' '}
+                <span
+                  className="underline decoration-dotted cursor-pointer"
+                  onClick={() => {
+                    const newTable = prompt('Numéro de table:', table);
+                    if (newTable && newTable.trim() && newTable.trim() !== table) {
+                      setTable(newTable.trim());
+                      window.history.replaceState({}, '', `${window.location.pathname}?table=${newTable.trim()}`);
+                    }
+                  }}
+                >{table}</span>
+                {' '}- Explorez notre menu
+              </p>
             </div>
             {/* Carousel Indicators */}
             <div className="absolute bottom-4 left-0 right-0 z-20 flex justify-center gap-2">

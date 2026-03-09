@@ -1,7 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import Draggable from './Draggable';
+import { getInnopayUrl } from '@/lib/utils';
+
+export type PulseState = 'none' | 'blue' | 'green' | 'green-slow' | 'green-solid' | 'red';
 
 export interface WalletBalance {
   accountName: string;
@@ -12,108 +15,160 @@ interface MiniWalletProps {
   balance: WalletBalance;
   onClose: () => void;
   visible: boolean;
-  title?: string; // Optional custom title
-  initialPosition?: { x: number; y: number }; // Optional custom position
+  title?: string;
+  initialPosition?: { x: number; y: number };
   balanceSource?: string; // 'localStorage-cache' or 'hive-engine'
+  pulseState?: PulseState;
+  onPulseReset?: () => void;
 }
 
-/**
- * MiniWallet Component
- *
- * A draggable wallet indicator that displays the user's Innopay account balance.
- * Wraps the Draggable component with wallet-specific styling and functionality.
- *
- * Features:
- * - Draggable positioning with constraints
- * - Shows account name and EURO balance
- * - Collapsible with close button
- * - Persistent position across renders
- *
- * @param balance - The wallet balance object containing accountName and euroBalance
- * @param onClose - Callback function when the close button is clicked
- * @param visible - Controls visibility of the wallet
- * @param title - Optional custom title (defaults to French "Votre portefeuille Innopay")
- * @param initialPosition - Optional custom initial position
- */
+// Gradient classes per state
+const pulseGradients: Record<PulseState, string> = {
+  none: 'from-blue-600 to-blue-700',
+  blue: 'from-blue-600 to-blue-700',
+  green: 'from-green-600 to-green-700',
+  'green-slow': 'from-green-600 to-green-700',
+  'green-solid': 'from-green-600 to-green-700',
+  red: 'from-red-900 to-red-800',
+};
+
 export default function MiniWallet({
   balance,
   onClose,
   visible,
   title = 'Votre portefeuille Innopay',
   initialPosition,
-  balanceSource
+  balanceSource,
+  pulseState = 'none',
+  onPulseReset,
 }: MiniWalletProps) {
   if (!visible) return null;
 
+  // Double-tap detection (two taps within 400ms)
+  const lastTapRef = useRef(0);
+  // Long-press detection (1 second hold)
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const handleCloseClick = (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation(); // Prevent drag from triggering
+    e.stopPropagation();
+    if (pulseState !== 'none') onPulseReset?.();
     onClose();
   };
 
-  // Determine if balance is from cache (stale) or fresh from blockchain
+  const handleDoubleTap = useCallback(() => {
+    if (pulseState === 'none') return;
+    const now = Date.now();
+    if (now - lastTapRef.current < 400) {
+      onPulseReset?.();
+      lastTapRef.current = 0;
+    } else {
+      lastTapRef.current = now;
+    }
+  }, [pulseState, onPulseReset]);
+
+  const handleLongPressStart = useCallback(() => {
+    if (pulseState === 'none') return;
+    longPressTimerRef.current = setTimeout(() => {
+      onPulseReset?.();
+    }, 1000);
+  }, [pulseState, onPulseReset]);
+
+  const handleLongPressEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
   const isCached = balanceSource === 'localStorage-cache';
   const balanceClassName = isCached
-    ? 'font-bold text-lg italic text-blue-200' // Cached: italic + light blue
-    : 'font-bold text-lg text-white'; // Fresh: normal + white
+    ? 'font-bold text-lg italic text-blue-200'
+    : 'font-bold text-lg text-white';
 
-  // Default position: bottom-right
   const defaultPosition = {
-    x: typeof window !== 'undefined' ? window.innerWidth - 316 : 0, // 300px max-width + 16px margin
-    y: typeof window !== 'undefined' ? window.innerHeight - 170 : 0  // Approximate height + 30px lift
+    x: typeof window !== 'undefined' ? window.innerWidth - 316 : 0,
+    y: typeof window !== 'undefined' ? window.innerHeight - 170 : 0,
   };
 
-  return (
-    <Draggable
-      className="z-[9998] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 rounded-lg shadow-lg"
-      initialPosition={initialPosition || defaultPosition}
-      style={{
-        minWidth: '200px',
-        maxWidth: '300px',
-      }}
-    >
-      <div className="flex items-center justify-between gap-3">
-        {/* Drag handle indicator */}
-        <div className="text-white opacity-50 text-xs flex-shrink-0">
-          ⋮⋮
-        </div>
+  const isPulsing = pulseState !== 'none' && pulseState !== 'green-solid';
+  const gradientClass = pulseGradients[pulseState];
 
-        {/* Wallet content */}
-        <div className="flex-1">
-          <p className="text-xs opacity-75 mb-1">{title}</p>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">💰</span>
-            <div>
-              <p className={balanceClassName}>{balance.euroBalance.toFixed(2)} €</p>
-              <p className="text-xs opacity-75 font-mono">{balance.accountName}</p>
+  // Animation speed: normal 2s, slow 4s, solid/none = no animation
+  const pulseAnimation = isPulsing
+    ? { animation: `walletPulse ${pulseState === 'green-slow' ? '4s' : '2s'} ease-in-out infinite` }
+    : {};
+
+  return (
+    <>
+      {/* Keyframes injected once */}
+      {isPulsing && (
+        <style>{`
+          @keyframes walletPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.02); opacity: 0.88; }
+          }
+        `}</style>
+      )}
+      <Draggable
+        className={`z-[9998] bg-gradient-to-r ${gradientClass} text-white px-4 py-3 rounded-lg shadow-lg transition-colors duration-700`}
+        initialPosition={initialPosition || defaultPosition}
+        style={{
+          minWidth: '200px',
+          maxWidth: '300px',
+          ...pulseAnimation,
+        }}
+      >
+        <div
+          className="flex items-center justify-between gap-3"
+          onClick={handleDoubleTap}
+          onTouchStart={handleLongPressStart}
+          onTouchEnd={handleLongPressEnd}
+          onTouchCancel={handleLongPressEnd}
+          onMouseDown={handleLongPressStart}
+          onMouseUp={handleLongPressEnd}
+          onMouseLeave={handleLongPressEnd}
+        >
+          {/* Drag handle indicator */}
+          <div className="text-white opacity-50 text-xs flex-shrink-0">
+            ⋮⋮
+          </div>
+
+          {/* Wallet content */}
+          <div className="flex-1">
+            <p className="text-xs opacity-75 mb-1">{title}</p>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">💰</span>
+              <div>
+                <p className={balanceClassName}>{balance.euroBalance.toFixed(2)} €</p>
+                <a
+                  href={`${getInnopayUrl()}/user`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs opacity-75 font-mono underline hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                >{balance.accountName}</a>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Close button */}
-        <button
-          onClick={handleCloseClick}
-          onMouseDown={handleCloseClick}
-          onTouchStart={handleCloseClick}
-          className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-1 transition-colors flex-shrink-0"
-          aria-label="Fermer"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-    </Draggable>
+          {/* Close button */}
+          <button
+            onClick={handleCloseClick}
+            onMouseDown={(e) => { e.stopPropagation(); handleCloseClick(e); }}
+            onTouchStart={(e) => { e.stopPropagation(); handleCloseClick(e); }}
+            className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-1 transition-colors flex-shrink-0"
+            aria-label="Fermer"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </Draggable>
+    </>
   );
 }
 
-/**
- * ReopenButton Component
- *
- * A fixed button that appears when the wallet is closed, allowing users to reopen it.
- *
- * @param onClick - Callback function when the button is clicked
- * @param visible - Controls visibility of the button (only shown when wallet is closed)
- */
 export function WalletReopenButton({ onClick, visible }: { onClick: () => void; visible: boolean }) {
   if (!visible) return null;
 

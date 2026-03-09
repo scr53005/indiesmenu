@@ -1,6 +1,13 @@
 // Kitchen & restaurant hours configuration for Indies Cafe
 // Will be refactored to DB-driven per-spoke in a later iteration
 
+/** Returns true when running on localhost / dev — bypasses opening hours checks */
+function isDevEnvironment(): boolean {
+  if (typeof window === 'undefined') return false; // SSR: don't bypass
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h.startsWith('192.168.');
+}
+
 export interface ServiceWindow {
   open: number;  // minutes from midnight (e.g., 690 = 11h30)
   close: number;
@@ -31,11 +38,12 @@ export const RESTAURANT_HOURS: Record<number, ServiceWindow | null> = {
   3: { open: 600, close: 1439 },    // Wed
   4: { open: 600, close: 1439 },    // Thu
   5: { open: 600, close: 1439 },    // Fri
-  6: { open: 600, close: 1439 },    // Sat
+  6: { open: 600, close: 1439 },    // Sat: 10:00-23:59
 };
 
 /** Check if the restaurant is open at a given time on a given day */
 export function isRestaurantOpen(dayOfWeek: number, totalMinutes: number): boolean {
+  if (isDevEnvironment()) return true;
   const hours = RESTAURANT_HOURS[dayOfWeek];
   if (!hours) return false;
   return totalMinutes >= hours.open && totalMinutes <= hours.close;
@@ -64,6 +72,7 @@ export function getNextOpenDay(dayOfWeek: number): { fr: string; en: string; ope
 
 /** Check if the kitchen is open at a given time on a given day */
 export function isKitchenOpen(dayOfWeek: number, totalMinutes: number): boolean {
+  if (isDevEnvironment()) return true;
   const schedule = KITCHEN_SCHEDULE[dayOfWeek];
   if (!schedule) return false;
   const { lunch, dinner } = schedule;

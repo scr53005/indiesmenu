@@ -19,7 +19,7 @@ const path = require('path');
 
 // Configuration
 const CONFIG = {
-  inputDir: path.join(__dirname, '../public/images'),
+  inputDir: path.join(__dirname, '../public/images/raw'),
   outputDir: path.join(__dirname, '../public/images-optimized'),
   backupDir: path.join(__dirname, '../public/images-backup'),
   maxWidth: 800,

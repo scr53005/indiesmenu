@@ -70,7 +70,7 @@ export default function BottomBanner({ language = 'fr' }: BottomBannerProps) {
             {/* Legal links */}
             <div className="flex justify-center gap-6 pt-2 border-t border-gray-600">
               <a
-                href="https://www.innopay.lu"
+                href="https://www.innopay.lu/privacy-policy"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-gray-300 hover:text-white underline transition-colors"
@@ -78,7 +78,7 @@ export default function BottomBanner({ language = 'fr' }: BottomBannerProps) {
                 {t.privacy}
               </a>
               <a
-                href="https://www.innopay.lu"
+                href="https://www.innopay.lu/terms-of-service"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-gray-300 hover:text-white underline transition-colors"

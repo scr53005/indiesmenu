@@ -128,44 +128,33 @@ export default function OrderHistory() {
     }
   };
 
-  // Poll for new fulfilled orders
-  const pollForNewOrders = async () => {
-    if (!menuData) return;
-
-    try {
-      // Fetch only the most recent day's orders (skip=0, days=1)
-      const res = await fetch(`/api/orders/history?skip=0&days=1`);
-      const data = await res.json();
-
-      if (res.ok && data.orders && data.orders.length > 0) {
-        const hydratedOrders = data.orders.map(hydrateOrder);
-
-        // Find truly new orders (not already in our list)
-        const newOrders = hydratedOrders.filter(
-          (newOrder: HistoryOrder) => !orders.some(existingOrder => existingOrder.id === newOrder.id)
-        );
-
-        if (newOrders.length > 0) {
-          console.log(`Found ${newOrders.length} new fulfilled orders`);
-
-          // Prepend new orders to the beginning
-          const updatedOrders = [...newOrders, ...orders];
-          setOrders(updatedOrders);
-
-          // Update latest order ID
-          const sortedByTime = [...newOrders].sort((a, b) =>
-            new Date(b.fulfilled_at || 0).getTime() - new Date(a.fulfilled_at || 0).getTime()
-          );
-          setLatestOrderId(sortedByTime[0].id);
-
-          // Re-group orders by date
-          groupOrdersByDate(updatedOrders);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to poll for new orders:', error);
-    }
-  };
+  // 2026-03-08: Replaced by syncAndCheckForNewOrders below.
+  // The history page no longer polls for new fulfilled orders — instead it syncs
+  // from merchant-hub and auto-redirects to the CO page when unfulfilled orders arrive.
+  // const pollForNewOrders = async () => {
+  //   if (!menuData) return;
+  //   try {
+  //     const res = await fetch(`/api/orders/history?skip=0&days=1`);
+  //     const data = await res.json();
+  //     if (res.ok && data.orders && data.orders.length > 0) {
+  //       const hydratedOrders = data.orders.map(hydrateOrder);
+  //       const newOrders = hydratedOrders.filter(
+  //         (newOrder: HistoryOrder) => !orders.some(existingOrder => existingOrder.id === newOrder.id)
+  //       );
+  //       if (newOrders.length > 0) {
+  //         const updatedOrders = [...newOrders, ...orders];
+  //         setOrders(updatedOrders);
+  //         const sortedByTime = [...newOrders].sort((a, b) =>
+  //           new Date(b.fulfilled_at || 0).getTime() - new Date(a.fulfilled_at || 0).getTime()
+  //         );
+  //         setLatestOrderId(sortedByTime[0].id);
+  //         groupOrdersByDate(updatedOrders);
+  //       }
+  //     }
+  //   } catch (error) {
+  //     console.error('Failed to poll for new orders:', error);
+  //   }
+  // };
 
   // Group orders by date
   const groupOrdersByDate = (ordersList: HistoryOrder[]) => {
@@ -197,17 +186,57 @@ export default function OrderHistory() {
     }
   }, [menuData]);
 
-  // Set up polling for new orders every 10 seconds
+  // Register with merchant-hub as poller so HAF→Redis polling stays active,
+  // then sync Redis→local DB and redirect to CO page if unfulfilled orders arrive.
   useEffect(() => {
-    if (!menuData) return;
+    const merchantHubUrl = (process.env.NEXT_PUBLIC_MERCHANT_HUB_URL || 'https://merchant-hub-theta.vercel.app').replace(/\/$/, '');
+    const shopId = 'indies-current-orders'; // Same poller identity as CO page
 
-    const intervalId = setInterval(() => {
-      pollForNewOrders();
-    }, 10000); // Poll every 10 seconds
+    // Wake-up: register/renew poller heartbeat with merchant-hub
+    const triggerWakeUp = async () => {
+      try {
+        await fetch(`${merchantHubUrl}/api/wake-up`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shopId }),
+        });
+      } catch (err) { /* silent */ }
+    };
 
-    // Cleanup function: Clear the interval when the component unmounts
-    return () => clearInterval(intervalId);
-  }, [menuData, orders]); // Re-create interval when menuData or orders change
+    // Poll: ask merchant-hub to pull new transfers from HAF into Redis
+    const triggerPoll = async () => {
+      try {
+        await fetch(`${merchantHubUrl}/api/poll`);
+      } catch (err) { /* silent */ }
+    };
+
+    // Sync + check: pull from Redis into local DB, redirect if unfulfilled orders exist
+    const syncAndCheckForNewOrders = async () => {
+      try {
+        await triggerPoll();
+        await fetch('/api/transfers/sync-from-merchant-hub', { method: 'POST' });
+
+        // Always check for unfulfilled orders — they may have been inserted
+        // by a previous sync cycle, the cron, or another tab
+        const res = await fetch('/api/transfers/unfulfilled');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.transfers && data.transfers.length > 0) {
+            console.log(`[HISTORY] ${data.transfers.length} unfulfilled order(s) detected — redirecting to CO page`);
+            window.location.href = '/admin/current_orders';
+          }
+        }
+      } catch (err) { /* silent */ }
+    };
+
+    // Start immediately, then on intervals
+    triggerWakeUp();
+    syncAndCheckForNewOrders();
+    const wakeUpId = setInterval(triggerWakeUp, 30000);
+    const syncId = setInterval(syncAndCheckForNewOrders, 6000);
+
+    return () => { clearInterval(wakeUpId); clearInterval(syncId); };
+  }, []);
 
   const toggleDay = (date: string) => {
     setExpandedDays(prev => {
@@ -318,6 +347,9 @@ export default function OrderHistory() {
                                           >
                                             {line.description}
                                           </span>
+                                          {line.comment && (
+                                            <span className="item-comment"> — {line.comment}</span>
+                                          )}
                                         </span>
                                       ) : line.type === 'separator' ? (
                                         <hr className="separator" />
@@ -471,6 +503,12 @@ export default function OrderHistory() {
         .dish-item {
           color: #8B0000;
           font-weight: bold;
+        }
+
+        .item-comment {
+          font-style: italic;
+          color: #b45309;
+          font-size: 0.9em;
         }
 
         .separator {

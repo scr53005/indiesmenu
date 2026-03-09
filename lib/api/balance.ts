@@ -14,8 +14,6 @@ export interface BalanceResponse {
  * Implements the same robust strategy from menu/page.tsx:648
  */
 export async function fetchEuroBalance(accountName: string): Promise<BalanceResponse> {
-  console.log('[BALANCE API] Fetching balance for:', accountName);
-
   try {
     const response = await fetch(`/api/balance/euro?account=${encodeURIComponent(accountName)}`);
 
@@ -26,7 +24,7 @@ export async function fetchEuroBalance(accountName: string): Promise<BalanceResp
     const data = await response.json();
     const euroBalance = data.balance;
 
-    console.log('[BALANCE API] Retrieved balance:', euroBalance, 'from', data.source);
+    console.log(`[BALANCE] ${accountName}: ${euroBalance} (${data.source})`);
 
     return {
       balance: parseFloat(euroBalance.toFixed(2)),
@@ -34,7 +32,7 @@ export async function fetchEuroBalance(accountName: string): Promise<BalanceResp
       timestamp: Date.now(),
     };
   } catch (error) {
-    console.error('[BALANCE API] Fetch failed:', error);
+    console.error('[BALANCE] Fetch failed for', accountName, ':', error);
     throw error;
   }
 }
@@ -62,7 +60,7 @@ export function getCachedBalance(): { balance: number; timestamp: number } | nul
 export function saveCachedBalance(balance: number, timestamp: number = Date.now()): void {
   localStorage.setItem('innopay_lastBalance', balance.toFixed(2));
   localStorage.setItem('innopay_lastBalance_timestamp', timestamp.toString());
-  console.log('[BALANCE API] Cached balance:', balance);
+  // Cached silently — no log needed per save
 }
 
 /**
@@ -76,6 +74,5 @@ export function isCachedBalanceStale(): boolean {
   const age = now - cached.timestamp;
   const isStale = age > 60000; // 60 seconds
 
-  console.log('[BALANCE API] Cache age:', Math.round(age / 1000), 'seconds', isStale ? '(stale)' : '(fresh)');
   return isStale;
 }

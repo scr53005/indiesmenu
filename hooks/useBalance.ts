@@ -63,18 +63,25 @@ export function useBalance(
   } = useQuery<BalanceResponse, Error>({
     queryKey: ['balance', accountName],
     queryFn: async () => {
-      console.log('[useBalance] 🔄 Fetching fresh balance from blockchain for:', accountName);
       if (!accountName) {
         throw new Error('No account name provided');
       }
 
-      // Fetch from API
+      // If within the trust window (post-payment cooldown), return cached balance
+      // Blockchain needs ~10s to confirm, so we trust the optimistic/webhook balance
+      const trustUntil = parseInt(localStorage.getItem('innopay_balance_trustUntil') || '0');
+      if (trustUntil > Date.now()) {
+        const cached = getCachedBalance();
+        if (cached) {
+          const remaining = Math.round((trustUntil - Date.now()) / 1000);
+          console.log(`[useBalance] Trust window active (${remaining}s left) — using cached balance:`, cached.balance);
+          return { balance: cached.balance, source: 'trust-window', timestamp: cached.timestamp };
+        }
+      }
+
+      // Fetch from blockchain
       const result = await fetchEuroBalance(accountName);
-
-      // Save to localStorage cache
       saveCachedBalance(result.balance, result.timestamp);
-
-      console.log('[useBalance] ✅ Fresh balance received:', result.balance, 'source:', result.source);
       return result;
     },
     enabled: enabled && !!accountName,
@@ -88,7 +95,6 @@ export function useBalance(
 
       const cached = getCachedBalance();
       if (cached) {
-        console.log('[useBalance] 📦 Using cached balance for instant UI:', cached.balance, '(will refetch fresh data immediately)');
         return {
           balance: cached.balance,
           source: 'localStorage-cache',
@@ -106,17 +112,9 @@ export function useBalance(
     retry: 2,
   });
 
-  // Only log when query is actually enabled
-  if (enabled && accountName) {
-    console.log('[useBalance] Query state:', {
-      accountName,
-      status,
-      fetchStatus,
-      hasData: !!data,
-      balance: data?.balance,
-      source: data?.source
-    });
-  }
+  // 2026-03-08: Removed render-level logging — was flooding the console
+  // with dozens of identical messages per page load. Use React Query DevTools
+  // or breakpoints for debugging instead.
 
   // Mutation for optimistic balance updates
   const updateBalanceMutation = useMutation({
