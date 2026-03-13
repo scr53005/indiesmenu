@@ -22,7 +22,10 @@ export async function GET(request: Request) {
     const sinceParam = searchParams.get('since');
     const since = sinceParam ? new Date(sinceParam) : new Date(Date.now() - 60 * 60 * 1000);
 
-    const transfer = await prisma.transfers.findFirst({
+    // Find ALL matching transfers (an order can produce EURO + HBD transfers
+    // with the same memo). Return fulfilled=true if ANY of them is fulfilled,
+    // so a late-arriving unfulfilled HBD transfer doesn't mask a fulfilled EURO.
+    const transfers = await prisma.transfers.findMany({
       where: {
         memo: { startsWith: memoPrefix },
         received_at: { gte: since },
@@ -35,16 +38,18 @@ export async function GET(request: Request) {
       },
     });
 
-    if (!transfer) {
+    if (transfers.length === 0) {
       console.warn(`[check-mine] No transfer found for prefix="${memoPrefix}" since=${since.toISOString()}`);
       return NextResponse.json({ found: false });
     }
 
-    console.warn(`[check-mine] Found transfer id=${transfer.id} for prefix="${memoPrefix}" fulfilled=${transfer.fulfilled}`);
+    const anyFulfilled = transfers.some(t => t.fulfilled === true);
+    const primary = transfers[0]; // most recent
+    console.warn(`[check-mine] Found ${transfers.length} transfer(s) for prefix="${memoPrefix}" anyFulfilled=${anyFulfilled}`);
     return NextResponse.json({
       found: true,
-      received_at: transfer.received_at?.toISOString() ?? null,
-      fulfilled: transfer.fulfilled ?? false,
+      received_at: primary.received_at?.toISOString() ?? null,
+      fulfilled: anyFulfilled,
     });
   } catch (error: any) {
     console.error('Transfer check-mine error:', error.message);

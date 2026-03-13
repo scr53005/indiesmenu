@@ -78,6 +78,7 @@ export default function CurrentOrdersPage() {
   const canPlayAudioRef = useRef(canPlayAudio);
   const reminderIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const printIframeRef = useRef<HTMLIFrameElement>(null);
+  const printQueueRef = useRef<Promise<void>>(Promise.resolve());
   const playBellSoundsRef = useRef<() => void>(() => {});
   const printOrderRef = useRef<(transfer: Transfer) => boolean>(() => false);
 
@@ -105,21 +106,38 @@ export default function CurrentOrdersPage() {
     }
   }, [canPlayAudio]);
 
-  const executePrint = (html: string) => {
-    if (!printIframeRef.current) return;
-    const iframe = printIframeRef.current;
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (doc) {
+  // Sequential print queue: each job waits for the previous one to fully spool
+  // before writing to the shared iframe. Prevents the race where a second
+  // doc.write() overwrites the iframe content before the first print() is captured.
+  const enqueuePrint = (html: string) => {
+    printQueueRef.current = printQueueRef.current.then(() => new Promise<void>((resolve) => {
+      if (!printIframeRef.current) { resolve(); return; }
+      const iframe = printIframeRef.current;
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!doc || !iframe.contentWindow) { resolve(); return; }
+
       doc.open();
       doc.write(html);
       doc.close();
+
       setTimeout(() => {
-        if (iframe.contentWindow) {
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-        }
+        const win = iframe.contentWindow;
+        if (!win) { resolve(); return; }
+
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          win.removeEventListener('afterprint', done);
+          resolve();
+        };
+
+        win.addEventListener('afterprint', done);
+        setTimeout(done, 3000); // fallback if afterprint never fires
+        win.focus();
+        win.print();
       }, 500);
-    }
+    }));
   };
 
   const printOrder = useCallback((transfer: Transfer) => {
@@ -139,36 +157,30 @@ export default function CurrentOrdersPage() {
 
     console.log('[PRINT] Printing order:', transfer.id);
 
-    let delay = 0;
     if (dishes.length > 0) {
-      setTimeout(() => {
-        executePrint(generateReceiptHtml({
-          id: transfer.id,
-          from_account: transfer.from_account,
-          memo: transfer.memo,
-          received_at: transfer.received_at,
-          items: dishes,
-          ticketType: 'CUISINE'
-        }));
-      }, delay);
-      delay += 1500;
+      enqueuePrint(generateReceiptHtml({
+        id: transfer.id,
+        from_account: transfer.from_account,
+        memo: transfer.memo,
+        received_at: transfer.received_at,
+        items: dishes,
+        ticketType: 'CUISINE'
+      }));
     }
 
     if (drinks.length > 0) {
-      setTimeout(() => {
-        executePrint(generateReceiptHtml({
-          id: transfer.id,
-          from_account: transfer.from_account,
-          memo: transfer.memo,
-          received_at: transfer.received_at,
-          items: drinks,
-          ticketType: 'BAR'
-        }));
-      }, delay);
+      enqueuePrint(generateReceiptHtml({
+        id: transfer.id,
+        from_account: transfer.from_account,
+        memo: transfer.memo,
+        received_at: transfer.received_at,
+        items: drinks,
+        ticketType: 'BAR'
+      }));
     }
 
     if (dishes.length === 0 && drinks.length === 0) {
-      executePrint(generateReceiptHtml({
+      enqueuePrint(generateReceiptHtml({
         id: transfer.id,
         from_account: transfer.from_account,
         memo: transfer.memo,

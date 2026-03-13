@@ -212,6 +212,7 @@ export default function MenuPage() {
   //   innopay_latestMemoContent, innopay_latestMemoDateTime, innopay_fulfilledDetectedAt
   const [walletPulseState, setWalletPulseState] = useState<'none' | 'blue' | 'green' | 'green-slow' | 'green-solid' | 'red'>('none');
   const pulseIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pulseStartTimeoutRef = useRef<NodeJS.Timeout | null>(null); // tracks the 9s startup delay
 
   // State for order processing timer
   const [orderProcessing, setOrderProcessing] = useState(false);
@@ -248,7 +249,10 @@ export default function MenuPage() {
         clearInterval(orderTimerRef.current);
       }
       if (pulseIntervalRef.current) {
-        clearInterval(pulseIntervalRef.current);
+        clearTimeout(pulseIntervalRef.current);
+      }
+      if (pulseStartTimeoutRef.current) {
+        clearTimeout(pulseStartTimeoutRef.current);
       }
       if (guestCheckoutTimerRef.current) {
         clearInterval(guestCheckoutTimerRef.current);
@@ -256,11 +260,20 @@ export default function MenuPage() {
     };
   }, []);
 
-  // Persistent pulsing state machine — polls spoke DB every 60s while innopay_latestMemoContent exists
+  // Persistent pulsing state machine — polls spoke DB while innopay_latestMemoContent exists
   // State transitions:
   //   No transfer:   age<20m→BLUE, 20m-2h→RED, >2h→cleanup
   //   Unfulfilled:   age<20m→GREEN, 20-30m→GREEN-SLOW, 30m-2h→RED, >2h→cleanup
   //   Fulfilled:     SOLID GREEN for 10min from detection, then cleanup
+  // Adaptive polling: 15s when actively tracking (green/green-slow), 60s otherwise (blue/red/solid)
+  // Retry on failure: 5s after network error instead of waiting the full interval
+  const schedulePulse = useCallback((delayMs: number) => {
+    if (pulseIntervalRef.current) clearTimeout(pulseIntervalRef.current);
+    pulseIntervalRef.current = setTimeout(async () => {
+      await pulseCheckRef.current();
+    }, delayMs) as unknown as NodeJS.Timeout;
+  }, []);
+
   const pulseCheck = useCallback(async () => {
     const memoPrefix = localStorage.getItem('innopay_latestMemoContent');
     const orderTime = parseInt(localStorage.getItem('innopay_latestMemoDateTime') || '0');
@@ -272,6 +285,8 @@ export default function MenuPage() {
     const ageMs = Date.now() - orderTime;
     const ageMin = ageMs / 60_000;
     const TWO_HOURS = 120;
+    const ACTIVE_POLL_MS = 15_000;  // 15s when green/green-slow (awaiting fulfillment)
+    const PASSIVE_POLL_MS = 60_000; // 60s when blue/red/green-solid
 
     // Check if already in fulfilled-detected state (solid green for 10 min)
     const fulfilledAt = parseInt(localStorage.getItem('innopay_fulfilledDetectedAt') || '0');
@@ -279,6 +294,7 @@ export default function MenuPage() {
       const sinceDetected = (Date.now() - fulfilledAt) / 60_000;
       if (sinceDetected < 10) {
         setWalletPulseState('green-solid');
+        schedulePulse(PASSIVE_POLL_MS);
         return;
       }
       // 10 min elapsed — cleanup
@@ -301,12 +317,17 @@ export default function MenuPage() {
     try {
       const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(); // 3h window
       const res = await fetch(`/api/transfers/check-mine?memo_prefix=${encodeURIComponent(memoPrefix)}&since=${since}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Non-OK response — retry sooner than normal interval
+        schedulePulse(5_000);
+        return;
+      }
       const data = await res.json();
 
       if (!data.found) {
         // No transfer in DB yet
         setWalletPulseState(ageMin < 20 ? 'blue' : 'red');
+        schedulePulse(PASSIVE_POLL_MS);
         return;
       }
 
@@ -314,10 +335,11 @@ export default function MenuPage() {
         // Just detected fulfillment — start 10-min solid green window
         localStorage.setItem('innopay_fulfilledDetectedAt', Date.now().toString());
         setWalletPulseState('green-solid');
+        schedulePulse(PASSIVE_POLL_MS);
         return;
       }
 
-      // Unfulfilled — kitchen has it
+      // Unfulfilled — kitchen has it, poll actively
       if (ageMin < 20) {
         setWalletPulseState('green');
       } else if (ageMin < 30) {
@@ -325,22 +347,26 @@ export default function MenuPage() {
       } else {
         setWalletPulseState('red');
       }
+      schedulePulse(ACTIVE_POLL_MS);
     } catch (err) {
-      // Silent — keep current state on network error
+      // Network error — retry after 5s instead of waiting the full interval
+      schedulePulse(5_000);
     }
-  }, []);
+  }, [schedulePulse]);
 
-  // Start pulse polling on mount (persists across refreshes) and every 60s
+  // Ref so schedulePulse (stable) can call the latest pulseCheck without circular dep
+  const pulseCheckRef = useRef(pulseCheck);
+  useEffect(() => { pulseCheckRef.current = pulseCheck; }, [pulseCheck]);
+
+  // Start pulse polling on mount (persists across refreshes)
   useEffect(() => {
-    // Initial check after 9s (give blockchain time on fresh orders)
     const initialDelay = setTimeout(() => {
       pulseCheck();
-      pulseIntervalRef.current = setInterval(pulseCheck, 60_000);
     }, 9_000);
 
     return () => {
       clearTimeout(initialDelay);
-      if (pulseIntervalRef.current) clearInterval(pulseIntervalRef.current);
+      if (pulseIntervalRef.current) { clearTimeout(pulseIntervalRef.current); pulseIntervalRef.current = null; }
     };
   }, [pulseCheck]);
 
@@ -349,13 +375,14 @@ export default function MenuPage() {
     // LS already written by storeMemoBeforeOrder — just reset state and restart polling
     localStorage.removeItem('innopay_fulfilledDetectedAt');
     setWalletPulseState('blue');
-    if (pulseIntervalRef.current) clearInterval(pulseIntervalRef.current);
-    // First check after 9s, then every 60s
-    setTimeout(() => {
-      pulseCheck();
-      pulseIntervalRef.current = setInterval(pulseCheck, 60_000);
+    if (pulseIntervalRef.current) { clearTimeout(pulseIntervalRef.current); pulseIntervalRef.current = null; }
+    if (pulseStartTimeoutRef.current) { clearTimeout(pulseStartTimeoutRef.current); pulseStartTimeoutRef.current = null; }
+    // First check after 9s (give blockchain time)
+    pulseStartTimeoutRef.current = setTimeout(() => {
+      pulseStartTimeoutRef.current = null;
+      pulseCheckRef.current();
     }, 9_000);
-  }, [pulseCheck]);
+  }, []);
 
   // Check for payment success on mount
   useEffect(() => {
@@ -3052,7 +3079,8 @@ export default function MenuPage() {
             localStorage.removeItem('innopay_latestMemoContent');
             localStorage.removeItem('innopay_latestMemoDateTime');
             localStorage.removeItem('innopay_fulfilledDetectedAt');
-            if (pulseIntervalRef.current) { clearInterval(pulseIntervalRef.current); pulseIntervalRef.current = null; }
+            if (pulseIntervalRef.current) { clearTimeout(pulseIntervalRef.current); pulseIntervalRef.current = null; }
+            if (pulseStartTimeoutRef.current) { clearTimeout(pulseStartTimeoutRef.current); pulseStartTimeoutRef.current = null; }
           }}
         />
       )}
