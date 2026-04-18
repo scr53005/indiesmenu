@@ -227,12 +227,20 @@ export function distriate(tag?: string): string {
     return `${effectiveTag}-inno-${randomPart1}-${randomPart2}`;
 }
 
-export function generateDistriatedHiveOp(params: HiveTransferParams, distriateSuffix?: string): string {
-  const suffix = distriateSuffix || distriate(); // Use provided suffix or generate new one
-  const finalMemo = params.memo ? `${params.memo} ${suffix}` : suffix; // Handle empty original memo
-  params.memo = finalMemo; // Update params with the final memo
-  // params.recipient = params.recipient.toLowerCase(); // Ensure recipient is lowercase
-  return generateHiveTransferUrl(params); // Use the existing function to generate the URL
+/**
+ * Generates both the `hive://sign/...` URL and the final memo (base memo +
+ * distriate suffix). Returning both lets callers persist the memo prefix via
+ * `storeMemoBeforeOrder` so downstream pulse polling can match the transfer
+ * when it lands. Does not mutate the caller's params object.
+ */
+export function generateDistriatedHiveOp(
+  params: HiveTransferParams,
+  distriateSuffix?: string,
+): { url: string; memo: string } {
+  const suffix = distriateSuffix || distriate();
+  const finalMemo = params.memo ? `${params.memo} ${suffix}` : suffix;
+  const url = generateHiveTransferUrl({ ...params, memo: finalMemo });
+  return { url, memo: finalMemo };
 }
 
 /**

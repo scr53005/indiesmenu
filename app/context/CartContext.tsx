@@ -251,36 +251,30 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   }, [cart, tableState, delayedTiming]);
 
   const getMemoWithDistriate = useCallback(() => {
-    // Get base memo and add distriate suffix (same pattern as orderNow)
-    const baseMemo = getMemo();
-    // Use generateDistriatedHiveOp to get the memo with suffix, then extract just the memo
-    const params = {
+    const { memo } = generateDistriatedHiveOp({
       recipient: 'temp',
       amountHbd: '0.001',
-      memo: baseMemo
-    };
-    generateDistriatedHiveOp(params); // This modifies params.memo to include distriate suffix
-    return params.memo;
+      memo: getMemo(),
+    });
+    return memo;
   }, [getMemo]);
 
-  const orderNow = useCallback(() => {
-    const memoWithTableInfo = getMemo();
+  const orderNow = useCallback((): { url: string; memo: string } => {
+    const baseMemo = getMemo();
     const recipient = process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe';
-    const amountHbd = getTotalPrice(); // Use the formatted total price
+    const amountHbd = getTotalPrice();
 
-    const encodedOperation = generateDistriatedHiveOp({
+    const result = generateDistriatedHiveOp({
       recipient,
       amountHbd,
-      memo: memoWithTableInfo, // Use the dehydrated items string and the table info directly as the memo
+      memo: baseMemo,
     });
 
-    console.log('CartContext - Generated Hive Order URL:', encodedOperation);
-    console.log('CartContext - Final Order Memo Object:', memoWithTableInfo); // Log the full object for clarity
+    console.log('CartContext - Generated Hive Order URL:', result.url);
+    console.log('CartContext - Final Order Memo:', result.memo);
 
-    // clearCart(); // Clear cart after generating order URL
-
-    return encodedOperation;
-  }, [getMemo, getTotalPrice, getTotalEurPrice]); // Dependencies: getMemo, getTotalPrice, getTotalEurPrice
+    return result;
+  }, [getMemo, getTotalPrice]);
 
   const callWaiter = useCallback(() => {
     // As requested, use a fixed string for the memo for 'Call a Waiter'

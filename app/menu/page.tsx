@@ -189,6 +189,10 @@ export default function MenuPage() {
   // State for external wallet warning modal (FreeNow collision issue)
   const [showExternalWalletWarning, setShowExternalWalletWarning] = useState(false);
   const [pendingHiveUrl, setPendingHiveUrl] = useState<string>('');
+  // Full memo (base + distriate suffix) for the pending external-wallet order.
+  // Held in a ref so proceedWithExternalWallet can persist it to LS right
+  // before the hive:// redirect — that's the point of no return.
+  const pendingMemoRef = useRef<string>('');
   const [freeNowOpened, setFreeNowOpened] = useState(false);
   const [importEmail, setImportEmail] = useState('');
   const [importError, setImportError] = useState('');
@@ -267,6 +271,11 @@ export default function MenuPage() {
   //   Fulfilled:     SOLID GREEN for 10min from detection, then cleanup
   // Adaptive polling: 15s when actively tracking (green/green-slow), 60s otherwise (blue/red/solid)
   // Retry on failure: 5s after network error instead of waiting the full interval
+  // clearCart via ref so pulseCheck doesn't restart when the cart changes —
+  // fires once on first transfer detection (idempotent via LS key below).
+  const clearCartRef = useRef(clearCart);
+  useEffect(() => { clearCartRef.current = clearCart; }, [clearCart]);
+
   const schedulePulse = useCallback((delayMs: number) => {
     if (pulseIntervalRef.current) clearTimeout(pulseIntervalRef.current);
     pulseIntervalRef.current = setTimeout(async () => {
@@ -301,6 +310,7 @@ export default function MenuPage() {
       localStorage.removeItem('innopay_latestMemoContent');
       localStorage.removeItem('innopay_latestMemoDateTime');
       localStorage.removeItem('innopay_fulfilledDetectedAt');
+      localStorage.removeItem('innopay_orderConfirmedForMemo');
       setWalletPulseState('none');
       return;
     }
@@ -309,6 +319,7 @@ export default function MenuPage() {
     if (ageMin > TWO_HOURS) {
       localStorage.removeItem('innopay_latestMemoContent');
       localStorage.removeItem('innopay_latestMemoDateTime');
+      localStorage.removeItem('innopay_orderConfirmedForMemo');
       setWalletPulseState('none');
       return;
     }
@@ -329,6 +340,19 @@ export default function MenuPage() {
         setWalletPulseState(ageMin < 20 ? 'blue' : 'red');
         schedulePulse(PASSIVE_POLL_MS);
         return;
+      }
+
+      // First detection of the transfer for this memo: authoritative "order
+      // landed in DB" signal. Safe to clear cart now — the order cannot be
+      // withdrawn anymore. Idempotent via `innopay_orderConfirmedForMemo` so
+      // a re-hydrated cart doesn't get wiped when the same transfer is
+      // re-detected on refresh.
+      const alreadyConfirmed = localStorage.getItem('innopay_orderConfirmedForMemo') === memoPrefix;
+      if (!alreadyConfirmed) {
+        localStorage.setItem('innopay_orderConfirmedForMemo', memoPrefix);
+        try { clearCartRef.current(); } catch (err) {
+          console.warn('[PULSE] clearCart threw:', err);
+        }
       }
 
       if (data.fulfilled) {
@@ -364,8 +388,23 @@ export default function MenuPage() {
       pulseCheck();
     }, 9_000);
 
+    // When the tab regains visibility or focus (typical after returning from
+    // Keychain/Ecency), fire an immediate pulseCheck so cart-clear doesn't wait
+    // for the next 60s poll boundary. Browsers throttle background intervals
+    // unpredictably, so this is our fastest-path signal.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        pulseCheckRef.current();
+      }
+    };
+    const onFocus = () => { pulseCheckRef.current(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+
     return () => {
       clearTimeout(initialDelay);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
       if (pulseIntervalRef.current) { clearTimeout(pulseIntervalRef.current); pulseIntervalRef.current = null; }
     };
   }, [pulseCheck]);
@@ -374,6 +413,7 @@ export default function MenuPage() {
   const startOrderPulsing = useCallback((_memoPrefix: string) => {
     // LS already written by storeMemoBeforeOrder — just reset state and restart polling
     localStorage.removeItem('innopay_fulfilledDetectedAt');
+    localStorage.removeItem('innopay_orderConfirmedForMemo');
     setWalletPulseState('blue');
     if (pulseIntervalRef.current) { clearTimeout(pulseIntervalRef.current); pulseIntervalRef.current = null; }
     if (pulseStartTimeoutRef.current) { clearTimeout(pulseStartTimeoutRef.current); pulseStartTimeoutRef.current = null; }
@@ -2037,9 +2077,12 @@ export default function MenuPage() {
     }
 
     // EXISTING FLOW: Non-Safari browsers - use hive://sign/ protocol handler
-    const hiveOpUrl = orderNow();
+    const { url: hiveOpUrl, memo: fullMemo } = orderNow();
 
-    // Set a flag to detect if the page loses focus (app opened)
+    // Set a flag to detect if the page loses focus (app opened).
+    // Note: the cart is NOT cleared from this heuristic anymore — that's the
+    // pulse watcher's job (clears on first transfer detection in DB, which is
+    // the authoritative "order landed" signal).
     let protocolHandlerWorked = false;
     let blurTime = 0;
 
@@ -2052,19 +2095,22 @@ export default function MenuPage() {
       if (blurTime > 0) {
         const blurDuration = Date.now() - blurTime;
         console.log(`Page regained focus after ${blurDuration}ms`);
-
-        // Only consider it successful if blur lasted more than 2 seconds (real app switch)
-        // Safari error alert causes brief blur (<500ms)
         if (blurDuration > 2000) {
           protocolHandlerWorked = true;
-          console.log('Blur duration suggests successful app switch - clearing cart');
-          clearCart();
         }
       }
     };
 
     window.addEventListener('blur', blurHandler);
     window.addEventListener('focus', focusHandler);
+
+    // Commitment point: persist memo + kick pulse, then redirect.
+    try {
+      storeMemoBeforeOrder(fullMemo);
+      startOrderPulsing(getMemoFixedPart(fullMemo));
+    } catch (err) {
+      console.warn('[EXTERNAL WALLET] Pre-redirect hooks threw:', err);
+    }
 
     // Try to open the hive:// URL
     try {
@@ -2087,7 +2133,7 @@ export default function MenuPage() {
         setIsSafariBanner(false); // This is a protocol handler failure, not Safari detection
       }
     }, 3000);
-  }, [cart, cart.length, orderNow, clearCart, walletCredentials, isRestaurantClosed, delayedTiming]);
+  }, [cart, cart.length, orderNow, walletCredentials, isRestaurantClosed, delayedTiming, startOrderPulsing]);
 
   const handleGuestCheckout = useCallback(() => {
     if (cart.length === 0) {
@@ -2108,9 +2154,15 @@ export default function MenuPage() {
 
     console.log('[EXTERNAL WALLET] User requested external wallet - showing warning modal');
 
-    // Generate the hive://sign/ URL
-    const hiveOpUrl = isCallWaiterFlow ? callWaiter() : orderNow();
-    setPendingHiveUrl(hiveOpUrl);
+    if (isCallWaiterFlow) {
+      // Call-waiter has no distriate → no transfer tracking, no cart to clear.
+      setPendingHiveUrl(callWaiter());
+      pendingMemoRef.current = '';
+    } else {
+      const { url, memo } = orderNow();
+      setPendingHiveUrl(url);
+      pendingMemoRef.current = memo;
+    }
     setFreeNowOpened(false);
     setShowExternalWalletWarning(true);
   }, [cart.length, orderNow, isCallWaiterFlow, callWaiter, isRestaurantClosed]);
@@ -2121,7 +2173,9 @@ export default function MenuPage() {
 
     console.log('[EXTERNAL WALLET] User confirmed - opening hive:// URL');
 
-    // Set a flag to detect if the page loses focus (app opened)
+    // Cart-clear is handled by the pulse watcher (fires on first transfer
+    // detection in the spoke DB). Blur/focus is only used here to decide
+    // whether to close the warning modal / show FreeNow recovery.
     let protocolHandlerWorked = false;
     let blurTime = 0;
 
@@ -2134,27 +2188,29 @@ export default function MenuPage() {
       if (blurTime > 0) {
         const blurDuration = Date.now() - blurTime;
         console.log(`[EXTERNAL WALLET] Page regained focus after ${blurDuration}ms`);
-
-        // Only consider it successful if blur lasted more than 2 seconds (real app switch)
-        // Safari error dialog causes brief blur (<500ms)
         if (blurDuration > 2000) {
           protocolHandlerWorked = true;
-          console.log('[EXTERNAL WALLET] Blur duration suggests successful app switch - clearing cart');
-          // Only clear cart for normal orders, not for call waiter
-          if (!isCallWaiterFlow) {
-            clearCart();
-          }
           setShowExternalWalletWarning(false);
         } else {
           // Short blur likely means Safari error OR FreeNow opened
-          console.log('[EXTERNAL WALLET] Short blur - likely Safari error or FreeNow, NOT clearing cart');
-          setFreeNowOpened(true); // Show "FreeNow opened?" recovery options
+          setFreeNowOpened(true);
         }
       }
     };
 
     window.addEventListener('blur', blurHandler);
     window.addEventListener('focus', focusHandler);
+
+    // Commitment point: persist memo + kick pulse (skip for call-waiter — no
+    // distriate to track), then redirect.
+    if (!isCallWaiterFlow && pendingMemoRef.current) {
+      try {
+        storeMemoBeforeOrder(pendingMemoRef.current);
+        startOrderPulsing(getMemoFixedPart(pendingMemoRef.current));
+      } catch (err) {
+        console.warn('[EXTERNAL WALLET] Pre-redirect hooks threw:', err);
+      }
+    }
 
     // Try to open the hive:// URL
     try {
@@ -2174,7 +2230,7 @@ export default function MenuPage() {
         setFreeNowOpened(true);
       }
     }, 3000);
-  }, [pendingHiveUrl, clearCart, isCallWaiterFlow]);
+  }, [pendingHiveUrl, isCallWaiterFlow, startOrderPulsing]);
 
   // Copy hive:// URL to clipboard for manual paste into Hive Keychain
   const copyHiveUrlToClipboard = useCallback(async () => {
