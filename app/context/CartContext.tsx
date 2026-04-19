@@ -31,7 +31,7 @@ interface CartContextType {
   removeItem: (id: string) => void; // `id` here is the unique cart item id
   updateQuantity: (id: string, newQuantity: number, options: { [key: string]: string }, table?: string) => void;
   clearCart: () => void;
-  orderNow: () => string;
+  orderNow: () => { url: string; memo: string };
   callWaiter: () => string;
   getTotalItems: () => number;
   getTotalPrice: () => string;

@@ -347,7 +347,11 @@ export function dehydrateMemo(cart: CartItem[]): string {
     Object.keys(item.options).forEach(optionKey => {
       const shortCode = optionShortCodes[optionKey];
       if (shortCode && item.options[optionKey]) {
-        itemMemo += `,${shortCode}:${item.options[optionKey]}`;
+        // Comma is the field separator — any comma inside an option value
+        // (e.g. French "0,5L" drink size) would split the value at hydrate
+        // time. Substitute with dot; fully reversible for display.
+        const safeValue = String(item.options[optionKey]).replace(/,/g, '.');
+        itemMemo += `,${shortCode}:${safeValue}`;
       }
     });
 
@@ -478,13 +482,16 @@ export function hydrateMemo(rawMemo: string, menuData: MenuData): HydratedOrderL
         if (options.ingredient) {
           description = `${description} (${options.ingredient})`;
         }
-        // Add size to description if present
+        // Add size to description if present. Reverse the dehydrate-time
+        // comma→dot substitution so "0.5L" in the memo matches "0,5L" in the
+        // DB lookup and renders with the original French decimal formatting.
         if (options.size) {
-          const sizeObj = drink.availableSizes.find(s => s.size === options.size);
+          const lookupSize = options.size.replace(/(\d)\.(\d)/g, '$1,$2');
+          const sizeObj = drink.availableSizes.find(s => s.size === lookupSize);
           if (sizeObj) {
             description = `${description} ${sizeObj.size}`;
           } else {
-            description = `${description} (Size: ${options.size})`;
+            description = `${description} (Size: ${lookupSize})`;
           }
         }
         hydratedParts.push({ type: 'item', categoryType: 'drink', quantity, description, ...(comment && { comment }) });

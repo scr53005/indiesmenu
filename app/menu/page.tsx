@@ -1906,11 +1906,14 @@ export default function MenuPage() {
 
         // alert(`Étape 6: Création opération EURO (${amountEuro}€)...`);
         // 6. Create EURO transfer operation (customer → innopay)
+        // Include the full order memo alongside the distriate suffix so the
+        // on-chain customer-leg transfer reflects what was ordered (not just
+        // an opaque tag). Matches the memo format used elsewhere.
         const euroOp = createEuroTransferOperation(
           accountName,
           'innopay',
           amountEuro,
-          suffix  // Only suffix, not full order memo
+          fullMemo  // orderMemo + distriate suffix
         );
 
         // alert('Étape 7: Signature et diffusion (serveur)...');
