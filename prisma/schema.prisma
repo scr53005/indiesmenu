@@ -19,6 +19,8 @@ model transfers {
   fulfilled    Boolean?  @default(false)
   received_at  DateTime? @default(now()) @db.Timestamptz(6)
   fulfilled_at DateTime? @db.Timestamptz(6)
+
+  @@index([fulfilled])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

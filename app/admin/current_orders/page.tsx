@@ -4,6 +4,7 @@ import { ToastContainer, toast } from 'react-toastify';
 import { getTable, hydrateMemo, HydratedOrderLine, getOrderTiming, OrderTiming } from '@/lib/utils';
 import { MenuData } from '@/lib/data/menu';
 import { generateReceiptHtml } from '@/lib/print-utils';
+import { isRestaurantOpen } from '@/lib/config/kitchen-hours';
 import 'react-toastify/dist/ReactToastify.css';
 import React from 'react';
 import { Lato } from 'next/font/google';
@@ -45,6 +46,21 @@ interface GroupedOrder {
   allTransferIds: string[];
 }
 
+const POLL_MS = 6000;
+const POLL_MS_SLOW = 30_000;
+const POLL_MS_SLOWER = 60_000;
+const IDLE_SLOW_AFTER = 50;    // 50 × 6s = 5 min → switch to 30s
+const IDLE_SLOWER_AFTER = 150;  // ~15 min total → switch to 60s
+const HOURS_CHECK_MS = 60_000;
+const WAKE_UP_MS = 30_000;
+
+type PauseReason = 'none' | 'closed' | 'hidden';
+
+function isRestaurantOpenNow(): boolean {
+  const now = new Date();
+  return isRestaurantOpen(now.getDay(), now.getHours() * 60 + now.getMinutes());
+}
+
 function getMerchantHubUrl(): string {
   return process.env.NEXT_PUBLIC_MERCHANT_HUB_URL || 'https://merchant-hub-theta.vercel.app';
 }
@@ -62,13 +78,18 @@ export default function CurrentOrdersPage() {
   const [lastSyncInfo, setLastSyncInfo] = useState<string>('');
   const [isPoller, setIsPoller] = useState(false);
   const [pollerStatus, setPollerStatus] = useState<string>('');
-  
-  const pollInterval = useRef<NodeJS.Timeout | null>(null);
+  const [pauseReason, setPauseReason] = useState<PauseReason>('none');
+
+  const pollInterval = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollerInterval = useRef<NodeJS.Timeout | null>(null);
   const wakeUpInterval = useRef<NodeJS.Timeout | null>(null);
+  const hoursCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
   const previousTransfersRef = useRef<Set<string>>(new Set());
-  const printedRef = useRef<Set<string>>(new Set()); // Track what has been printed
-  const previouslyDelayedRef = useRef<Set<string>>(new Set()); // Track delayed orders for promotion detection
+  const printedRef = useRef<Set<string>>(new Set());
+  const previouslyDelayedRef = useRef<Set<string>>(new Set());
+  const idleCyclesRef = useRef(0);
+  const currentIntervalRef = useRef(POLL_MS);
+  const pausedRef = useRef(false);
 
   const isDev = process.env.NODE_ENV === 'development';
 
@@ -389,6 +410,12 @@ export default function CurrentOrdersPage() {
         return (target.getTime() - now.getTime()) / 60000 <= 30;
       });
 
+      // Adaptive backoff: reset on any new transfer (immediate or not)
+      if (newTransfers.length > 0) {
+        idleCyclesRef.current = 0;
+        currentIntervalRef.current = POLL_MS;
+      }
+
       if (newImmediateTransfers.length > 0) {
         if (canPlayAudioRef.current) playBellSoundsRef.current();
         newImmediateTransfers.forEach(tx => {
@@ -406,6 +433,16 @@ export default function CurrentOrdersPage() {
       // 4. Update state and tracking ref in one go
       previousTransfersRef.current = new Set(hydrated.map(t => t.id));
       setTransfers(hydrated);
+
+      // Adaptive backoff: if no new orders, progressively slow down
+      if (newTransfers.length === 0) {
+        idleCyclesRef.current++;
+        if (idleCyclesRef.current >= IDLE_SLOWER_AFTER) {
+          currentIntervalRef.current = POLL_MS_SLOWER;
+        } else if (idleCyclesRef.current >= IDLE_SLOW_AFTER) {
+          currentIntervalRef.current = POLL_MS_SLOW;
+        }
+      }
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   }, [fetchTransfers]);
 
@@ -429,20 +466,94 @@ export default function CurrentOrdersPage() {
     } catch (err: any) { console.error('[WAKE-UP] Error:', err.message); }
   }, [triggerPoll]);
 
-  useEffect(() => {
-    triggerWakeUp();
-    wakeUpInterval.current = setInterval(triggerWakeUp, 30000);
-    return () => { if (wakeUpInterval.current) clearInterval(wakeUpInterval.current); if (pollerInterval.current) clearInterval(pollerInterval.current); };
-  }, [triggerWakeUp]);
+  // --- Polling orchestrator: start/stop all loops based on pause state ---
 
-  useEffect(() => {
+  const clearAllTimers = useCallback(() => {
+    if (pollInterval.current) { clearTimeout(pollInterval.current); pollInterval.current = null; }
+    if (pollerInterval.current) { clearInterval(pollerInterval.current); pollerInterval.current = null; }
+    if (wakeUpInterval.current) { clearInterval(wakeUpInterval.current); wakeUpInterval.current = null; }
+    reminderIntervalsRef.current.forEach((id) => clearInterval(id));
+    reminderIntervalsRef.current.clear();
+  }, []);
+
+  const startPolling = useCallback(() => {
+    if (pausedRef.current) return;
+    triggerWakeUp();
+    wakeUpInterval.current = setInterval(triggerWakeUp, WAKE_UP_MS);
+    function scheduleNext() {
+      pollInterval.current = setTimeout(async () => {
+        await syncAndReload();
+        if (!pausedRef.current) scheduleNext();
+      }, currentIntervalRef.current);
+    }
     syncAndReload();
-    pollInterval.current = setInterval(syncAndReload, 6000);
-    return () => {
-      if (pollInterval.current) clearInterval(pollInterval.current);
-      if (reminderIntervalsRef.current) { reminderIntervalsRef.current.forEach((id) => clearInterval(id)); reminderIntervalsRef.current.clear(); }
-    };
-  }, [syncAndReload]);
+    scheduleNext();
+  }, [triggerWakeUp, syncAndReload]);
+
+  const pausePolling = useCallback((reason: PauseReason) => {
+    pausedRef.current = true;
+    setPauseReason(reason);
+    clearAllTimers();
+    console.warn(`[CO] Polling paused: ${reason}`);
+  }, [clearAllTimers]);
+
+  const resumePolling = useCallback(() => {
+    pausedRef.current = false;
+    setPauseReason('none');
+    idleCyclesRef.current = 0;
+    currentIntervalRef.current = POLL_MS;
+    console.warn('[CO] Polling resumed');
+    startPolling();
+  }, [startPolling]);
+
+  // Layer 1: Opening-hours gate
+  useEffect(() => {
+    function checkHours() {
+      const open = isRestaurantOpenNow();
+      if (!open && !pausedRef.current) {
+        pausePolling('closed');
+      } else if (open && pausedRef.current && pauseReason === 'closed') {
+        resumePolling();
+      }
+    }
+    checkHours();
+    hoursCheckTimerRef.current = setInterval(checkHours, HOURS_CHECK_MS);
+    return () => { if (hoursCheckTimerRef.current) clearInterval(hoursCheckTimerRef.current); };
+  }, [pausePolling, resumePolling, pauseReason]);
+
+  // Layer 3: Page Visibility API
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.hidden) {
+        if (!pausedRef.current) pausePolling('hidden');
+      } else {
+        if (pauseReason === 'hidden') {
+          if (isRestaurantOpenNow()) {
+            resumePolling();
+          } else {
+            setPauseReason('closed');
+          }
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [pausePolling, resumePolling, pauseReason]);
+
+  // Initial start
+  useEffect(() => {
+    if (isRestaurantOpenNow() && !document.hidden) {
+      startPolling();
+    } else if (!isRestaurantOpenNow()) {
+      pausedRef.current = true;
+      setPauseReason('closed');
+    } else {
+      pausedRef.current = true;
+      setPauseReason('hidden');
+    }
+    return () => clearAllTimers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFulfill = async (_memo: string, allTransferIds: string[]) => {
     try {
@@ -483,6 +594,18 @@ export default function CurrentOrdersPage() {
           <a href="/admin/history" className="nav-button history-button">📜 Historique</a>
         </div>
       </div>
+      {pauseReason === 'closed' && (
+        <div className="pause-banner pause-closed">
+          <strong>Restaurant ferm&eacute;</strong> &mdash; le polling est en pause.
+          Il reprendra automatiquement &agrave; l&rsquo;ouverture.
+        </div>
+      )}
+      {pauseReason === 'hidden' && (
+        <div className="pause-banner pause-hidden">
+          <strong>Onglet en arri&egrave;re-plan</strong> &mdash; le polling est en pause.
+          Il reprendra quand cet onglet redeviendra visible.
+        </div>
+      )}
       {error && <div className="error-box">Erreur: {error}</div>}
       {isDev && (lastSyncInfo || pollerStatus) && (
         <div className="sync-info">
@@ -638,6 +761,9 @@ export default function CurrentOrdersPage() {
         .history-button:hover { background: #218838; }
         .order-count-prominent { font-size: 16px; font-weight: bold; color: #000; margin-bottom: 8px; }
         .dev-transfers-total { margin-left: 8px; font-size: 12px; font-weight: normal; color: #0070f3; }
+        .pause-banner { padding: 10px 14px; margin-bottom: 10px; border-radius: 6px; font-size: 13px; }
+        .pause-closed { background: #fff8e1; border: 1px solid #ffcc02; color: #7a6100; }
+        .pause-hidden { background: #e3f2fd; border: 1px solid #90caf9; color: #1565c0; }
         .error-box { background: #fee; border: 1px solid #f00; color: #900; padding: 8px; margin-bottom: 10px; border-radius: 5px; font-size: 14px; }
         .sync-info { font-size: 11px; color: #666; margin-bottom: 8px; padding: 4px 8px; background: #f8f9fa; border-radius: 4px; display: inline-block; }
         .poller-active { color: #008000; font-weight: bold; }
