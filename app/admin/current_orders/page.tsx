@@ -80,6 +80,7 @@ export default function CurrentOrdersPage() {
   const [pollerStatus, setPollerStatus] = useState<string>('');
   const [pauseReason, setPauseReason] = useState<PauseReason>('none');
 
+  const menuDataRef = useRef<MenuData | null>(null);
   const pollInterval = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollerInterval = useRef<NodeJS.Timeout | null>(null);
   const wakeUpInterval = useRef<NodeJS.Timeout | null>(null);
@@ -104,6 +105,7 @@ export default function CurrentOrdersPage() {
   const printOrderRef = useRef<(transfer: Transfer) => boolean>(() => false);
 
   useEffect(() => { canPlayAudioRef.current = canPlayAudio; }, [canPlayAudio]);
+  useEffect(() => { menuDataRef.current = menuData; }, [menuData]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -221,8 +223,9 @@ export default function CurrentOrdersPage() {
   useEffect(() => {
     async function fetchMenu() {
       try {
-        const res = await fetch('/api/menu');
+        const res = await fetch('/api/menu', { cache: 'no-store' });
         const data = await res.json();
+        menuDataRef.current = data;
         setMenuData(data);
       } catch (err) {
         console.error('Failed to fetch menu:', err);
@@ -240,23 +243,34 @@ export default function CurrentOrdersPage() {
       if (memoPrefix.includes('appel')) isCallWaiter = true;
       const orderContent = tableIndex !== -1 ? tx.memo.substring(0, tableIndex).trim() : (tx.memo || '');
 
-      // Single hydration path for all memo types (orders and call-waiter)
-      // hydrateMemo handles non-codified memos (like call-waiter) as raw with n: decoding
-      if (tx.parsedMemo) {
+      const activeMenuData = menuDataRef.current;
+      const isCodifiedMemo = /(?:d:\d+|b:\d+)/.test(orderContent);
+
+      // If menu data is available, always hydrate codified memos from the raw memo.
+      // A first poll can happen before menu data arrives; in that case the previous
+      // fallback parsedMemo is just [{ type: 'raw', content: 'b:13;s:25cl' }] and
+      // must not block a later DB-name hydration pass.
+      if (activeMenuData && isCodifiedMemo) {
+        try {
+          parsedMemo = hydrateMemo(orderContent, activeMenuData);
+        } catch {
+          parsedMemo = [{ type: 'raw', content: orderContent }];
+        }
+      } else if (tx.parsedMemo) {
         try {
           parsedMemo = typeof tx.parsedMemo === 'string' ? JSON.parse(tx.parsedMemo) : tx.parsedMemo;
         } catch {
-          if (menuData) {
-            try { parsedMemo = hydrateMemo(orderContent, menuData); } catch { parsedMemo = [{ type: 'raw', content: orderContent }]; }
+          if (activeMenuData) {
+            try { parsedMemo = hydrateMemo(orderContent, activeMenuData); } catch { parsedMemo = [{ type: 'raw', content: orderContent }]; }
           } else { parsedMemo = [{ type: 'raw', content: orderContent }]; }
         }
-      } else if (menuData) {
-        try { parsedMemo = hydrateMemo(orderContent, menuData); } catch { parsedMemo = [{ type: 'raw', content: orderContent }]; }
+      } else if (activeMenuData) {
+        try { parsedMemo = hydrateMemo(orderContent, activeMenuData); } catch { parsedMemo = [{ type: 'raw', content: orderContent }]; }
       } else { parsedMemo = [{ type: 'raw', content: orderContent }]; }
 
       return { ...tx, parsedMemo, isCallWaiter };
     });
-  }, [menuData]);
+  }, []);
 
   // Re-hydrate and trigger pending prints when menuData loads
   useEffect(() => {

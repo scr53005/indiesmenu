@@ -1,4 +1,4 @@
-# Indiesmenu - last updated 2026-02-16
+# Indiesmenu - last updated 2026-05-05
 
 Full-featured restaurant menu, ordering, and kitchen management system for Indies restaurant. Part of the **Innopay hub-and-spokes ecosystem** (Spoke 1).
 
@@ -66,7 +66,7 @@ Flows 6 and 7 use **two-leg dual-currency** transfers: Customer -> innopay (EURO
 
 ## Admin Dashboard (`/admin`)
 
-Authentication-protected admin area with 6 dashboard cards:
+Authentication-protected admin area with 6 dashboard cards. Login defaults to `/admin`, while deep links are preserved: opening `/admin/carte` while logged out returns to `/admin/carte` after authentication.
 
 ```
 Login -> /admin (dashboard)
@@ -79,15 +79,26 @@ Login -> /admin (dashboard)
          +-> Comptabilite         /admin/reporting
 ```
 
+Dashboard details:
+
+- Card-based navigation for all admin work areas
+- Back links from sub-pages to the dashboard
+- Cache clear button with confirmation and success/error feedback
+- Quick links to customer menu, display page, and printout view
+
 ### Current Orders (`/admin/current_orders`)
 
 The operational heart of the system — the **CO page** (Current Orders):
 
 - **Real-time order display** via merchant-hub polling (6-second intervals)
 - **Distributed poller election**: Coordinates with merchant-hub using Redis SETNX. First CO page to open becomes the poller; others subscribe to Redis Streams.
-- **Kitchen workflow**: Two-step fulfillment (transmit to kitchen -> mark as served)
+- **Zombie tab protection**: Polling pauses outside restaurant hours and while the tab is hidden; idle polling backs off from 6s to 30s to 60s.
+- **Kitchen workflow**: Mark orders as served from the CO page
 - **Order grouping**: Groups EURO + HBD transfers for same order (dual-currency)
 - **Memo hydration**: Decodes dehydrated memos (`d:1,q:2;b:3;`) into dish names using menu data
+- **Hydration robustness**: Codified memos are rehydrated from the raw memo once menu data is available, avoiding stale raw fallbacks such as `b:13;s:25cl`
+- **Delayed orders**: Pickup / dine-in timing tokens stay in a delayed side column until close to target time
+- **Automatic thermal printing**: Hidden iframe print queue, separate kitchen/bar tickets, manual print button, and retry after menu hydration
 - **Late order highlighting**: Visual alerts for orders older than 10 minutes
 - **Audio reminders**: Bell sounds every 30 seconds for untransmitted orders
 - **Environment filtering**: Only shows transfers matching the current environment (`indies.cafe` in prod, `indies-test` in dev)
@@ -153,6 +164,16 @@ Accountant export page for HBD transaction history with EUR conversion:
 - `GET /api/transfers/check` — Check transfer status
 - `POST /api/fulfill` — Mark order as fulfilled
 - `GET /api/orders/history` — Fulfilled orders with pagination
+
+### Merchant-Hub Environment Notes
+
+Merchant-hub polls both production and development restaurant accounts. Indiesmenu filters the shared Redis stream before inserting transfers:
+
+- Production DB keeps transfers for `indies.cafe`
+- Development DB keeps transfers for `indies-test`
+- Filtered-out transfers are still ACKed so they do not remain pending in Redis
+
+If the CO page shows orders from the wrong environment, check `DATABASE_URL` and the account selection logic in `/api/transfers/sync-from-merchant-hub`.
 
 ### Balance & Currency
 - `GET /api/balance/euro` — Fetch EURO token balance from Hive-Engine
@@ -277,4 +298,4 @@ Requires `templateQR.png`, `indiestables.csv`, and `indiesuri.txt`. Outputs a `.
 - **[merchant-hub](../merchant-hub)** — Centralized HAF polling, Redis Streams, system health dashboard, reporting API
 - **[croque-bedaine](../croque-bedaine)** — Spoke 2 (Vite + React + Supabase + shadcn/ui)
 
-See `ADMIN-DASHBOARD-IMPLEMENTATION.md` for detailed implementation notes on the admin dashboard and merchant-hub integration.
+The admin dashboard, merchant-hub integration, CO page, and reporting flow are now documented here; the older standalone admin implementation note has been retired.
