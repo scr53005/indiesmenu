@@ -14,6 +14,15 @@ import Draggable from '@/components/ui/Draggable';
 import BottomBanner from '@/components/ui/BottomBanner';
 import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart } from '@/lib/utils';
 import { isKitchenOpen, getKitchenCloseTime, isRestaurantOpen, getNextOpenDay } from '@/lib/config/kitchen-hours';
+import {
+  saveKeys,
+  getAccountName,
+  getActiveKey,
+  saveWalletBlob,
+  loadWalletBlob,
+  purgeForbidden,
+  clearCredentials,
+} from '@/lib/innopay/keystore';
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
@@ -123,9 +132,7 @@ export default function MenuPage() {
   } | null>(null);
 
   // Get account name for React Query balance fetching
-  const accountName = typeof window !== 'undefined'
-    ? localStorage.getItem('innopay_accountName')
-    : null;
+  const accountName = typeof window !== 'undefined' ? getAccountName() : null;
 
   // Fetch balance using React Query (replaces manual useEffect at line 602-705)
   const { balance, isLoading: balanceLoading, refetch: refetchBalance, source: balanceSource } = useBalance(accountName, {
@@ -480,7 +487,7 @@ export default function MenuPage() {
     // credentials are already in localStorage — no need to fetch from innopay
     if (orderSuccess === 'true' && flowMarker === 'flow7_topup_and_pay') {
       console.log('[FLOW 7 RETURN] Pure Flow 7 return - credentials already in localStorage');
-      const accountName = localStorage.getItem('innopay_accountName');
+      const accountName = getAccountName();
       if (accountName) {
         // Clear cart in both React state AND localStorage (belt and suspenders)
         clearCart();
@@ -539,12 +546,15 @@ export default function MenuPage() {
           const credentials = await response.json();
           console.log('[ACCOUNT CREATED] Retrieved credentials for:', credentials.accountName);
 
-          // Store credentials in indiesmenu's localStorage
-          localStorage.setItem('innopay_accountName', credentials.accountName);
-          localStorage.setItem('innopay_masterPassword', credentials.masterPassword);
-          localStorage.setItem('innopay_activePrivate', credentials.keys.active.privateKey);
-          localStorage.setItem('innopay_postingPrivate', credentials.keys.posting.privateKey);
-          localStorage.setItem('innopay_memoPrivate', credentials.keys.memo.privateKey);
+          // Store ONLY the active + memo keys (SPOKE-KEY-SECURITY.md §4): the master
+          // password is the owner-deriving secret and must never be persisted; the
+          // posting key is never used to sign in a spoke. The hub still RETURNS the
+          // full set so the one-time credential-display UX is unchanged.
+          saveKeys({
+            accountName: credentials.accountName,
+            activeKey: credentials.keys.active.privateKey,
+            memoKey: credentials.keys.memo.privateKey,
+          });
 
           // Determine flow from URL param (source of truth from innopay) or fallback to marker
           // flowParam: '4' = Flow 4 (create account only), '6' = Flow 6 (pay with existing account), '7' = Flow 7 (topup + pay)
@@ -669,7 +679,7 @@ export default function MenuPage() {
               // Increased from 3 to 5 seconds to allow Hive-Engine cache to update
               setTimeout(() => {
                 console.log('[FLOW 7] Fetching fresh balance from localStorage');
-                const accountName = localStorage.getItem('innopay_accountName');
+                const accountName = getAccountName();
                 const lastBalance = localStorage.getItem('innopay_lastBalance');
                 if (accountName && lastBalance) {
                   setWalletBalance({
@@ -843,20 +853,13 @@ export default function MenuPage() {
             const credentials = await response.json();
             console.log('[TOPUP RETURN] Credentials fetched:', credentials.accountName);
 
-            // Store credentials in localStorage
-            localStorage.setItem('innopay_accountName', credentials.accountName);
-            if (credentials.masterPassword) {
-              localStorage.setItem('innopay_masterPassword', credentials.masterPassword);
-            }
-            if (credentials.keys?.active?.privateKey) {
-              localStorage.setItem('innopay_activePrivate', credentials.keys.active.privateKey);
-            }
-            if (credentials.keys?.posting?.privateKey) {
-              localStorage.setItem('innopay_postingPrivate', credentials.keys.posting.privateKey);
-            }
-            if (credentials.keys?.memo?.privateKey) {
-              localStorage.setItem('innopay_memoPrivate', credentials.keys.memo.privateKey);
-            }
+            // Store ONLY active + memo (SPOKE-KEY-SECURITY.md §4) — never the master
+            // password or posting key. saveKeys only writes the fields that are present.
+            saveKeys({
+              accountName: credentials.accountName,
+              activeKey: credentials.keys?.active?.privateKey,
+              memoKey: credentials.keys?.memo?.privateKey,
+            });
 
             // Set optimistic balance if amount provided
             if (amountParam) {
@@ -1140,21 +1143,20 @@ export default function MenuPage() {
 
   // Load saved wallet credentials on mount
   useEffect(() => {
-    const savedCredentials = localStorage.getItem('innopay_wallet_credentials');
+    // One-time, idempotent purge of legacy forbidden keys (master password / posting
+    // key) from returning customers' browsers — SPOKE-KEY-SECURITY.md §4 step 3.
+    purgeForbidden();
+
+    const savedCredentials = loadWalletBlob();
     if (savedCredentials) {
-      try {
-        const credentials = JSON.parse(savedCredentials);
-        setWalletCredentials(credentials);
-        console.log('Loaded wallet credentials:', credentials.username);
-      } catch (e) {
-        console.error('Failed to parse saved credentials:', e);
-      }
+      setWalletCredentials(savedCredentials);
+      console.log('Loaded wallet credentials:', savedCredentials.username);
     } else {
       // Detect Safari/iOS and show wallet notification proactively
       // BUT only if no account exists in localStorage
       const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const hasAccount = !!localStorage.getItem('innopay_accountName');
+      const hasAccount = !!getAccountName();
 
       if ((isSafari || isIOS) && !hasAccount) {
         console.log('Safari/iOS detected (no account) - showing wallet notification proactively');
@@ -1188,19 +1190,15 @@ export default function MenuPage() {
 
       // Handle both old and new account creation message types
       if (event.data.type === 'INNOPAY_WALLET_CREATED' || event.data.type === 'INNOPAY_ACCOUNT_CREATED') {
-        const { username, accountName, activeKey, masterPassword, postingKey, euroBalance } = event.data;
+        const { username, accountName, activeKey, masterPassword, euroBalance } = event.data;
         const finalUsername = accountName || username; // Support both old and new field names
         console.log(`[${new Date().toISOString()}] [INDIESMENU] Processing ${event.data.type} message for:`, finalUsername);
 
-        // Store credentials (store all available keys for future use)
-        const credentials = {
-          username: finalUsername,
-          activeKey,
-          ...(masterPassword && { masterPassword }), // Include master password if available
-          ...(postingKey && { postingKey }), // Include posting key if available
-        };
+        // Persist ONLY the non-sensitive display blob { username, activeKey }
+        // (SPOKE-KEY-SECURITY.md §4). The master password is never written; the posting
+        // key is dropped. masterPassword below is used only for the one-time display banner.
         setWalletCredentials({ username: finalUsername, activeKey });
-        localStorage.setItem('innopay_wallet_credentials', JSON.stringify(credentials));
+        saveWalletBlob({ username: finalUsername, activeKey });
 
         // Hide wallet notification
         setShowWalletNotification(false);
@@ -1403,10 +1401,9 @@ export default function MenuPage() {
       return;
     }
 
-    // Check if user has wallet credentials in localStorage
-    const accountName = localStorage.getItem('innopay_accountName');
-    const activeKey = localStorage.getItem('innopay_activePrivate');
-    const masterPassword = localStorage.getItem('innopay_masterPassword');
+    // Check if user has a wallet (SPOKE-KEY-SECURITY.md): only active + memo are stored.
+    const accountName = getAccountName();
+    const activeKey = getActiveKey();
 
     // Call waiter parameters (0.02 EURO tokens, special memo)
     const callWaiterAmount = 0.02;
@@ -1416,12 +1413,13 @@ export default function MenuPage() {
     console.log('[CALL WAITER] Order details:', {
       hasAccount: !!accountName,
       hasActiveKey: !!activeKey,
-      hasMasterPassword: !!masterPassword,
       amount: callWaiterAmount,
       memo: callWaiterMemo
     });
 
-    if (accountName && (activeKey || masterPassword)) {
+    // "Mixed" posture: an account is enough — if the local active key is absent
+    // (e.g. evicted store) we sign via the seamless innopay-authority fallback below.
+    if (accountName) {
       // User has credentials - pay with EURO tokens (pay_with_account or pay_with_topup flow)
       console.log('[CALL WAITER] Customer has credentials, initiating EURO token payment');
 
@@ -1488,11 +1486,12 @@ export default function MenuPage() {
 
           if (activeKey) {
             signPayload.activePrivateKey = activeKey;
-            console.log('[CALL WAITER] Sending active key (with fallback to innopay authority)');
-          } else if (masterPassword) {
-            signPayload.masterPassword = masterPassword;
+            console.log('[CALL WAITER] Sending active key (hub falls back to innopay authority on authority error)');
+          } else {
+            // No local active key → seamless innopay-authority fallback (mixed posture).
+            signPayload.useInnopayAuthority = true;
             signPayload.accountName = accountName;
-            console.log('[CALL WAITER] Sending master password (with fallback to innopay authority)');
+            console.log('[CALL WAITER] No local active key — requesting innopay-authority signing');
           }
 
           const signResponse = await fetch(`${innopaySignUrl}/api/sign-and-broadcast`, {
@@ -1681,18 +1680,18 @@ export default function MenuPage() {
       return;
     }
 
-    // Check if user has wallet credentials in localStorage
-    const accountName = localStorage.getItem('innopay_accountName');
-    const activeKey = localStorage.getItem('innopay_activePrivate');
-    const masterPassword = localStorage.getItem('innopay_masterPassword');
+    // Check if user has a wallet (SPOKE-KEY-SECURITY.md): only active + memo are stored.
+    const accountName = getAccountName();
+    const activeKey = getActiveKey();
 
     console.log('[WALLET PAYMENT] Checking credentials:', {
       hasAccount: !!accountName,
-      hasActiveKey: !!activeKey,
-      hasMasterPassword: !!masterPassword
+      hasActiveKey: !!activeKey
     });
 
-    if (accountName && (activeKey || masterPassword)) {
+    // "Mixed" posture: an account is enough — a missing local active key is signed
+    // via the seamless innopay-authority fallback below.
+    if (accountName) {
       // ═════════════════════════════════════════════════════════════════════════
       // FLOW 6 & 7 ENTRY POINT - EXISTING ACCOUNT PAYMENT (Nov 2025)
       // ═════════════════════════════════════════════════════════════════════════
@@ -1922,19 +1921,20 @@ export default function MenuPage() {
         // 5. Sign and broadcast EURO transfer SERVER-SIDE with cascade fallback
         const innopaySignUrl = getInnopayUrl();
 
-        // Send either activeKey or masterPassword to server for signing
-        // Server will try user's key first, fallback to innopay authority if needed
+        // Send the active key if we have one; the hub tries it first and falls back to
+        // innopay authority on an authority error. If we have no local active key,
+        // request innopay-authority signing explicitly (mixed posture).
         const signPayload: any = {
           operation: euroOp,
         };
 
         if (activeKey) {
           signPayload.activePrivateKey = activeKey;
-          console.log('[WALLET PAYMENT] Sending active key (with fallback to innopay authority)');
-        } else if (masterPassword) {
-          signPayload.masterPassword = masterPassword;
+          console.log('[WALLET PAYMENT] Sending active key (hub falls back to innopay authority on authority error)');
+        } else {
+          signPayload.useInnopayAuthority = true;
           signPayload.accountName = accountName;
-          console.log('[WALLET PAYMENT] Sending master password (with fallback to innopay authority)');
+          console.log('[WALLET PAYMENT] No local active key — requesting innopay-authority signing');
         }
 
         const signResponse = await fetch(`${innopaySignUrl}/api/sign-and-broadcast`, {
@@ -2435,14 +2435,12 @@ export default function MenuPage() {
           // Single account - auto-import
           console.log('[VERIFY] Single account found:', data.accountName);
 
-          localStorage.setItem('innopay_accountName', data.accountName);
-          localStorage.setItem('innopay_masterPassword', data.masterPassword || '');
-
-          if (data.keys) {
-            localStorage.setItem('innopay_activePrivate', data.keys.active);
-            localStorage.setItem('innopay_postingPrivate', data.keys.posting);
-            localStorage.setItem('innopay_memoPrivate', data.keys.memo);
-          }
+          // Flow 8 re-import persists ONLY active + memo (SPOKE-KEY-SECURITY.md §4).
+          saveKeys({
+            accountName: data.accountName,
+            activeKey: data.keys?.active,
+            memoKey: data.keys?.memo,
+          });
 
           // Refresh page to activate account
           window.location.reload();
@@ -2493,14 +2491,12 @@ export default function MenuPage() {
       console.log('[VERIFY] Credentials response:', data);
 
       if (data.accountName) {
-        localStorage.setItem('innopay_accountName', data.accountName);
-        localStorage.setItem('innopay_masterPassword', data.masterPassword || '');
-
-        if (data.keys) {
-          localStorage.setItem('innopay_activePrivate', data.keys.active);
-          localStorage.setItem('innopay_postingPrivate', data.keys.posting);
-          localStorage.setItem('innopay_memoPrivate', data.keys.memo);
-        }
+        // Flow 8 re-import persists ONLY active + memo (SPOKE-KEY-SECURITY.md §4).
+        saveKeys({
+          accountName: data.accountName,
+          activeKey: data.keys?.active,
+          memoKey: data.keys?.memo,
+        });
 
         // Refresh page to activate account
         window.location.reload();
@@ -2999,14 +2995,9 @@ export default function MenuPage() {
                 const currentTable = new URLSearchParams(window.location.search).get('table');
 
                 // Clear all innopay-related items from localStorage
-                localStorage.removeItem('innopay_accountName');
-                localStorage.removeItem('innopay_masterPassword');
-                localStorage.removeItem('innopay_activePrivate');
-                localStorage.removeItem('innopay_postingPrivate');
-                localStorage.removeItem('innopay_memoPrivate');
+                clearCredentials(); // account name, active, memo, blob + any forbidden leftovers
                 localStorage.removeItem('innopay_import_attempts');
                 localStorage.removeItem('innopay_accounts');
-                localStorage.removeItem('innopay_wallet_credentials');
                 localStorage.removeItem('innopay_lastBalance');
                 localStorage.removeItem('innopay_pending_order');
                 localStorage.removeItem('innopay_flow_pending'); // Flow marker (Flow 5, 7, etc.)
@@ -3212,8 +3203,9 @@ export default function MenuPage() {
                   setShowGuestWarningModal(false);
                   setGuestCheckoutProcessing(false);
                   skipDuplicateCheckRef.current = true;
-                  const hasCredentials = localStorage.getItem('innopay_accountName')
-                    && (localStorage.getItem('innopay_activePrivate') || localStorage.getItem('innopay_masterPassword'));
+                  // Mixed posture: an account is sufficient — a missing local active key
+                  // is handled by the innopay-authority fallback inside handleOrder().
+                  const hasCredentials = !!getAccountName();
                   if (hasCredentials) {
                     handleOrder();
                   } else {
@@ -3598,7 +3590,7 @@ export default function MenuPage() {
             <button
               onClick={() => {
                 if (confirm('Déconnecter votre portefeuille?')) {
-                  localStorage.removeItem('innopay_wallet_credentials');
+                  clearCredentials(); // remove all key material, not just the display blob
                   setWalletCredentials(null);
                 }
               }}
@@ -3778,12 +3770,11 @@ export default function MenuPage() {
             <div style={{ padding: '4px 20px 14px', display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
                 onClick={() => {
-                  // Check if user has credentials — if yes, direct payment; if no, show strip + banner
-                  const accountName = localStorage.getItem('innopay_accountName');
-                  const activeKey = localStorage.getItem('innopay_activePrivate');
-                  const masterPassword = localStorage.getItem('innopay_masterPassword');
+                  // Check if user has an account — if yes, direct payment (a missing local
+                  // active key is handled by the innopay-authority fallback); if no, show strip + banner
+                  const accountName = getAccountName();
 
-                  if (accountName && (activeKey || masterPassword)) {
+                  if (accountName) {
                     // Has credentials — direct payment flow
                     setShowWaiterModal(false);
                     handleCallWaiter(waiterReason);

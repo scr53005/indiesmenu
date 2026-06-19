@@ -210,7 +210,7 @@ If the CO page shows orders from the wrong environment, check `DATABASE_URL` and
 | PDF Export | jspdf + jspdf-autotable |
 | Notifications | react-toastify |
 | HTTP Client | Axios |
-| Testing | Jest 30 + ts-jest |
+| Testing | Vitest + jsdom |
 | Deployment | Vercel |
 
 ## Setup

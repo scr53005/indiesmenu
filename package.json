@@ -11,7 +11,8 @@
     "postinstall": "prisma generate",
     "migrate:dev": "npx prisma migrate dev",
     "migrate:deploy": "npx prisma migrate deploy",
-    "test": "jest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "optimize-images": "node scripts/optimize-images.js",
     "optimize-images:preview": "node scripts/optimize-images.js --dry-run",
     "optimize-images:backup": "node scripts/optimize-images.js --backup",
@@ -44,7 +45,6 @@
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
-    "@types/jest": "^30.0.0",
     "@types/node": "^20.19.4",
     "@types/pg": "^8.15.2",
     "@types/qrcode": "^1.5.5",
@@ -55,10 +55,11 @@
     "prisma": "6.11.1",
     "qrcode": "^1.5.4",
     "tailwindcss": "^4",
-    "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.0.0",
+    "jsdom": "^26.0.0"
   },
   "overrides": {
     "glob": "^10.0.0",
