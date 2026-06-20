@@ -22,6 +22,7 @@ import {
   loadWalletBlob,
   purgeForbidden,
   clearCredentials,
+  ensureReady,
 } from '@/lib/innopay/keystore';
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
@@ -83,7 +84,7 @@ export default function MenuPage() {
   const [showWalletNotification, setShowWalletNotification] = useState(false);
   const [isSafariBanner, setIsSafariBanner] = useState(false); // Track if banner is shown for Safari
   const [isCallWaiterFlow, setIsCallWaiterFlow] = useState(false); // Track if banner is for call waiter
-  const [walletCredentials, setWalletCredentials] = useState<{username: string, activeKey: string} | null>(null);
+  const [walletCredentials, setWalletCredentials] = useState<{username: string} | null>(null);
 
   // State for payment success notification
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
@@ -550,7 +551,8 @@ export default function MenuPage() {
           // password is the owner-deriving secret and must never be persisted; the
           // posting key is never used to sign in a spoke. The hub still RETURNS the
           // full set so the one-time credential-display UX is unchanged.
-          saveKeys({
+          // Awaited — saveKeys is async in Phase 1 (encrypts at rest + refreshes cache).
+          await saveKeys({
             accountName: credentials.accountName,
             activeKey: credentials.keys.active.privateKey,
             memoKey: credentials.keys.memo.privateKey,
@@ -855,7 +857,8 @@ export default function MenuPage() {
 
             // Store ONLY active + memo (SPOKE-KEY-SECURITY.md §4) — never the master
             // password or posting key. saveKeys only writes the fields that are present.
-            saveKeys({
+            // Awaited — saveKeys is async in Phase 1 (encrypts at rest + refreshes cache).
+            await saveKeys({
               accountName: credentials.accountName,
               activeKey: credentials.keys?.active?.privateKey,
               memoKey: credentials.keys?.memo?.privateKey,
@@ -1146,6 +1149,11 @@ export default function MenuPage() {
     // One-time, idempotent purge of legacy forbidden keys (master password / posting
     // key) from returning customers' browsers — SPOKE-KEY-SECURITY.md §4 step 3.
     purgeForbidden();
+    // Kick off the at-rest-key unlock (decrypt active+memo into memory, migrating
+    // any legacy plaintext) so the sync getters are ready by interaction time —
+    // SPOKE-KEY-SECURITY.md §9. Fire-and-forget; getAccountName() is plaintext and
+    // doesn't depend on it.
+    void ensureReady();
 
     const savedCredentials = loadWalletBlob();
     if (savedCredentials) {
@@ -1171,7 +1179,7 @@ export default function MenuPage() {
   // Drag handlers for wallet banner
   // Listen for wallet credentials from wallet.innopay.lu
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       console.log('Received postMessage from:', event.origin, 'data:', event.data);
 
       // Verify origin for security (allow localhost and local network for testing)
@@ -1188,17 +1196,37 @@ export default function MenuPage() {
         return;
       }
 
-      // Handle both old and new account creation message types
+      // Handle both old and new account creation message types (Flow 4/5 POPUP
+      // variant: wallet.innopay.lu opened via window.open posts credentials back to
+      // window.opener after a freshly created account).
       if (event.data.type === 'INNOPAY_WALLET_CREATED' || event.data.type === 'INNOPAY_ACCOUNT_CREATED') {
         const { username, accountName, activeKey, masterPassword, euroBalance } = event.data;
         const finalUsername = accountName || username; // Support both old and new field names
         console.log(`[${new Date().toISOString()}] [INDIESMENU] Processing ${event.data.type} message for:`, finalUsername);
 
-        // Persist ONLY the non-sensitive display blob { username, activeKey }
-        // (SPOKE-KEY-SECURITY.md §4). The master password is never written; the posting
-        // key is dropped. masterPassword below is used only for the one-time display banner.
-        setWalletCredentials({ username: finalUsername, activeKey });
-        saveWalletBlob({ username: finalUsername, activeKey });
+        // Persist the account + ACTIVE key through the keystore (active key encrypted at
+        // rest in Phase 1; SPOKE-KEY-SECURITY.md §9). The hub derives + sends the REAL
+        // active key (innopay app/user/page.tsx). DEFENSIVE GUARD: a Hive active WIF
+        // starts with '5'; the auto-generated master password is 'P5…' (starts with 'P').
+        // If we ever receive something that isn't an active WIF — e.g. an un-updated hub
+        // still sending the master password during a staggered deploy — we must NEVER
+        // store it (the owner-deriving secret must not land in localStorage); we set only
+        // the account name and let signing use the seamless innopay-authority fallback.
+        // The display blob holds only { username } (§9.8). masterPassword (if sent) feeds
+        // only the one-time credential-display banner.
+        const looksLikeActiveWif =
+          typeof activeKey === 'string' &&
+          activeKey.startsWith('5') &&
+          activeKey.length >= 50 &&
+          activeKey.length <= 52;
+        if (looksLikeActiveWif) {
+          await saveKeys({ accountName: finalUsername, activeKey });
+        } else {
+          console.warn('[INDIESMENU] postMessage activeKey is not a Hive active WIF — not storing it (un-updated hub?); using innopay-authority fallback for signing.');
+          await saveKeys({ accountName: finalUsername });
+        }
+        setWalletCredentials({ username: finalUsername });
+        saveWalletBlob({ username: finalUsername });
 
         // Hide wallet notification
         setShowWalletNotification(false);
@@ -2132,6 +2160,14 @@ export default function MenuPage() {
       // Show banner if protocol handler didn't work AND user doesn't have wallet credentials
       if (!protocolHandlerWorked && !walletCredentials) {
         console.log('Protocol handler did not work - showing wallet notification');
+        // The external-wallet attempt did NOT place an order (no handler / desktop),
+        // so undo the optimistic memo commit + pulse it made at the commitment point
+        // above. Otherwise picking Flow 3/5/8 from the banner trips the duplicate-order
+        // guard (checkDuplicateMemo sees this just-stored memo within 15 min) and the
+        // pulse falsely shows an in-flight order. (We only reach here when the handler
+        // didn't fire, so a real external-wallet order the user left for is untouched.)
+        localStorage.removeItem('innopay_latestMemoContent');
+        localStorage.removeItem('innopay_latestMemoDateTime');
         setShowWalletNotification(true);
         setIsSafariBanner(false); // This is a protocol handler failure, not Safari detection
       }
@@ -2436,7 +2472,8 @@ export default function MenuPage() {
           console.log('[VERIFY] Single account found:', data.accountName);
 
           // Flow 8 re-import persists ONLY active + memo (SPOKE-KEY-SECURITY.md §4).
-          saveKeys({
+          // Awaited so the encrypted store + cache are populated before the reload.
+          await saveKeys({
             accountName: data.accountName,
             activeKey: data.keys?.active,
             memoKey: data.keys?.memo,
@@ -2492,7 +2529,8 @@ export default function MenuPage() {
 
       if (data.accountName) {
         // Flow 8 re-import persists ONLY active + memo (SPOKE-KEY-SECURITY.md §4).
-        saveKeys({
+        // Awaited so the encrypted store + cache are populated before the reload.
+        await saveKeys({
           accountName: data.accountName,
           activeKey: data.keys?.active,
           memoKey: data.keys?.memo,
