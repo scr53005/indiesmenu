@@ -507,6 +507,10 @@ export default function CurrentOrdersPage() {
   const pausePolling = useCallback((reason: PauseReason) => {
     pausedRef.current = true;
     setPauseReason(reason);
+    // Clear the initial loading flag — it's only set false inside syncAndReload, which never
+    // runs while paused. Without this the page sticks on the "Chargement…" spinner (e.g. on a
+    // closed day) instead of showing the closed/hidden banner.
+    setLoading(false);
     clearAllTimers();
     console.warn(`[CO] Polling paused: ${reason}`);
   }, [clearAllTimers]);
@@ -561,9 +565,11 @@ export default function CurrentOrdersPage() {
     } else if (!isRestaurantOpenNow()) {
       pausedRef.current = true;
       setPauseReason('closed');
+      setLoading(false); // not polling → don't leave the loading spinner up
     } else {
       pausedRef.current = true;
       setPauseReason('hidden');
+      setLoading(false);
     }
     return () => clearAllTimers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
