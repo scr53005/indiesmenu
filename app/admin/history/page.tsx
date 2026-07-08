@@ -2,7 +2,13 @@
 import { useState, useEffect } from 'react';
 import { getTable, hydrateMemo, HydratedOrderLine } from '@/lib/utils';
 import { MenuData } from '@/lib/data/menu';
+import { isRestaurantOpen } from '@/lib/config/kitchen-hours';
 import { Lato } from 'next/font/google';
+
+function isRestaurantOpenNow(): boolean {
+  const now = new Date();
+  return isRestaurantOpen(now.getDay(), now.getHours() * 60 + now.getMinutes());
+}
 
 const lato = Lato({
   weight: ['300', '400', '700'],
@@ -186,22 +192,24 @@ export default function OrderHistory() {
     }
   }, [menuData]);
 
-  // Register with merchant-hub as poller so HAF→Redis polling stays active,
-  // then sync Redis→local DB and redirect to CO page if unfulfilled orders arrive.
+  // Merchant-hub election + sync, mirroring the CO page's robust pattern:
+  //   - joins the poller election under its OWN identity ('indies-history') and
+  //     re-runs wake-up every 30s
+  //   - drives the 6s HAF poll loop ONLY while it holds the poller role. The old
+  //     version polled unconditionally under the CO page's shopId, which let a
+  //     forgotten history tab hog the election from every other spoke's CO page
+  //     (2026-07 millewee incident)
+  //   - pauses all loops when the tab is hidden or the restaurant is closed
+  // Sync stays unconditional: pull Redis→local DB and redirect to the CO page
+  // when unfulfilled orders appear.
   useEffect(() => {
     const merchantHubUrl = (process.env.NEXT_PUBLIC_MERCHANT_HUB_URL || 'https://merchant-hub-theta.vercel.app').replace(/\/$/, '');
-    const shopId = 'indies-current-orders'; // Same poller identity as CO page
+    const shopId = 'indies-history';
 
-    // Wake-up: register/renew poller heartbeat with merchant-hub
-    const triggerWakeUp = async () => {
-      try {
-        await fetch(`${merchantHubUrl}/api/wake-up`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shopId }),
-        });
-      } catch (err) { /* silent */ }
-    };
+    let paused = false;
+    let wakeUpId: ReturnType<typeof setInterval> | null = null;
+    let syncId: ReturnType<typeof setInterval> | null = null;
+    let hafPollId: ReturnType<typeof setInterval> | null = null;
 
     // Poll: ask merchant-hub to pull new transfers from HAF into Redis
     const triggerPoll = async () => {
@@ -210,10 +218,31 @@ export default function OrderHistory() {
       } catch (err) { /* silent */ }
     };
 
+    const stopHafPollLoop = () => {
+      if (hafPollId) { clearInterval(hafPollId); hafPollId = null; }
+    };
+
+    // Wake-up: join the poller election; only poll HAF if we actually won
+    const triggerWakeUp = async () => {
+      try {
+        const res = await fetch(`${merchantHubUrl}/api/wake-up`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shopId }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.shouldStartPolling && !paused) {
+          if (!hafPollId) { triggerPoll(); hafPollId = setInterval(triggerPoll, 6000); }
+        } else {
+          stopHafPollLoop();
+        }
+      } catch (err) { /* silent */ }
+    };
+
     // Sync + check: pull from Redis into local DB, redirect if unfulfilled orders exist
     const syncAndCheckForNewOrders = async () => {
       try {
-        await triggerPoll();
         await fetch('/api/transfers/sync-from-merchant-hub', { method: 'POST' });
 
         // Always check for unfulfilled orders — they may have been inserted
@@ -229,13 +258,46 @@ export default function OrderHistory() {
       } catch (err) { /* silent */ }
     };
 
-    // Start immediately, then on intervals
-    triggerWakeUp();
-    syncAndCheckForNewOrders();
-    const wakeUpId = setInterval(triggerWakeUp, 30000);
-    const syncId = setInterval(syncAndCheckForNewOrders, 6000);
+    const startLoops = () => {
+      if (wakeUpId || syncId) return; // already running
+      triggerWakeUp();
+      syncAndCheckForNewOrders();
+      wakeUpId = setInterval(triggerWakeUp, 30000);
+      syncId = setInterval(syncAndCheckForNewOrders, 6000);
+    };
 
-    return () => { clearInterval(wakeUpId); clearInterval(syncId); };
+    const stopLoops = () => {
+      if (wakeUpId) { clearInterval(wakeUpId); wakeUpId = null; }
+      if (syncId) { clearInterval(syncId); syncId = null; }
+      stopHafPollLoop();
+    };
+
+    const updatePauseState = () => {
+      const shouldPause = document.hidden || !isRestaurantOpenNow();
+      if (shouldPause && !paused) {
+        paused = true;
+        stopLoops();
+      } else if (!shouldPause && paused) {
+        paused = false;
+        startLoops();
+      }
+    };
+
+    document.addEventListener('visibilitychange', updatePauseState);
+    const hoursId = setInterval(updatePauseState, 60000);
+
+    // Initial start (only if visible and restaurant open)
+    if (!document.hidden && isRestaurantOpenNow()) {
+      startLoops();
+    } else {
+      paused = true;
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', updatePauseState);
+      clearInterval(hoursId);
+      stopLoops();
+    };
   }, []);
 
   const toggleDay = (date: string) => {
