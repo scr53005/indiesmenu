@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { PT_Sans } from 'next/font/google';
+import { isWithinHappyHourWindow, HAPPY_HOUR_IMAGE_FALLBACK } from '@/lib/happyHour';
 
 const ptSans = PT_Sans({
   weight: ['400', '700'],
@@ -26,23 +27,19 @@ interface DailySpecials {
 
 /**
  * Check if it's currently happy hour in Luxembourg time.
- * Happy hour: Monday–Friday, 14:45–18:00 (Europe/Luxembourg).
+ * Happy hour: Monday–Friday, 14:50–17:45 (Europe/Luxembourg).
+ * The window boundary logic lives in the pure, unit-tested
+ * isWithinHappyHourWindow(); here we only extract the Luxembourg wall-clock.
  */
 function isHappyHour(): boolean {
   const now = new Date();
   const luxTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Luxembourg' }));
   const day = luxTime.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
-  const hours = luxTime.getHours();
-  const minutes = luxTime.getMinutes();
-  const timeInMinutes = hours * 60 + minutes;
-
-  const isWeekday = day >= 1 && day <= 5;
-  const isAfternoon = timeInMinutes >= 14 * 60 + 45 && timeInMinutes < 18 * 60;
-
-  return isWeekday && isAfternoon;
+  const timeInMinutes = luxTime.getHours() * 60 + luxTime.getMinutes();
+  return isWithinHappyHourWindow(day, timeInMinutes);
 }
 
-function HappyHourDisplay() {
+function HappyHourDisplay({ imageUrl }: { imageUrl: string }) {
   return (
     <div className={`min-h-screen bg-black text-white relative overflow-hidden ${ptSans.className}`}>
       {/* Decorative Corners */}
@@ -75,16 +72,18 @@ function HappyHourDisplay() {
         <Image src="/images/pluxee-logo.jpeg" alt="Pluxee" fill className="object-contain" />
       </div>
 
-      {/* Happy Hour image centered, preserving proportions */}
+      {/* Happy Hour image centered, preserving proportions.
+          Plain <img> (not next/image) because the source is a runtime-uploaded
+          Blob URL of unknown dimensions/host; next/image would need remotePatterns
+          config and fixed width/height. This is a signage screen, not a perf-
+          critical customer page, so object-contain on a raw <img> is fine. */}
       <div className="relative z-10 flex items-center justify-center min-h-screen p-16">
         <div className="relative w-full max-w-4xl aspect-auto">
-          <Image
-            src="/images/happyhour.jpeg"
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
             alt="Happy Hour"
-            width={1200}
-            height={800}
             className="w-full h-auto object-contain"
-            priority
           />
         </div>
       </div>
@@ -96,6 +95,7 @@ export default function PlatDuJourDisplay() {
   const [data, setData] = useState<DailySpecials | null>(null);
   const [loading, setLoading] = useState(true);
   const [happyHour, setHappyHour] = useState(false);
+  const [happyHourImage, setHappyHourImage] = useState(HAPPY_HOUR_IMAGE_FALLBACK);
 
   const fetchData = useCallback(async () => {
     try {
@@ -109,23 +109,36 @@ export default function PlatDuJourDisplay() {
     }
   }, []);
 
+  const fetchHappyHourImage = useCallback(async () => {
+    try {
+      const response = await fetch('/api/happy-hour-image', { cache: 'no-store' });
+      const result = await response.json();
+      if (result?.url) setHappyHourImage(result.url);
+    } catch (error) {
+      // Non-fatal: keep whatever we have (defaults to the committed fallback).
+      console.error('Error fetching happy hour image:', error);
+    }
+  }, []);
+
   useEffect(() => {
     // Check happy hour state immediately and on each tick
     setHappyHour(isHappyHour());
     fetchData();
+    fetchHappyHourImage();
 
-    // Refresh data and re-check happy hour every 15 minutes
+    // Refresh data, the current happy-hour image, and re-check happy hour every 15 minutes
     const interval = setInterval(() => {
       setHappyHour(isHappyHour());
       fetchData();
+      fetchHappyHourImage();
     }, 15 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, fetchHappyHourImage]);
 
   // Show happy hour display when applicable
   if (happyHour) {
-    return <HappyHourDisplay />;
+    return <HappyHourDisplay imageUrl={happyHourImage} />;
   }
 
   if (loading) {

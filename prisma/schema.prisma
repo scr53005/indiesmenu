@@ -164,3 +164,11 @@ model dishes_ingredients {
 
   @@id([dish_id, ingredient_id])
 }
+
+/// Generic key/value app configuration (e.g. the current happy-hour image URL,
+/// stored as a Vercel Blob public URL under key 'happy_hour_image_url').
+model app_setting {
+  key        String   @id
+  value      String
+  updated_at DateTime @default(now()) @updatedAt
+}

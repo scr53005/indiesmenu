@@ -147,6 +147,22 @@ export default function AdminDashboard() {
             </div>
           </Link>
 
+          {/* Happy Hour Image Card */}
+          <Link href="/admin/happy-hour" className="h-full">
+            <div className="h-full bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-pink-500 group">
+              <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">🍹</div>
+              <h2 className="text-2xl font-bold mb-3 text-gray-800 group-hover:text-pink-600">
+                Image Happy Hour
+              </h2>
+              <p className="text-gray-600 mb-4">
+                Remplacer l&apos;image affichée pendant le happy hour
+              </p>
+              <div className="flex items-center text-pink-600 font-semibold group-hover:translate-x-2 transition-transform">
+                Gérer →
+              </div>
+            </div>
+          </Link>
+
           {/* Allergens Card */}
           <Link href="/admin/alergenes" className="h-full">
             <div className="h-full bg-white p-8 rounded-xl shadow-lg hover:shadow-2xl transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500 group">
