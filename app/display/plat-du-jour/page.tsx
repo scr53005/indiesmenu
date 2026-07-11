@@ -78,7 +78,7 @@ function HappyHourDisplay({ imageUrl }: { imageUrl: string }) {
           config and fixed width/height. This is a signage screen, not a perf-
           critical customer page, so object-contain on a raw <img> is fine. */}
       <div className="relative z-10 flex items-center justify-center min-h-screen p-16">
-        <div className="relative w-full max-w-4xl aspect-auto">
+        <div className="relative w-full max-w-5xl aspect-auto">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imageUrl}

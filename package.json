@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev --turbopack -p 3001",
     "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "vercel-build": "npx prisma migrate deploy && npx prisma generate && next build",
     "start": "next start",
