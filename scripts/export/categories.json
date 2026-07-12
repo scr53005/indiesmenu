@@ -1,0 +1,157 @@
+[
+  {
+    "category_id": 1,
+    "name": "Softs",
+    "type": "drink"
+  },
+  {
+    "category_id": 2,
+    "name": "Waters",
+    "type": "drink"
+  },
+  {
+    "category_id": 3,
+    "name": "Juices",
+    "type": "drink"
+  },
+  {
+    "category_id": 4,
+    "name": "Draft Beers",
+    "type": "drink"
+  },
+  {
+    "category_id": 5,
+    "name": "Bottled Beers",
+    "type": "drink"
+  },
+  {
+    "category_id": 6,
+    "name": "Aperitifs",
+    "type": "drink"
+  },
+  {
+    "category_id": 7,
+    "name": "Shots",
+    "type": "drink"
+  },
+  {
+    "category_id": 8,
+    "name": "Digestifs",
+    "type": "drink"
+  },
+  {
+    "category_id": 9,
+    "name": "Gin Tonics",
+    "type": "drink"
+  },
+  {
+    "category_id": 10,
+    "name": "Cocktails Signature",
+    "type": "drink"
+  },
+  {
+    "category_id": 11,
+    "name": "Cocktails",
+    "type": "drink"
+  },
+  {
+    "category_id": 12,
+    "name": "Mocktails",
+    "type": "drink"
+  },
+  {
+    "category_id": 13,
+    "name": "Make Up Your Longdrink",
+    "type": "drink"
+  },
+  {
+    "category_id": 14,
+    "name": "Hot Drinks",
+    "type": "drink"
+  },
+  {
+    "category_id": 15,
+    "name": "Hot Teas",
+    "type": "drink"
+  },
+  {
+    "category_id": 16,
+    "name": "White Wines",
+    "type": "drink"
+  },
+  {
+    "category_id": 17,
+    "name": "Red Wines",
+    "type": "drink"
+  },
+  {
+    "category_id": 18,
+    "name": "Rosé Wines",
+    "type": "drink"
+  },
+  {
+    "category_id": 19,
+    "name": "Bubbles",
+    "type": "drink"
+  },
+  {
+    "category_id": 20,
+    "name": "PARTAGER",
+    "type": "dish"
+  },
+  {
+    "category_id": 21,
+    "name": "FINGER FOOD",
+    "type": "dish"
+  },
+  {
+    "category_id": 22,
+    "name": "SALADES",
+    "type": "dish"
+  },
+  {
+    "category_id": 23,
+    "name": "POISSONS",
+    "type": "dish"
+  },
+  {
+    "category_id": 24,
+    "name": "SOUPE DU MOMENT",
+    "type": "dish"
+  },
+  {
+    "category_id": 25,
+    "name": "BURGERS avec FRITES MAISON",
+    "type": "dish"
+  },
+  {
+    "category_id": 26,
+    "name": "SAUCES \"Homemade\"",
+    "type": "dish"
+  },
+  {
+    "category_id": 27,
+    "name": "VIANDES",
+    "type": "dish"
+  },
+  {
+    "category_id": 28,
+    "name": "DESSERTS",
+    "type": "dish"
+  },
+  {
+    "category_id": 29,
+    "name": "KIDS MENU",
+    "type": "dish"
+  },
+  {
+    "category_id": 30,
+    "name": "SUGGESTION",
+    "type": "dish"
+  },
+  {
+    "category_id": 31,
+    "name": "PLAT DU JOUR",
+    "type": "dish"
+  }
+]

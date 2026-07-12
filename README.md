@@ -121,6 +121,21 @@ The operational heart of the system — the **CO page** (Current Orders):
 - Image upload, matching, and optimization
 - Menu cache management
 
+### Happy Hour Image (`/admin/happy-hour`)
+
+Gallery manager for the image shown on the plat-du-jour display during happy hour
+(Mon–Fri, 14:50–17:45 Europe/Luxembourg).
+
+- **Vercel Blob-backed gallery** — uploads are additive (never auto-deleted); the
+  gallery is `list()` under the `happy-hour/` blob prefix. Capped at 10 images / 100 MB.
+- **Upload & activate** (JPG/PNG/WebP), **re-activate** any past image, or **delete** one.
+- The currently active blob URL is stored in the `app_setting` KV row
+  `happy_hour_image_url`; the display falls back to the committed
+  `public/images/happyhour2.png` when nothing is active.
+- **Requires a PUBLIC Blob store** — `put({ access: 'public' })` fails against a
+  private store. `BLOB_READ_WRITE_TOKEN` is store-scoped and is **not** always
+  auto-provisioned to prod; add it manually if missing.
+
 ### Allergens (`/admin/alergenes`)
 
 - Manage allergen information per dish
@@ -157,6 +172,10 @@ Accountant export page for HBD transaction history with EUR conversion:
 - `GET /api/admin/detect-new-images` — Detect unmatched image files
 - `DELETE /api/admin/cache` — Clear menu cache
 - `POST /api/admin/rates` — EUR/USD rates for specific dates (reporting)
+- `GET/POST/PATCH/DELETE /api/admin/happy-hour-image` — Happy-hour gallery: list / upload+activate / set-active / delete (Vercel Blob)
+
+### Display
+- `GET /api/happy-hour-image` — Public: current active happy-hour image URL (falls back to `/images/happyhour2.png`)
 
 ### Transfers & Orders (Merchant-Hub Integration)
 - `POST /api/transfers/sync-from-merchant-hub` — Consume from Redis Stream, insert to DB, ACK
@@ -184,6 +203,11 @@ If the CO page shows orders from the wrong environment, check `DATABASE_URL` and
 
 ## Other Pages
 
+- `/display/plat-du-jour` — TV display of the weekly suggestion + daily specials. During
+  happy hour (Mon–Fri, 14:50–17:45 Europe/Luxembourg) it swaps to a full-screen happy-hour
+  image (the active one from `/admin/happy-hour`, else `happyhour2.png`). Re-checks the window
+  and re-fetches the image every 15 minutes. Happy-hour window logic is the unit-tested pure
+  `isWithinHappyHourWindow()` in `lib/happyHour.ts`.
 - `/display/printout` — A3 landscape printout of daily specials (for TV screens or printing)
 - `/admin/login` — Admin authentication page
 
@@ -195,6 +219,7 @@ If the CO page shows orders from the wrong environment, check `DATABASE_URL` and
 - `DailySpecial` — Rotating daily menu items
 - `Transfer` — Blockchain transfers consumed from merchant-hub (id, from_account, to_account, amount, symbol, memo, parsed_memo, received_at, fulfilled_at)
 - `currency_conversion` — Historical EUR/USD rates (used by reporting)
+- `app_setting` — Generic key/value config (`key`, `value`, `updated_at`). Currently holds `happy_hour_image_url` (active happy-hour Blob URL)
 
 ## Technology Stack
 
@@ -242,6 +267,10 @@ NEXT_PUBLIC_MERCHANT_HUB_URL=http://localhost:3002  # or production URL
 
 # Hive account to monitor
 NEXT_PUBLIC_HIVE_ACCOUNT=indies.cafe
+
+# Vercel Blob (happy-hour image gallery) — token from a PUBLIC Blob store.
+# Not always auto-provisioned to prod; add it manually in Vercel env if missing.
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 ```
 
 ### Database Migrations

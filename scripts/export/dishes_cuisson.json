@@ -1,0 +1,102 @@
+[
+  {
+    "dish_id": 25,
+    "cuisson_id": 1
+  },
+  {
+    "dish_id": 25,
+    "cuisson_id": 2
+  },
+  {
+    "dish_id": 25,
+    "cuisson_id": 3
+  },
+  {
+    "dish_id": 25,
+    "cuisson_id": 4
+  },
+  {
+    "dish_id": 25,
+    "cuisson_id": 5
+  },
+  {
+    "dish_id": 26,
+    "cuisson_id": 1
+  },
+  {
+    "dish_id": 26,
+    "cuisson_id": 2
+  },
+  {
+    "dish_id": 26,
+    "cuisson_id": 3
+  },
+  {
+    "dish_id": 26,
+    "cuisson_id": 4
+  },
+  {
+    "dish_id": 26,
+    "cuisson_id": 5
+  },
+  {
+    "dish_id": 30,
+    "cuisson_id": 1
+  },
+  {
+    "dish_id": 30,
+    "cuisson_id": 2
+  },
+  {
+    "dish_id": 30,
+    "cuisson_id": 3
+  },
+  {
+    "dish_id": 30,
+    "cuisson_id": 4
+  },
+  {
+    "dish_id": 30,
+    "cuisson_id": 5
+  },
+  {
+    "dish_id": 31,
+    "cuisson_id": 1
+  },
+  {
+    "dish_id": 31,
+    "cuisson_id": 2
+  },
+  {
+    "dish_id": 31,
+    "cuisson_id": 3
+  },
+  {
+    "dish_id": 31,
+    "cuisson_id": 4
+  },
+  {
+    "dish_id": 31,
+    "cuisson_id": 5
+  },
+  {
+    "dish_id": 39,
+    "cuisson_id": 1
+  },
+  {
+    "dish_id": 39,
+    "cuisson_id": 2
+  },
+  {
+    "dish_id": 39,
+    "cuisson_id": 3
+  },
+  {
+    "dish_id": 39,
+    "cuisson_id": 4
+  },
+  {
+    "dish_id": 39,
+    "cuisson_id": 5
+  }
+]

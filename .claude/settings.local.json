@@ -7,7 +7,11 @@
       "Bash(cat:*)",
       "Bash(npx tsc:*)",
       "Bash(npm install:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Read(//c/Users/Sorin/Documents/GitHub/innopay-full/**)",
+      "Bash(ls -1 *.md)",
+      "Bash(ls -1 indiesmenu/*.md)",
+      "Bash(find . -iname 'MIGRATION-NEON*' -not -path '*/node_modules/*')"
     ],
     "deny": [],
     "ask": []

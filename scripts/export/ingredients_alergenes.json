@@ -1,0 +1,42 @@
+[
+  {
+    "ingredient_id": 62,
+    "alergene_id": 7
+  },
+  {
+    "ingredient_id": 53,
+    "alergene_id": 4
+  },
+  {
+    "ingredient_id": 55,
+    "alergene_id": 1
+  },
+  {
+    "ingredient_id": 50,
+    "alergene_id": 7
+  },
+  {
+    "ingredient_id": 30,
+    "alergene_id": 7
+  },
+  {
+    "ingredient_id": 31,
+    "alergene_id": 1
+  },
+  {
+    "ingredient_id": 35,
+    "alergene_id": 7
+  },
+  {
+    "ingredient_id": 58,
+    "alergene_id": 7
+  },
+  {
+    "ingredient_id": 41,
+    "alergene_id": 8
+  },
+  {
+    "ingredient_id": 34,
+    "alergene_id": 2
+  }
+]

@@ -1,0 +1,1381 @@
+[
+  {
+    "drink_id": 21,
+    "size": "50cl",
+    "price_eur": "8.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 22,
+    "size": "50cl",
+    "price_eur": "8.4",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 23,
+    "size": "50cl",
+    "price_eur": "8.4",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 24,
+    "size": "50cl",
+    "price_eur": "9.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 25,
+    "size": "50cl",
+    "price_eur": "6.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 26,
+    "size": "50cl",
+    "price_eur": "6.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 27,
+    "size": "50cl",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 28,
+    "size": "50cl",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 29,
+    "size": "50cl",
+    "price_eur": "9.9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 30,
+    "size": "33cl",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 31,
+    "size": "33cl",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 32,
+    "size": "33cl",
+    "price_eur": "4.9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 33,
+    "size": "33cl",
+    "price_eur": "5.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 34,
+    "size": "33cl",
+    "price_eur": "4.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 35,
+    "size": "33cl",
+    "price_eur": "4.9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 36,
+    "size": "33cl",
+    "price_eur": "5.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 37,
+    "size": "33cl",
+    "price_eur": "5.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 38,
+    "size": "33cl",
+    "price_eur": "5.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 39,
+    "size": "33cl",
+    "price_eur": "6.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 40,
+    "size": "33cl",
+    "price_eur": "5.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 41,
+    "size": "33cl",
+    "price_eur": "5.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 42,
+    "size": "33cl",
+    "price_eur": "5.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 43,
+    "size": "33cl",
+    "price_eur": "5.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 44,
+    "size": "33cl",
+    "price_eur": "5.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 45,
+    "size": "33cl",
+    "price_eur": "5.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 46,
+    "size": "33cl",
+    "price_eur": "6.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 47,
+    "size": "33cl",
+    "price_eur": "6.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 48,
+    "size": "33cl",
+    "price_eur": "5.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 49,
+    "size": "33cl",
+    "price_eur": "6.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 50,
+    "size": "25cl",
+    "price_eur": "4",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 51,
+    "size": "50cl",
+    "price_eur": "7.4",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 52,
+    "size": "standard",
+    "price_eur": "11.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 54,
+    "size": "standard",
+    "price_eur": "12",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 55,
+    "size": "standard",
+    "price_eur": "11.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 56,
+    "size": "standard",
+    "price_eur": "11.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 57,
+    "size": "standard",
+    "price_eur": "7.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 58,
+    "size": "standard",
+    "price_eur": "7.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 59,
+    "size": "standard",
+    "price_eur": "7.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 60,
+    "size": "standard",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 61,
+    "size": "standard",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 62,
+    "size": "standard",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 63,
+    "size": "standard",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 64,
+    "size": "standard",
+    "price_eur": "9.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 65,
+    "size": "standard",
+    "price_eur": "8.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 66,
+    "size": "standard",
+    "price_eur": "12",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 67,
+    "size": "standard",
+    "price_eur": "6.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 68,
+    "size": "standard",
+    "price_eur": "11",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 69,
+    "size": "standard",
+    "price_eur": "12",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 70,
+    "size": "standard",
+    "price_eur": "5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 71,
+    "size": "standard",
+    "price_eur": "5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 72,
+    "size": "2cl",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 73,
+    "size": "2cl",
+    "price_eur": "5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 74,
+    "size": "6cl",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 75,
+    "size": "6cl",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 76,
+    "size": "6cl",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 77,
+    "size": "6cl",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 78,
+    "size": "6cl",
+    "price_eur": "6.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 79,
+    "size": "6cl",
+    "price_eur": "8.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 80,
+    "size": "6cl",
+    "price_eur": "7",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 81,
+    "size": "6cl",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 82,
+    "size": "6cl",
+    "price_eur": "9.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 83,
+    "size": "6cl",
+    "price_eur": "6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 84,
+    "size": "6cl",
+    "price_eur": "8.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 85,
+    "size": "6cl",
+    "price_eur": "8.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 86,
+    "size": "6cl",
+    "price_eur": "6.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 87,
+    "size": "6cl",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 88,
+    "size": "standard",
+    "price_eur": "9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 89,
+    "size": "standard",
+    "price_eur": "12",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 90,
+    "size": "standard",
+    "price_eur": "13.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 91,
+    "size": "standard",
+    "price_eur": "14.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 92,
+    "size": "standard",
+    "price_eur": "15",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 93,
+    "size": "standard",
+    "price_eur": "12",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 94,
+    "size": "standard",
+    "price_eur": "14",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 95,
+    "size": "standard",
+    "price_eur": "14",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 96,
+    "size": "standard",
+    "price_eur": "14",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 97,
+    "size": "standard",
+    "price_eur": "10.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 98,
+    "size": "standard",
+    "price_eur": "11.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 99,
+    "size": "standard",
+    "price_eur": "11.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 100,
+    "size": "standard",
+    "price_eur": "12.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 101,
+    "size": "standard",
+    "price_eur": "12.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 102,
+    "size": "standard",
+    "price_eur": "12.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 103,
+    "size": "standard",
+    "price_eur": "12.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 53,
+    "size": "standard",
+    "price_eur": "11.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 155,
+    "size": "bottle",
+    "price_eur": "45",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 156,
+    "size": "15cl",
+    "price_eur": "8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 156,
+    "size": "25cl",
+    "price_eur": "14",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 156,
+    "size": "50cl",
+    "price_eur": "25",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 156,
+    "size": "bottle",
+    "price_eur": "27",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 157,
+    "size": "bottle",
+    "price_eur": "34",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 158,
+    "size": "bottle",
+    "price_eur": "49",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 159,
+    "size": "standard",
+    "price_eur": "25",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 160,
+    "size": "glass",
+    "price_eur": "9.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 160,
+    "size": "bottle",
+    "price_eur": "29",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 161,
+    "size": "glass",
+    "price_eur": "8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 161,
+    "size": "bottle",
+    "price_eur": "24",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 162,
+    "size": "glass",
+    "price_eur": "12",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 162,
+    "size": "bottle",
+    "price_eur": "45",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 1,
+    "size": "20cl",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 2,
+    "size": "20cl",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 3,
+    "size": "20cl",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 4,
+    "size": "20cl",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 5,
+    "size": "20cl",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 6,
+    "size": "20cl",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 7,
+    "size": "20cl",
+    "price_eur": "3.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 8,
+    "size": "20cl",
+    "price_eur": "3.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 9,
+    "size": "20cl",
+    "price_eur": "3.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 10,
+    "size": "20cl",
+    "price_eur": "4.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 11,
+    "size": "standard",
+    "price_eur": "0.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 12,
+    "size": "25cl",
+    "price_eur": "3",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 12,
+    "size": "50cl",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 12,
+    "size": "1L",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 13,
+    "size": "25cl",
+    "price_eur": "3",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 13,
+    "size": "50cl",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 13,
+    "size": "1L",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 14,
+    "size": "25cl",
+    "price_eur": "3",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 15,
+    "size": "33cl",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 16,
+    "size": "33cl",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 17,
+    "size": "20cl",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 18,
+    "size": "33cl",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 19,
+    "size": "30cl",
+    "price_eur": "6.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 20,
+    "size": "25cl",
+    "price_eur": "3.9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 21,
+    "size": "25cl",
+    "price_eur": "4.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 22,
+    "size": "25cl",
+    "price_eur": "4.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 23,
+    "size": "25cl",
+    "price_eur": "4.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 24,
+    "size": "25cl",
+    "price_eur": "5.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 25,
+    "size": "25cl",
+    "price_eur": "3.9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 26,
+    "size": "25cl",
+    "price_eur": "3.9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 27,
+    "size": "25cl",
+    "price_eur": "4",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 28,
+    "size": "25cl",
+    "price_eur": "4",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 29,
+    "size": "25cl",
+    "price_eur": "6.4",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 20,
+    "size": "50cl",
+    "price_eur": "7.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 104,
+    "size": "standard",
+    "price_eur": "12.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 105,
+    "size": "standard",
+    "price_eur": "10",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 106,
+    "size": "standard",
+    "price_eur": "11",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 107,
+    "size": "standard",
+    "price_eur": "11",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 108,
+    "size": "standard",
+    "price_eur": "10",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 109,
+    "size": "standard",
+    "price_eur": "10",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 110,
+    "size": "standard",
+    "price_eur": "10",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 111,
+    "size": "standard",
+    "price_eur": "7",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 112,
+    "size": "standard",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 113,
+    "size": "standard",
+    "price_eur": "7.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 114,
+    "size": "standard",
+    "price_eur": "8.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 115,
+    "size": "5cl",
+    "price_eur": "11.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 116,
+    "size": "5cl",
+    "price_eur": "13.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 117,
+    "size": "5cl",
+    "price_eur": "16.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 118,
+    "size": "5cl",
+    "price_eur": "8.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 119,
+    "size": "5cl",
+    "price_eur": "7",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 120,
+    "size": "5cl",
+    "price_eur": "8.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 121,
+    "size": "5cl",
+    "price_eur": "10.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 122,
+    "size": "5cl",
+    "price_eur": "12.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 123,
+    "size": "5cl",
+    "price_eur": "7",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 124,
+    "size": "5cl",
+    "price_eur": "7",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 125,
+    "size": "5cl",
+    "price_eur": "5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 126,
+    "size": "standard",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 127,
+    "size": "standard",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 128,
+    "size": "standard",
+    "price_eur": "3.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 129,
+    "size": "standard",
+    "price_eur": "3.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 130,
+    "size": "standard",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 131,
+    "size": "standard",
+    "price_eur": "3.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 132,
+    "size": "standard",
+    "price_eur": "4.1",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 133,
+    "size": "standard",
+    "price_eur": "4.9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 134,
+    "size": "standard",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 135,
+    "size": "standard",
+    "price_eur": "4.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 136,
+    "size": "standard",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 137,
+    "size": "standard",
+    "price_eur": "7",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 138,
+    "size": "standard",
+    "price_eur": "0.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 139,
+    "size": "standard",
+    "price_eur": "3.9",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 140,
+    "size": "standard",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 141,
+    "size": "standard",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 142,
+    "size": "standard",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 143,
+    "size": "standard",
+    "price_eur": "3.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 144,
+    "size": "15cl",
+    "price_eur": "7.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 144,
+    "size": "25cl",
+    "price_eur": "11.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 144,
+    "size": "50cl",
+    "price_eur": "21.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 144,
+    "size": "bottle",
+    "price_eur": "26",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 145,
+    "size": "bottle",
+    "price_eur": "29",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 146,
+    "size": "bottle",
+    "price_eur": "45",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 147,
+    "size": "bottle",
+    "price_eur": "29",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 148,
+    "size": "bottle",
+    "price_eur": "32",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 149,
+    "size": "15cl",
+    "price_eur": "4.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 149,
+    "size": "25cl",
+    "price_eur": "6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 149,
+    "size": "50cl",
+    "price_eur": "11.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 150,
+    "size": "15cl",
+    "price_eur": "6.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 150,
+    "size": "25cl",
+    "price_eur": "10",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 150,
+    "size": "50cl",
+    "price_eur": "18.5",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 151,
+    "size": "15cl",
+    "price_eur": "4.6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 151,
+    "size": "25cl",
+    "price_eur": "7.2",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 151,
+    "size": "50cl",
+    "price_eur": "13.8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 152,
+    "size": "15cl",
+    "price_eur": "6",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 152,
+    "size": "25cl",
+    "price_eur": "11",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 152,
+    "size": "50cl",
+    "price_eur": "24",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 153,
+    "size": "15cl",
+    "price_eur": "8",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 153,
+    "size": "25cl",
+    "price_eur": "14",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 153,
+    "size": "50cl",
+    "price_eur": "25",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 153,
+    "size": "bottle",
+    "price_eur": "39",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 154,
+    "size": "bottle",
+    "price_eur": "43",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  },
+  {
+    "drink_id": 152,
+    "size": "bottle",
+    "price_eur": "27",
+    "discount": 0.9,
+    "record_date": "2025-06-01T00:00:00.000Z"
+  }
+]

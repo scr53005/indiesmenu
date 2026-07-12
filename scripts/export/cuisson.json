@@ -1,0 +1,27 @@
+[
+  {
+    "cuisson_id": 1,
+    "english_name": "Rare",
+    "french_name": "Bleu"
+  },
+  {
+    "cuisson_id": 2,
+    "english_name": "Medium Rare",
+    "french_name": "Saignant"
+  },
+  {
+    "cuisson_id": 3,
+    "english_name": "Medium",
+    "french_name": "À point"
+  },
+  {
+    "cuisson_id": 4,
+    "english_name": "Medium Well",
+    "french_name": "Cuit"
+  },
+  {
+    "cuisson_id": 5,
+    "english_name": "Well Done",
+    "french_name": "Bien Cuit"
+  }
+]

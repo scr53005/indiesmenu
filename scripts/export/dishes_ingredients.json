@@ -1,0 +1,442 @@
+[
+  {
+    "dish_id": 13,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 13,
+    "ingredient_id": 30
+  },
+  {
+    "dish_id": 13,
+    "ingredient_id": 31
+  },
+  {
+    "dish_id": 13,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 13,
+    "ingredient_id": 33
+  },
+  {
+    "dish_id": 14,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 14,
+    "ingredient_id": 30
+  },
+  {
+    "dish_id": 14,
+    "ingredient_id": 31
+  },
+  {
+    "dish_id": 14,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 14,
+    "ingredient_id": 33
+  },
+  {
+    "dish_id": 15,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 15,
+    "ingredient_id": 30
+  },
+  {
+    "dish_id": 15,
+    "ingredient_id": 31
+  },
+  {
+    "dish_id": 15,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 15,
+    "ingredient_id": 34
+  },
+  {
+    "dish_id": 16,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 16,
+    "ingredient_id": 35
+  },
+  {
+    "dish_id": 16,
+    "ingredient_id": 36
+  },
+  {
+    "dish_id": 16,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 16,
+    "ingredient_id": 37
+  },
+  {
+    "dish_id": 16,
+    "ingredient_id": 38
+  },
+  {
+    "dish_id": 17,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 17,
+    "ingredient_id": 35
+  },
+  {
+    "dish_id": 17,
+    "ingredient_id": 36
+  },
+  {
+    "dish_id": 17,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 17,
+    "ingredient_id": 37
+  },
+  {
+    "dish_id": 17,
+    "ingredient_id": 38
+  },
+  {
+    "dish_id": 18,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 18,
+    "ingredient_id": 39
+  },
+  {
+    "dish_id": 18,
+    "ingredient_id": 36
+  },
+  {
+    "dish_id": 18,
+    "ingredient_id": 40
+  },
+  {
+    "dish_id": 18,
+    "ingredient_id": 41
+  },
+  {
+    "dish_id": 19,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 19,
+    "ingredient_id": 39
+  },
+  {
+    "dish_id": 19,
+    "ingredient_id": 36
+  },
+  {
+    "dish_id": 19,
+    "ingredient_id": 40
+  },
+  {
+    "dish_id": 19,
+    "ingredient_id": 41
+  },
+  {
+    "dish_id": 20,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 20,
+    "ingredient_id": 42
+  },
+  {
+    "dish_id": 20,
+    "ingredient_id": 43
+  },
+  {
+    "dish_id": 21,
+    "ingredient_id": 44
+  },
+  {
+    "dish_id": 21,
+    "ingredient_id": 42
+  },
+  {
+    "dish_id": 21,
+    "ingredient_id": 45
+  },
+  {
+    "dish_id": 21,
+    "ingredient_id": 46
+  },
+  {
+    "dish_id": 21,
+    "ingredient_id": 47
+  },
+  {
+    "dish_id": 21,
+    "ingredient_id": 48
+  },
+  {
+    "dish_id": 22,
+    "ingredient_id": 29
+  },
+  {
+    "dish_id": 22,
+    "ingredient_id": 42
+  },
+  {
+    "dish_id": 25,
+    "ingredient_id": 49
+  },
+  {
+    "dish_id": 25,
+    "ingredient_id": 50
+  },
+  {
+    "dish_id": 25,
+    "ingredient_id": 51
+  },
+  {
+    "dish_id": 25,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 25,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 26,
+    "ingredient_id": 49
+  },
+  {
+    "dish_id": 26,
+    "ingredient_id": 50
+  },
+  {
+    "dish_id": 26,
+    "ingredient_id": 51
+  },
+  {
+    "dish_id": 26,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 26,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 27,
+    "ingredient_id": 53
+  },
+  {
+    "dish_id": 27,
+    "ingredient_id": 54
+  },
+  {
+    "dish_id": 27,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 27,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 28,
+    "ingredient_id": 55
+  },
+  {
+    "dish_id": 28,
+    "ingredient_id": 50
+  },
+  {
+    "dish_id": 28,
+    "ingredient_id": 56
+  },
+  {
+    "dish_id": 28,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 29,
+    "ingredient_id": 57
+  },
+  {
+    "dish_id": 29,
+    "ingredient_id": 50
+  },
+  {
+    "dish_id": 29,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 30,
+    "ingredient_id": 49
+  },
+  {
+    "dish_id": 30,
+    "ingredient_id": 58
+  },
+  {
+    "dish_id": 30,
+    "ingredient_id": 51
+  },
+  {
+    "dish_id": 30,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 30,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 30,
+    "ingredient_id": 59
+  },
+  {
+    "dish_id": 30,
+    "ingredient_id": 60
+  },
+  {
+    "dish_id": 31,
+    "ingredient_id": 49
+  },
+  {
+    "dish_id": 31,
+    "ingredient_id": 58
+  },
+  {
+    "dish_id": 31,
+    "ingredient_id": 51
+  },
+  {
+    "dish_id": 31,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 31,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 31,
+    "ingredient_id": 59
+  },
+  {
+    "dish_id": 31,
+    "ingredient_id": 60
+  },
+  {
+    "dish_id": 32,
+    "ingredient_id": 61
+  },
+  {
+    "dish_id": 32,
+    "ingredient_id": 62
+  },
+  {
+    "dish_id": 32,
+    "ingredient_id": 63
+  },
+  {
+    "dish_id": 32,
+    "ingredient_id": 51
+  },
+  {
+    "dish_id": 32,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 32,
+    "ingredient_id": 32
+  },
+  {
+    "dish_id": 39,
+    "ingredient_id": 64
+  },
+  {
+    "dish_id": 39,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 40,
+    "ingredient_id": 64
+  },
+  {
+    "dish_id": 40,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 41,
+    "ingredient_id": 64
+  },
+  {
+    "dish_id": 41,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 41,
+    "ingredient_id": 65
+  },
+  {
+    "dish_id": 42,
+    "ingredient_id": 64
+  },
+  {
+    "dish_id": 42,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 42,
+    "ingredient_id": 65
+  },
+  {
+    "dish_id": 43,
+    "ingredient_id": 66
+  },
+  {
+    "dish_id": 43,
+    "ingredient_id": 64
+  },
+  {
+    "dish_id": 43,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 44,
+    "ingredient_id": 30
+  },
+  {
+    "dish_id": 44,
+    "ingredient_id": 64
+  },
+  {
+    "dish_id": 44,
+    "ingredient_id": 52
+  },
+  {
+    "dish_id": 44,
+    "ingredient_id": 67
+  },
+  {
+    "dish_id": 44,
+    "ingredient_id": 68
+  },
+  {
+    "dish_id": 45,
+    "ingredient_id": 69
+  },
+  {
+    "dish_id": 45,
+    "ingredient_id": 64
+  },
+  {
+    "dish_id": 45,
+    "ingredient_id": 52
+  }
+]

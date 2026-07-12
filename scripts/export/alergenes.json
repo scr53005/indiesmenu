@@ -1,0 +1,72 @@
+[
+  {
+    "alergene_id": 1,
+    "name_fr": "Céréales contenant du gluten",
+    "name_en": "Cereals containing gluten"
+  },
+  {
+    "alergene_id": 2,
+    "name_fr": "Crustacés",
+    "name_en": "Crustaceans"
+  },
+  {
+    "alergene_id": 3,
+    "name_fr": "Œufs",
+    "name_en": "Eggs"
+  },
+  {
+    "alergene_id": 4,
+    "name_fr": "Poissons",
+    "name_en": "Fish"
+  },
+  {
+    "alergene_id": 5,
+    "name_fr": "Arachides",
+    "name_en": "Peanuts"
+  },
+  {
+    "alergene_id": 6,
+    "name_fr": "Soja",
+    "name_en": "Soybeans"
+  },
+  {
+    "alergene_id": 7,
+    "name_fr": "Lait",
+    "name_en": "Milk"
+  },
+  {
+    "alergene_id": 8,
+    "name_fr": "Fruits à coque",
+    "name_en": "Nuts"
+  },
+  {
+    "alergene_id": 9,
+    "name_fr": "Céleri",
+    "name_en": "Celery"
+  },
+  {
+    "alergene_id": 10,
+    "name_fr": "Moutarde",
+    "name_en": "Mustard"
+  },
+  {
+    "alergene_id": 11,
+    "name_fr": "Graines de sésame",
+    "name_en": "Sesame seeds"
+  },
+  {
+    "alergene_id": 12,
+    "name_fr": "Anhydride sulfureux et sulfites",
+    "name_en": "Sulphur dioxide and sulphites"
+  },
+  {
+    "alergene_id": 13,
+    "name_fr": "Lupin",
+    "name_en": "Lupin"
+  },
+  {
+    "alergene_id": 14,
+    "name_fr": "Mollusques",
+    "name_en": "Molluscs"
+  }
+]

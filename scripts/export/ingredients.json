@@ -1,0 +1,286 @@
+[
+  {
+    "ingredient_id": 70,
+    "name": "Orange juice"
+  },
+  {
+    "ingredient_id": 71,
+    "name": "Tomato juice"
+  },
+  {
+    "ingredient_id": 2,
+    "name": "Apple juice"
+  },
+  {
+    "ingredient_id": 1,
+    "name": "Jägermeister"
+  },
+  {
+    "ingredient_id": 3,
+    "name": " grenadine"
+  },
+  {
+    "ingredient_id": 4,
+    "name": " lemon juice"
+  },
+  {
+    "ingredient_id": 5,
+    "name": "Vodka"
+  },
+  {
+    "ingredient_id": 6,
+    "name": " Passoa"
+  },
+  {
+    "ingredient_id": 7,
+    "name": " strawberry"
+  },
+  {
+    "ingredient_id": 8,
+    "name": " vanilla"
+  },
+  {
+    "ingredient_id": 9,
+    "name": " Prosecco"
+  },
+  {
+    "ingredient_id": 10,
+    "name": " Kalhua"
+  },
+  {
+    "ingredient_id": 11,
+    "name": " espresso"
+  },
+  {
+    "ingredient_id": 12,
+    "name": "Prosecco"
+  },
+  {
+    "ingredient_id": 13,
+    "name": " ginger beer"
+  },
+  {
+    "ingredient_id": 14,
+    "name": " lime juice"
+  },
+  {
+    "ingredient_id": 15,
+    "name": "Gin"
+  },
+  {
+    "ingredient_id": 16,
+    "name": "Rhum Blanc"
+  },
+  {
+    "ingredient_id": 17,
+    "name": " sucre"
+  },
+  {
+    "ingredient_id": 18,
+    "name": "Tequila"
+  },
+  {
+    "ingredient_id": 19,
+    "name": " grapefruit"
+  },
+  {
+    "ingredient_id": 20,
+    "name": "Camomille"
+  },
+  {
+    "ingredient_id": 21,
+    "name": "Verveine"
+  },
+  {
+    "ingredient_id": 22,
+    "name": "Vert Menthe"
+  },
+  {
+    "ingredient_id": 23,
+    "name": "Fruits Rouges"
+  },
+  {
+    "ingredient_id": 24,
+    "name": "Vert Jasmin"
+  },
+  {
+    "ingredient_id": 25,
+    "name": "Vert"
+  },
+  {
+    "ingredient_id": 26,
+    "name": " Citron"
+  },
+  {
+    "ingredient_id": 27,
+    "name": "Ginger"
+  },
+  {
+    "ingredient_id": 28,
+    "name": "Menthe"
+  },
+  {
+    "ingredient_id": 29,
+    "name": "Salade"
+  },
+  {
+    "ingredient_id": 30,
+    "name": "copeaux de parmesan"
+  },
+  {
+    "ingredient_id": 31,
+    "name": "croûtons"
+  },
+  {
+    "ingredient_id": 32,
+    "name": "tomates"
+  },
+  {
+    "ingredient_id": 33,
+    "name": "sauce César"
+  },
+  {
+    "ingredient_id": 34,
+    "name": "scampis"
+  },
+  {
+    "ingredient_id": 35,
+    "name": "feta"
+  },
+  {
+    "ingredient_id": 36,
+    "name": "oignons"
+  },
+  {
+    "ingredient_id": 37,
+    "name": "paprika"
+  },
+  {
+    "ingredient_id": 38,
+    "name": "olives"
+  },
+  {
+    "ingredient_id": 39,
+    "name": "figues"
+  },
+  {
+    "ingredient_id": 40,
+    "name": "tomates cerise"
+  },
+  {
+    "ingredient_id": 41,
+    "name": "noix"
+  },
+  {
+    "ingredient_id": 42,
+    "name": "Riz Nature"
+  },
+  {
+    "ingredient_id": 43,
+    "name": "sauce vierge"
+  },
+  {
+    "ingredient_id": 44,
+    "name": "Saumon frais"
+  },
+  {
+    "ingredient_id": 45,
+    "name": "échalote"
+  },
+  {
+    "ingredient_id": 46,
+    "name": "huile d'olives"
+  },
+  {
+    "ingredient_id": 47,
+    "name": "avocat"
+  },
+  {
+    "ingredient_id": 48,
+    "name": "ruccola"
+  },
+  {
+    "ingredient_id": 49,
+    "name": "Steak de bœuf \"BLACK ANGUS\""
+  },
+  {
+    "ingredient_id": 50,
+    "name": "cheddar fondu"
+  },
+  {
+    "ingredient_id": 51,
+    "name": "sauce burger"
+  },
+  {
+    "ingredient_id": 52,
+    "name": "salade"
+  },
+  {
+    "ingredient_id": 53,
+    "name": "Pavé de Saumon frais"
+  },
+  {
+    "ingredient_id": 54,
+    "name": "sauce tartare"
+  },
+  {
+    "ingredient_id": 55,
+    "name": "Poulet LUX pané"
+  },
+  {
+    "ingredient_id": 56,
+    "name": "oignons rouges"
+  },
+  {
+    "ingredient_id": 57,
+    "name": "Galette Fallafel au potiron"
+  },
+  {
+    "ingredient_id": 58,
+    "name": "gouda"
+  },
+  {
+    "ingredient_id": 59,
+    "name": "bacon"
+  },
+  {
+    "ingredient_id": 60,
+    "name": "œuf "
+  },
+  {
+    "ingredient_id": 61,
+    "name": "Pulled Porc"
+  },
+  {
+    "ingredient_id": 62,
+    "name": "Cheese"
+  },
+  {
+    "ingredient_id": 63,
+    "name": "Coleslaw"
+  },
+  {
+    "ingredient_id": 64,
+    "name": "Frites Maison"
+  },
+  {
+    "ingredient_id": 65,
+    "name": "sauce champignons"
+  },
+  {
+    "ingredient_id": 66,
+    "name": "Jambon cuit et cru"
+  },
+  {
+    "ingredient_id": 67,
+    "name": "tomates confites"
+  },
+  {
+    "ingredient_id": 68,
+    "name": "pignons de pin"
+  },
+  {
+    "ingredient_id": 69,
+    "name": "Sauce BBQ"
+  }
+]

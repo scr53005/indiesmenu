@@ -1,0 +1,1298 @@
+[
+  {
+    "drink_id": 6,
+    "name": "Fuze Tea Mango Chamomile",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/fuzeteamangocamo.jpg"
+  },
+  {
+    "drink_id": 12,
+    "name": "Rosport Blue",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/rosportblue25cl.jpg"
+  },
+  {
+    "drink_id": 20,
+    "name": "Simon Pils",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/simonpils25.jpg"
+  },
+  {
+    "drink_id": 17,
+    "name": "Jus orange/apple/tomate",
+    "description": null,
+    "selection_mode": "choose_one",
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 140,
+    "name": "Thés",
+    "description": null,
+    "selection_mode": "choose_one",
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 139,
+    "name": "Infusions Fraiches",
+    "description": null,
+    "selection_mode": "choose_one",
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/infusionginger.jpg"
+  },
+  {
+    "drink_id": 2,
+    "name": "Coca-Cola",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 3,
+    "name": "Fanta Orange",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 4,
+    "name": "Sprite",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 5,
+    "name": "Fuze Tea Peach Hibiscus",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 7,
+    "name": "Royal Bliss Tonic Water",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 8,
+    "name": "Royal Bliss Bitter Lemon",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 9,
+    "name": "Royal Bliss Agrumes & Ylang Ylang",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 10,
+    "name": "Ginger Beer",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 11,
+    "name": "Supplement sirop",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 14,
+    "name": "Rosport Classic",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 15,
+    "name": "Bionade Lemon",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 16,
+    "name": "Bionade Ginger-Orange",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 18,
+    "name": "ApfelSchorle",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 22,
+    "name": "IPA (Craft Beer)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 23,
+    "name": "Stout (Dark Beer)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 24,
+    "name": "Celtic Cider",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 25,
+    "name": "Panaché Coca-Cola",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 26,
+    "name": "Panaché limonade",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 27,
+    "name": "Monaco",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 28,
+    "name": "Tango",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 29,
+    "name": "Picon bière",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 30,
+    "name": "Simon 0%",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 31,
+    "name": "Simon 0% Lime Ginger",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 32,
+    "name": "Simon Régal",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 33,
+    "name": "Simon Triple",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 34,
+    "name": "Simon Dinkel",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 35,
+    "name": "Waissen Ourdaller Bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 36,
+    "name": "Wellen Ourdaller Bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 37,
+    "name": "Chimay Rouge 7%",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 38,
+    "name": "Chimay Bleue 9%",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 39,
+    "name": "Chimay Verte 10%",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 40,
+    "name": "Leffe Blonde",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 41,
+    "name": "Leffe Brune",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 42,
+    "name": "Leffe Ruby",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 43,
+    "name": "La Chouffe",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 44,
+    "name": "Mc Chouffe",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 47,
+    "name": "Orval",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 48,
+    "name": "Duvel Clip",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 49,
+    "name": "Sol",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 50,
+    "name": "Heineken",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 51,
+    "name": "Erdinger",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 52,
+    "name": "Aperol Spritz",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 53,
+    "name": "Aperol Spritz sans alcool",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 54,
+    "name": "Campari Spritz",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 55,
+    "name": "Limoncello Spritz",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 56,
+    "name": "Hugo",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 57,
+    "name": "Ricard",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 58,
+    "name": "Porto Rouge",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 59,
+    "name": "Porto Blanc",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 60,
+    "name": "Campari sec",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 61,
+    "name": "Cynar sec",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 62,
+    "name": "Martini Rouge",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 63,
+    "name": "Martini Blanc",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 64,
+    "name": "Coupe crémant",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 65,
+    "name": "Coupe prosecco",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 66,
+    "name": "Coupe champagne",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 67,
+    "name": "Kir vin Blanc",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 68,
+    "name": "Kir Cremant",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 69,
+    "name": "Kir Royale",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 70,
+    "name": "Crodino",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 71,
+    "name": "San Bitter",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 72,
+    "name": "Regular",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 73,
+    "name": "Superior",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 74,
+    "name": "Disaronno Amaretto",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 75,
+    "name": "Limoncello",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 76,
+    "name": "Averna",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 77,
+    "name": "Amaro Del Capo",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 78,
+    "name": "Jägermeister",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 79,
+    "name": "Grappa Barricata",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 80,
+    "name": "Baileys",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 81,
+    "name": "Sambuca",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 82,
+    "name": "Calvados Vieux Père",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 83,
+    "name": "Hunneg-Dropp",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 84,
+    "name": "Mirabelle",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 85,
+    "name": "Poire Williams",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 86,
+    "name": "Get 27",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 87,
+    "name": "Cointreau",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 88,
+    "name": "Gibson's",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 89,
+    "name": "Bombay",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 90,
+    "name": "Hendrick's",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 91,
+    "name": "Mare",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 92,
+    "name": "Monkey",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 93,
+    "name": "Gin Sans Alcool",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 94,
+    "name": "Ooooh My Deer",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 95,
+    "name": "The Star is Porn Martini",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 96,
+    "name": "Espresso Martini",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 97,
+    "name": "Rossini",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 98,
+    "name": "Moscow Mule",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 99,
+    "name": "London Mule",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 100,
+    "name": "Mojito",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 101,
+    "name": "Caipirinha",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 102,
+    "name": "Margarita",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 103,
+    "name": "Daikiri",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 104,
+    "name": "Negroni",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 105,
+    "name": "Americano",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 106,
+    "name": "Paloma",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 107,
+    "name": "Bloody Mary",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 108,
+    "name": "Virgin Mojito",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 109,
+    "name": "Virgin Gin",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 110,
+    "name": "Virgin Fruity",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 111,
+    "name": "J&B",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 112,
+    "name": "Jameson",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 113,
+    "name": "Jack Daniel's",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 114,
+    "name": "Bushmills Malt 10 ans",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 115,
+    "name": "Talisker 10 ans",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 116,
+    "name": "Aberlour 12 ans",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 117,
+    "name": "Lagavulin 16 ans",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 118,
+    "name": "Rhum Kraken",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 119,
+    "name": "Havana 3 ans",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 120,
+    "name": "Havana 7 ans",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 121,
+    "name": "Diplomatico",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 122,
+    "name": "Zacapa",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 123,
+    "name": "Vodka",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 124,
+    "name": "Tequila Cuervo Silver",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 125,
+    "name": "Malibu",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 126,
+    "name": "Café",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 128,
+    "name": "Café Macchiato bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 129,
+    "name": "Espresso macchiato bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 130,
+    "name": "Cappuccino bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 131,
+    "name": "Café au lait regular",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 132,
+    "name": "Café au lait d'Avoine (Oat)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 133,
+    "name": "Double espresso bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 134,
+    "name": "Latte macchiato bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 135,
+    "name": "Hot chocolate",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 136,
+    "name": "Lait chaud",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 137,
+    "name": "Iced Coffee bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 138,
+    "name": "Supplement chantilly",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 141,
+    "name": "Black Tea Earl Grey",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 142,
+    "name": "Black Tea English Breakfast",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 143,
+    "name": "Green tea",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 144,
+    "name": "Chardonnay (FR)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 145,
+    "name": "Chardonnay Veilles Vignes (FR)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 146,
+    "name": "Chateauneuf du Pape (FR)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 147,
+    "name": "Pinot Gris Vignum (LUX)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 148,
+    "name": "Riesling Clos des Rochers (LUX)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 149,
+    "name": "Rivaner Haremillen (LUX)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 150,
+    "name": "La Plume Blanche Henri Ruppert",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 151,
+    "name": "Côtes-du-Rhône (FR)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 45,
+    "name": "Chouffe Lite 4%",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/chouffelite4pc.jpg"
+  },
+  {
+    "drink_id": 127,
+    "name": "Espresso bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/espressobio.jpg"
+  },
+  {
+    "drink_id": 1,
+    "name": "Coca-Cola ZERO SUGAR",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/colazero.jpg"
+  },
+  {
+    "drink_id": 46,
+    "name": "Kwak 8%",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/kwak.jpg"
+  },
+  {
+    "drink_id": 19,
+    "name": "Fresh orange juice bio",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/freshorange.jpg"
+  },
+  {
+    "drink_id": 152,
+    "name": "Primitivo Papale (IT)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/primitivopapale.jpg"
+  },
+  {
+    "drink_id": 21,
+    "name": "Okult Blanche Bio (White Beer)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/okult.jpg"
+  },
+  {
+    "drink_id": 13,
+    "name": "Rosport Viva",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/viva.jpg"
+  },
+  {
+    "drink_id": 153,
+    "name": "Saint-Emilion (FR)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 154,
+    "name": "Gigondas (FR)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 155,
+    "name": "Châteauneuf du Pape",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 156,
+    "name": "Château Paradis Aix en Pce",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 157,
+    "name": "Bandol",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 158,
+    "name": "Miraval",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 159,
+    "name": "Blanc Gris Gérerd Bertrand",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 160,
+    "name": "Crémant 'Esprit de Schengen' (LUX)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 162,
+    "name": "Champagne du Moment (FR)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": null
+  },
+  {
+    "drink_id": 161,
+    "name": "Prosecco (IT)",
+    "description": null,
+    "selection_mode": null,
+    "record_date": "2025-06-01T00:00:00.000Z",
+    "image": "/images/proseccoglass.jpg"
+  }
+]
