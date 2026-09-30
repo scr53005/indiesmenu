@@ -35,6 +35,7 @@ output_qrs/*
 # image optimization (temporary folders)
 /public/images-backup
 /public/images-optimized
+/public/images/raw
 
 # debug
 npm-debug.log*

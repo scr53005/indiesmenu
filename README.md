@@ -120,6 +120,12 @@ The operational heart of the system — the **CO page** (Current Orders):
 - Full CRUD for dishes (name, price, category, description, ingredients)
 - Image upload, matching, and optimization
 - Menu cache management
+- Detects unassigned root-level menu images from the Git working tree/recent commits,
+  with a `public/images` filesystem fallback when Git metadata is unavailable.
+- Preserves the real filename and extension, fuzzy-matches it to dishes and drinks,
+  and permits one image to be associated with multiple menu rows.
+- Applies all selected associations atomically, stores `/images/<filename>` in the
+  database, and invalidates the menu cache after a successful update.
 
 ### Happy Hour Image (`/admin/happy-hour`)
 
@@ -321,6 +327,18 @@ npm run optimize-images:backup    # With backup
 npm run migrate-images            # Convert to WebP
 npm run migrate-images:preview    # Dry run
 ```
+
+To add menu images:
+
+1. Put large originals in the ignored `public/images/raw/` working folder. Prefer
+   simple, unique filenames that resemble the menu item names.
+2. Run `npm run optimize-images:preview`, then `npm run optimize-images`.
+3. Review the corresponding files in the ignored `public/images-optimized/` folder
+   and copy only the new optimized files into `public/images/`.
+4. Open `/admin/carte`, select every matching dish/drink for each image, and apply
+   the associations. The admin stores the full public path and clears the menu cache.
+5. Verify the customer menu, then commit the optimized files. Do not commit the raw
+   originals or the temporary optimization output.
 
 ## QR Code Generation
 

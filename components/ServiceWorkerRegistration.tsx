@@ -6,6 +6,31 @@ export default function ServiceWorkerRegistration() {
   useEffect(() => {
     console.log('[SW] Checking for service worker support...');
     if ('serviceWorker' in navigator) {
+      // Turbopack reuses dev chunk URLs. A production-style cache-first service
+      // worker can therefore serve old client code after a source edit.
+      if (process.env.NODE_ENV !== 'production') {
+        const clearDevelopmentCaches = async () => {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+
+          if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(
+              cacheNames
+                .filter((name) => name.startsWith('indies-menu'))
+                .map((name) => caches.delete(name)),
+            );
+          }
+
+          console.log('[SW] Development service workers and caches cleared');
+        };
+
+        clearDevelopmentCaches().catch((error) => {
+          console.error('[SW] Failed to clear development service worker state:', error);
+        });
+        return;
+      }
+
       console.log('[SW] Service Worker supported');
       window.addEventListener('load', () => {
         console.log('[SW] Window loaded, attempting to register service worker');

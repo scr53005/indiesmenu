@@ -1,89 +1,104 @@
-// API endpoint to detect newly added images from recent git commits
-import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { execFile } from 'child_process';
+import { promises as fs } from 'fs';
 import path from 'path';
+import { promisify } from 'util';
+import { NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import {
+  assignedImageFileName,
+  isSupportedMenuImageFileName,
+  menuImageFileNamesFromGitOutput,
+} from '@/lib/menuImageFiles';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+async function listPublicMenuImages(projectRoot: string): Promise<string[]> {
+  const entries = await fs.readdir(path.join(projectRoot, 'public', 'images'), {
+    withFileTypes: true,
+  });
+
+  return entries
+    .filter((entry) => entry.isFile() && isSupportedMenuImageFileName(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+async function listGitCandidates(projectRoot: string): Promise<string[] | null> {
+  try {
+    const [statusResult, logResult] = await Promise.all([
+      execFileAsync(
+        'git',
+        ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '--untracked-files=all', '--', 'public/images/'],
+        { cwd: projectRoot },
+      ),
+      execFileAsync(
+        'git',
+        ['-c', 'core.quotepath=false', 'log', '-5', '--name-only', '--diff-filter=A', '--pretty=format:', '--', 'public/images/'],
+        { cwd: projectRoot },
+      ),
+    ]);
+
+    return menuImageFileNamesFromGitOutput(`${statusResult.stdout}\n${logResult.stdout}`);
+  } catch (error) {
+    // Deployed serverless functions may not include Git metadata. In that case
+    // the filesystem plus database assignments provides a deterministic fallback.
+    console.warn('[DETECT IMAGES] Git metadata unavailable; scanning public/images', error);
+    return null;
+  }
+}
 
 /**
- * GET /api/admin/detect-new-images
- * Detects image files added in recent git commits (last 5 commits)
- * Returns: { images: string[] } - array of image file names without extension
+ * Find menu images that have not yet been associated with a dish or drink.
+ * Local development prefers working-tree/recent-commit candidates; deployments
+ * without Git metadata fall back to root-level public/images files.
  */
 export async function GET() {
   try {
-    console.log('[DETECT IMAGES] Checking git for newly added images...');
-
-    // Get the root directory of the Next.js app
     const projectRoot = process.cwd();
-    console.log('[DETECT IMAGES] Project root:', projectRoot);
+    const [publicImages, gitCandidates, dishes, drinks] = await Promise.all([
+      listPublicMenuImages(projectRoot),
+      listGitCandidates(projectRoot),
+      prisma.dishes.findMany({
+        where: { image: { not: null } },
+        select: { image: true },
+      }),
+      prisma.drinks.findMany({
+        where: { image: { not: null } },
+        select: { image: true },
+      }),
+    ]);
 
-    // Check last 5 commits for added image files in public/images/
-    // Using --diff-filter=A to only show Added files
-    const gitCommand = `git log --name-only --diff-filter=A --pretty=format: HEAD~5..HEAD -- public/images/ | sort -u`;
+    const assignedNames = new Set(
+      [...dishes, ...drinks]
+        .map((item) => assignedImageFileName(item.image))
+        .filter((name): name is string => name !== null)
+        .map((name) => name.toLowerCase()),
+    );
 
-    let stdout: string;
-    try {
-      const result = await execAsync(gitCommand, { cwd: projectRoot });
-      stdout = result.stdout;
-    } catch (gitError: any) {
-      console.error('[DETECT IMAGES] Git command failed:', gitError.message);
+    const publicNameLookup = new Map(publicImages.map((name) => [name.toLowerCase(), name]));
+    const candidateNames = gitCandidates === null
+      ? publicImages
+      : gitCandidates
+          .map((name) => publicNameLookup.get(name.toLowerCase()))
+          .filter((name): name is string => name !== undefined);
 
-      // Fallback: try checking just the latest commit
-      console.log('[DETECT IMAGES] Trying fallback: latest commit only...');
-      try {
-        const fallbackCommand = `git diff-tree --no-commit-id --name-only --diff-filter=A -r HEAD -- public/images/`;
-        const fallbackResult = await execAsync(fallbackCommand, { cwd: projectRoot });
-        stdout = fallbackResult.stdout;
-      } catch (fallbackError: any) {
-        console.error('[DETECT IMAGES] Fallback also failed:', fallbackError.message);
-        // Return empty array instead of erroring - might be no git repo or no new images
-        return NextResponse.json({
-          images: [],
-          message: 'No git repository or no new images detected'
-        });
-      }
-    }
+    const images = candidateNames.filter((name) => !assignedNames.has(name.toLowerCase()));
+    const source = gitCandidates === null
+      ? 'public/images (Git metadata unavailable)'
+      : 'Git working tree and last 5 commits';
 
-    // Parse the output to get file paths
-    const filePaths = stdout
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
+    console.warn(`[DETECT IMAGES] Found ${images.length} unassigned menu image(s) from ${source}`);
 
-    console.log('[DETECT IMAGES] Found file paths:', filePaths);
-
-    // Filter for image files and extract base names
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'];
-    const images = filePaths
-      .filter(filePath => {
-        const ext = path.extname(filePath).toLowerCase();
-        return imageExtensions.includes(ext);
-      })
-      .map(filePath => {
-        const baseName = path.basename(filePath, path.extname(filePath));
-        return baseName;
-      })
-      .filter((name, index, self) => self.indexOf(name) === index); // Remove duplicates
-
-    console.log('[DETECT IMAGES] Detected image names:', images);
-
-    return NextResponse.json({
-      images,
-      count: images.length,
-      source: 'git history (last 5 commits)'
-    });
-
-  } catch (error: any) {
-    console.error('[DETECT IMAGES] Error:', error);
+    return NextResponse.json({ images, count: images.length, source });
+  } catch (error) {
+    console.error('[DETECT IMAGES] Failed to detect menu images:', error);
     return NextResponse.json(
       {
         error: 'Failed to detect new images',
-        message: error.message,
-        images: [] // Return empty array on error
+        message: error instanceof Error ? error.message : 'Unknown error',
+        images: [],
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

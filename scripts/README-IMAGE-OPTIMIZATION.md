@@ -13,6 +13,26 @@ colazero.jpg:            6.4 MB  ❌
 
 **Result:** Slow page loads, poor mobile experience, wasted bandwidth
 
+## Adding New Menu Images
+
+The optimizer reads originals from `public/images/raw/` and writes processed files
+to `public/images-optimized/`. Both are temporary working folders and should remain
+outside Git; only reviewed, optimized menu images belong in `public/images/`.
+
+For a new batch:
+
+1. Place only the new originals in `public/images/raw/`.
+2. Run `npm run optimize-images:preview`, followed by `npm run optimize-images`.
+3. Review and copy only that batch's output from `public/images-optimized/` into
+   `public/images/`; the output folder can contain leftovers from earlier runs.
+4. Open `/admin/carte`, select the dish/drink associations, and apply them. The
+   admin stores `/images/<filename>` and invalidates the menu cache automatically.
+5. Commit the reviewed files from `public/images/`, not the raw originals or
+   temporary optimized output.
+
+Prefer `.jpg` for photographs and simple, unique filenames resembling the menu item
+name. The admin also preserves `.jpeg`, `.png`, and `.webp` extensions.
+
 ---
 
 ## 🔷 Approach 1: JPEG Optimization (Recommended - No DB Changes)

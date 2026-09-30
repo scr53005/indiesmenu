@@ -1,6 +1,7 @@
 // API endpoint for fuzzy matching image names to dishes and drinks
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { isSupportedMenuImageFileName, menuImageSearchName } from '@/lib/menuImageFiles';
 
 const prisma = new PrismaClient();
 
@@ -19,7 +20,7 @@ type ImageMatch = {
 
 /**
  * POST /api/admin/match-images
- * Body: { imageNames: string[] } - array of image file names (without extension)
+ * Body: { imageNames: string[] } - array of image filenames, including extensions
  * Returns: { results: ImageMatch[] } - top 3 matches per image
  */
 export async function POST(req: NextRequest) {
@@ -33,6 +34,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!imageNames.every((name): name is string =>
+      typeof name === 'string' && isSupportedMenuImageFileName(name))) {
+      return NextResponse.json(
+        { error: 'Every image name must be a supported root-level menu image filename' },
+        { status: 400 }
+      );
+    }
+
     console.log('[MATCH IMAGES] Processing:', imageNames);
 
     // Enable pg_trgm extension if not already enabled
@@ -41,7 +50,7 @@ export async function POST(req: NextRequest) {
     const results: ImageMatch[] = [];
 
     for (const imageName of imageNames) {
-      const searchTerm = imageName.toLowerCase();
+      const searchTerm = menuImageSearchName(imageName).toLowerCase();
       console.log(`[MATCH IMAGES] Searching for: "${searchTerm}"`);
 
       // Search in dishes using trigram similarity

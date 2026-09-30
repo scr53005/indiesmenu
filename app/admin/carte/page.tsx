@@ -61,8 +61,8 @@ export default function AdminCarte() {
     try {
       setLoading(true);
 
-      // Step 1: Detect new images from git
-      console.log('[CARTE] Detecting new images from git...');
+      // Step 1: Detect real image files that are not yet assigned in the database.
+      console.log('[CARTE] Detecting unassigned menu images...');
       const detectResponse = await fetch('/api/admin/detect-new-images');
 
       if (!detectResponse.ok) {
@@ -75,12 +75,12 @@ export default function AdminCarte() {
 
       // Store detection info for display
       setDetectionInfo({
-        source: detectData.source || 'git history',
+        source: detectData.source || 'public/images',
         count: detectData.count || 0,
       });
 
       if (newImages.length === 0) {
-        console.log('[CARTE] No new images found in recent commits');
+        console.log('[CARTE] No unassigned menu images found');
         setImageMatches([]);
       } else {
         // Step 2: Get fuzzy matches for detected images
@@ -123,15 +123,16 @@ export default function AdminCarte() {
   };
 
   const handleSelectMatch = (imageName: string, match: Match) => {
-    const key = `${imageName}`;
+    const key = `${imageName}:${match.type}:${match.id}`;
     const newSelections = new Map(selections);
 
-    // Toggle selection
-    if (selections.has(key) && selections.get(key)?.itemId === match.id && selections.get(key)?.itemType === match.type) {
+    // Each image can be assigned to multiple rows (for example, one image for
+    // several sizes/variants), while each checkbox remains independently toggleable.
+    if (selections.has(key)) {
       newSelections.delete(key);
     } else {
       newSelections.set(key, {
-        imageName: `${imageName}.jpg`,
+        imageName,
         itemType: match.type,
         itemId: match.id,
         itemName: match.name,
@@ -159,15 +160,15 @@ export default function AdminCarte() {
         body: JSON.stringify({ assignments }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to update images');
-      }
-
       const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || result.error || 'Failed to update images');
+      }
 
       setMessage({
         type: 'success',
-        text: `Updated ${result.dishesUpdated} dishes and ${result.drinksUpdated} drinks`,
+        text: `Updated ${result.dishesUpdated} dishes and ${result.drinksUpdated} drinks. Menu cache refreshed.`,
       });
 
       // Clear selections and reload
@@ -217,7 +218,7 @@ export default function AdminCarte() {
         {/* Image Matching Section */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold">New Images - Fuzzy Matching</h2>
+            <h2 className="text-2xl font-bold">Unassigned Menu Images</h2>
             {detectionInfo && (
               <div className="text-sm text-gray-500">
                 📋 Source: {detectionInfo.source} · {detectionInfo.count} image{detectionInfo.count !== 1 ? 's' : ''} found
@@ -225,11 +226,12 @@ export default function AdminCarte() {
             )}
           </div>
           <p className="text-gray-600 mb-6">
-            Automatically detected from recent git commits. Select which dish/drink to associate with each image.
+            Detected from <code>public/images</code>. Select every dish or drink that should use each image,
+            then apply all associations in one transaction.
           </p>
 
           {imageMatches.length === 0 ? (
-            <p className="text-gray-500 italic">No new images detected</p>
+            <p className="text-gray-500 italic">No unassigned menu images detected</p>
           ) : (
             <div className="space-y-6">
               {imageMatches.map((imageMatch) => (
@@ -238,14 +240,14 @@ export default function AdminCarte() {
                   <div className="flex items-start gap-4 mb-4">
                     <div className="relative w-32 h-32 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
                       <Image
-                        src={`/images/${imageMatch.imageName}.jpg`}
+                        src={`/images/${imageMatch.imageName}`}
                         alt={imageMatch.imageName}
                         fill
                         className="object-cover"
                       />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold">{imageMatch.imageName}.jpg</h3>
+                      <h3 className="text-lg font-semibold">{imageMatch.imageName}</h3>
                       <p className="text-sm text-gray-600">
                         {imageMatch.matches.length === 0
                           ? 'No matches found'
@@ -258,10 +260,8 @@ export default function AdminCarte() {
                   {imageMatch.matches.length > 0 && (
                     <div className="space-y-2">
                       {imageMatch.matches.map((match) => {
-                        const isSelected =
-                          selections.has(imageMatch.imageName) &&
-                          selections.get(imageMatch.imageName)?.itemId === match.id &&
-                          selections.get(imageMatch.imageName)?.itemType === match.type;
+                        const selectionKey = `${imageMatch.imageName}:${match.type}:${match.id}`;
+                        const isSelected = selections.has(selectionKey);
 
                         return (
                           <label

@@ -1,82 +1,107 @@
-// API endpoint for updating dish and drink images
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma';
+import { invalidateMenuCache } from '@/lib/data/menu';
+import { menuImagePublicPath } from '@/lib/menuImageFiles';
 
 type ImageAssignment = {
-  imageName: string; // e.g., "pulledpork.jpg"
+  imageName: string;
   itemType: 'dish' | 'drink';
   itemId: number;
 };
 
-/**
- * POST /api/admin/update-images
- * Body: { assignments: ImageAssignment[] }
- * Updates dish/drink image fields with the specified image file names
- */
+type ValidatedAssignment = ImageAssignment & {
+  imagePath: string;
+};
+
+function validateAssignments(value: unknown): ValidatedAssignment[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+
+  const validated: ValidatedAssignment[] = [];
+  const targetKeys = new Set<string>();
+
+  for (const assignment of value) {
+    if (!assignment || typeof assignment !== 'object') return null;
+
+    const { imageName, itemType, itemId } = assignment as Partial<ImageAssignment>;
+    if (typeof imageName !== 'string') return null;
+
+    const imagePath = menuImagePublicPath(imageName);
+
+    if (!imagePath ||
+        (itemType !== 'dish' && itemType !== 'drink') ||
+        !Number.isInteger(itemId) ||
+        (itemId as number) <= 0) {
+      return null;
+    }
+
+    const targetKey = `${itemType}:${itemId}`;
+    if (targetKeys.has(targetKey)) return null;
+    targetKeys.add(targetKey);
+
+    validated.push({
+      imageName,
+      imagePath,
+      itemType,
+      itemId: itemId as number,
+    });
+  }
+
+  return validated;
+}
+
+/** Update dish/drink image paths atomically and make the new menu visible immediately. */
 export async function POST(req: NextRequest) {
   try {
-    const { assignments } = await req.json();
+    const body = await req.json();
+    const assignments = validateAssignments(body.assignments);
 
-    if (!Array.isArray(assignments) || assignments.length === 0) {
+    if (!assignments) {
       return NextResponse.json(
-        { error: 'assignments must be a non-empty array' },
-        { status: 400 }
+        { error: 'Assignments must contain unique dish/drink targets and valid image filenames' },
+        { status: 400 },
       );
     }
 
-    console.log('[UPDATE IMAGES] Processing assignments:', assignments);
+    let dishesUpdated = 0;
+    let drinksUpdated = 0;
 
-    const results = {
-      dishesUpdated: 0,
-      drinksUpdated: 0,
-      errors: [] as string[],
-    };
-
-    // Process updates in a transaction
     await prisma.$transaction(async (tx) => {
       for (const assignment of assignments) {
-        const { imageName, itemType, itemId } = assignment;
-
-        try {
-          if (itemType === 'dish') {
-            await tx.dishes.update({
-              where: { dish_id: itemId },
-              data: { image: imageName },
-            });
-            results.dishesUpdated++;
-            console.log(`[UPDATE IMAGES] ✅ Updated dish ${itemId} with image: ${imageName}`);
-          } else if (itemType === 'drink') {
-            await tx.drinks.update({
-              where: { drink_id: itemId },
-              data: { image: imageName },
-            });
-            results.drinksUpdated++;
-            console.log(`[UPDATE IMAGES] ✅ Updated drink ${itemId} with image: ${imageName}`);
-          } else {
-            results.errors.push(`Invalid item type: ${itemType}`);
-          }
-        } catch (error: any) {
-          const errorMsg = `Failed to update ${itemType} ${itemId}: ${error.message}`;
-          console.error('[UPDATE IMAGES]', errorMsg);
-          results.errors.push(errorMsg);
+        if (assignment.itemType === 'dish') {
+          await tx.dishes.update({
+            where: { dish_id: assignment.itemId },
+            data: { image: assignment.imagePath },
+          });
+          dishesUpdated++;
+        } else {
+          await tx.drinks.update({
+            where: { drink_id: assignment.itemId },
+            data: { image: assignment.imagePath },
+          });
+          drinksUpdated++;
         }
       }
     });
 
-    console.log('[UPDATE IMAGES] Results:', results);
+    invalidateMenuCache();
+    console.warn(
+      `[UPDATE IMAGES] Updated ${dishesUpdated} dish(es) and ${drinksUpdated} drink(s); menu cache invalidated`,
+    );
 
     return NextResponse.json({
       success: true,
-      ...results,
+      dishesUpdated,
+      drinksUpdated,
+      cacheInvalidated: true,
     });
-
-  } catch (error: any) {
-    console.error('[UPDATE IMAGES] Transaction error:', error);
+  } catch (error) {
+    console.error('[UPDATE IMAGES] Transaction failed:', error);
     return NextResponse.json(
-      { error: 'Failed to update images', message: error.message },
-      { status: 500 }
+      {
+        error: 'Failed to update images',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 },
     );
   }
 }
