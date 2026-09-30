@@ -136,6 +136,15 @@ Gallery manager for the image shown on the plat-du-jour display during happy hou
   private store. `BLOB_READ_WRITE_TOKEN` is store-scoped and is **not** always
   auto-provisioned to prod; add it manually if missing.
 
+### Breakfast Offer
+
+The plat-du-jour display shows the committed `public/images/breakfast.jpeg` artwork
+as a full-screen, uncropped image every day from 07:00 until 11:15 Europe/Luxembourg.
+The start is inclusive and the end is exclusive.
+
+Display-mode checks run every minute, independently of the 15-minute content and
+happy-hour-image refresh, so time-window transitions occur within one minute.
+
 ### Allergens (`/admin/alergenes`)
 
 - Manage allergen information per dish
@@ -204,9 +213,12 @@ If the CO page shows orders from the wrong environment, check `DATABASE_URL` and
 ## Other Pages
 
 - `/display/plat-du-jour` — TV display of the weekly suggestion + daily specials. During
-  happy hour (Mon–Fri, 14:50–17:45 Europe/Luxembourg) it swaps to a full-screen happy-hour
-  image (the active one from `/admin/happy-hour`, else `happyhour2.png`). Re-checks the window
-  and re-fetches the image every 15 minutes. Happy-hour window logic is the unit-tested pure
+  the configured breakfast window every day, it swaps to the committed full-screen
+  `breakfast.jpeg` artwork. During happy hour (Mon–Fri, 14:50–17:45 Europe/Luxembourg), it
+  swaps to a full-screen happy-hour image (the active one from `/admin/happy-hour`, else
+  `happyhour2.png`). It rechecks display windows every minute and refreshes display data and
+  the happy-hour image every 15 minutes. Window selection is unit-tested in
+  `lib/displayOffer.ts`; the unchanged happy-hour predicate remains
   `isWithinHappyHourWindow()` in `lib/happyHour.ts`.
 - `/display/printout` — A3 landscape printout of daily specials (for TV screens or printing)
 - `/admin/login` — Admin authentication page

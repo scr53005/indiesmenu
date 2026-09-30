@@ -3,7 +3,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { PT_Sans } from 'next/font/google';
-import { isWithinHappyHourWindow, HAPPY_HOUR_IMAGE_FALLBACK } from '@/lib/happyHour';
+import { HAPPY_HOUR_IMAGE_FALLBACK } from '@/lib/happyHour';
+import {
+  BREAKFAST_IMAGE_PATH,
+  getActiveDisplayOffer,
+} from '@/lib/displayOffer';
+import type { DisplayOffer } from '@/lib/displayOffer';
 
 const ptSans = PT_Sans({
   weight: ['400', '700'],
@@ -25,18 +30,31 @@ interface DailySpecials {
   soupes: Dish[];
 }
 
-/**
- * Check if it's currently happy hour in Luxembourg time.
- * Happy hour: Monday–Friday, 14:50–17:45 (Europe/Luxembourg).
- * The window boundary logic lives in the pure, unit-tested
- * isWithinHappyHourWindow(); here we only extract the Luxembourg wall-clock.
- */
-function isHappyHour(): boolean {
+/** Resolve the scheduled display from the current Luxembourg wall-clock. */
+function getCurrentDisplayOffer(): DisplayOffer {
   const now = new Date();
   const luxTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Luxembourg' }));
   const day = luxTime.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
   const timeInMinutes = luxTime.getHours() * 60 + luxTime.getMinutes();
-  return isWithinHappyHourWindow(day, timeInMinutes);
+  return getActiveDisplayOffer(day, timeInMinutes);
+}
+
+function BreakfastOfferDisplay() {
+  return (
+    <div
+      className={`flex items-center justify-center overflow-hidden bg-black ${ptSans.className}`}
+      style={{ width: '100vw', height: '100vh' }}
+    >
+      {/* The artwork is a known local asset. A plain image avoids next/image's
+          fill requirement for a measurable positioned parent on this TV page. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={BREAKFAST_IMAGE_PATH}
+        alt="Offre petit déjeuner"
+        className="h-full w-full object-contain"
+      />
+    </div>
+  );
 }
 
 function HappyHourDisplay({ imageUrl }: { imageUrl: string }) {
@@ -94,7 +112,7 @@ function HappyHourDisplay({ imageUrl }: { imageUrl: string }) {
 export default function PlatDuJourDisplay() {
   const [data, setData] = useState<DailySpecials | null>(null);
   const [loading, setLoading] = useState(true);
-  const [happyHour, setHappyHour] = useState(false);
+  const [displayOffer, setDisplayOffer] = useState<DisplayOffer | null>(null);
   const [happyHourImage, setHappyHourImage] = useState(HAPPY_HOUR_IMAGE_FALLBACK);
 
   const fetchData = useCallback(async () => {
@@ -121,27 +139,36 @@ export default function PlatDuJourDisplay() {
   }, []);
 
   useEffect(() => {
-    // Check happy hour state immediately and on each tick
-    setHappyHour(isHappyHour());
+    // Resolve the display immediately, then keep schedule checks independent
+    // from the slower content refresh so offer boundaries are not 15 minutes late.
+    setDisplayOffer(getCurrentDisplayOffer());
     fetchData();
     fetchHappyHourImage();
 
-    // Refresh data, the current happy-hour image, and re-check happy hour every 15 minutes
-    const interval = setInterval(() => {
-      setHappyHour(isHappyHour());
+    const scheduleInterval = setInterval(() => {
+      setDisplayOffer(getCurrentDisplayOffer());
+    }, 60 * 1000);
+
+    const contentInterval = setInterval(() => {
       fetchData();
       fetchHappyHourImage();
     }, 15 * 60 * 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(scheduleInterval);
+      clearInterval(contentInterval);
+    };
   }, [fetchData, fetchHappyHourImage]);
 
-  // Show happy hour display when applicable
-  if (happyHour) {
+  if (displayOffer === 'breakfast') {
+    return <BreakfastOfferDisplay />;
+  }
+
+  if (displayOffer === 'happy-hour') {
     return <HappyHourDisplay imageUrl={happyHourImage} />;
   }
 
-  if (loading) {
+  if (displayOffer === null || loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <p className="text-yellow-400 text-2xl">Chargement...</p>
