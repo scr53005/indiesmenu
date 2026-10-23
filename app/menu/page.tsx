@@ -9,7 +9,7 @@ import MenuItem from '@/components/menu/MenuItem';
 import CartItemDisplay from '@/components/menu/CartItemDisplay';
 import DelayedOrderPanel from '@/components/menu/DelayedOrderPanel';
 import WalletNotificationBanner from '@/components/menu/WalletNotificationBanner';
-import MiniWallet, { WalletReopenButton } from '@/components/ui/MiniWallet';
+import MiniWallet, { WalletReopenButton } from '@/components/ui/SharedMiniWallet';
 import Draggable from '@/components/ui/Draggable';
 import BottomBanner from '@/components/ui/BottomBanner';
 import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart } from '@/lib/utils';

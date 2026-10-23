@@ -58,37 +58,54 @@ export default function WalletActions({ accountName, language = 'fr', onForget }
   };
 
   return (
-    <div className="innopay-wallet-actions" onMouseDown={stop} onTouchStart={stop} onPointerDown={stop} onClick={stop}
-      style={{ marginTop: 16, cursor: 'default' }}>
+    <div className="innopay-wallet-actions" onMouseDown={stop} onTouchStart={stop} onPointerDown={stop} onClick={stop}>
       <style>{`
-        .innopay-wallet-actions button { font-family: inherit; cursor: pointer; }
-        .innopay-wallet-actions button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-        .innopay-wallet-actions button:hover { filter: brightness(1.2); }
+        .innopay-miniwallet {
+          box-sizing: border-box; padding: 8px 10px 0; border-radius: 12px;
+          border: 1px solid rgba(255,255,255,.14); color: #fff;
+          box-shadow: 0 4px 16px rgba(15,23,42,.18); width: 250px; min-width: 220px; max-width: 280px;
+        }
+        .innopay-miniwallet .mw-header { display: flex; align-items: center; gap: 7px; }
+        .innopay-miniwallet .mw-grip { flex-shrink: 0; width: 7px; opacity: .4; }
+        .innopay-miniwallet .mw-info { flex: 1; min-width: 0; }
+        .innopay-miniwallet .mw-title { display: block; font-size: 11px; line-height: 14px; margin: 0 0 3px; opacity: .75; }
+        .innopay-miniwallet .mw-balance-row { display: flex; align-items: center; gap: 7px; }
+        .innopay-miniwallet .mw-icon { width: 20px; height: 20px; flex-shrink: 0; opacity: .9; }
+        .innopay-miniwallet .mw-amount { display: block; font-size: 18px; font-weight: 650; line-height: 21px; margin: 0; font-variant-numeric: tabular-nums; }
+        .innopay-miniwallet .mw-account { display: block; font-size: 11px; line-height: 14px; color: inherit; opacity: .75; text-decoration: none; }
+        .innopay-miniwallet .mw-account:hover { opacity: 1; text-decoration: underline; }
+        .innopay-miniwallet .mw-close { display: grid; place-items: center; flex-shrink: 0; width: 26px; height: 26px; padding: 4px; border: 0; border-radius: 6px; background: transparent; color: inherit; opacity: .7; cursor: pointer; }
+        .innopay-miniwallet .mw-close:hover { opacity: 1; background: rgba(255,255,255,.1); }
+        .innopay-miniwallet .mw-close svg { width: 16px; height: 16px; }
+        .innopay-wallet-actions { margin: 7px -10px 0; cursor: default; }
+        .innopay-wallet-actions button { font-family: inherit; cursor: pointer; color: inherit; }
+        .innopay-wallet-actions button:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+        .innopay-wallet-panel { padding: 5px 10px 6px; background: rgba(0,0,0,.09); border-top: 1px solid rgba(255,255,255,.12); max-height: 40vh; overflow-y: auto; }
+        .innopay-wallet-delete { display: flex; align-items: flex-start; gap: 7px; width: 100%; padding: 5px 0; border: 0; background: transparent; text-align: left; white-space: normal; line-height: 1.35; border-radius: 4px; }
+        .innopay-wallet-delete:hover { background: rgba(255,255,255,.06); }
+        .innopay-wallet-delete strong { display: block; font-size: 12px; font-weight: 600; }
+        .innopay-wallet-delete small { display: block; font-size: 11px; margin-top: 2px; opacity: .78; }
+        .innopay-wallet-toggle { position: relative; display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; height: 28px; padding: 0; border: 0; border-radius: 0 0 11px 11px; background: rgba(255,255,255,.06); font-size: 11px; font-weight: 500; }
+        .innopay-wallet-toggle:hover { background: rgba(255,255,255,.1); }
       `}</style>
-      <div id={panelId} hidden={!expanded} style={{ paddingBottom: 24, maxHeight: '40vh', overflowY: 'auto' }}>
-        <button type="button" onClick={forget} style={{
-          display: 'block', width: '100%', padding: '12px 10px', borderRadius: 8,
-          border: '1px solid rgba(255,255,255,.35)', background: 'rgba(0,0,0,.18)',
-          color: '#fff', textAlign: 'left', whiteSpace: 'normal', lineHeight: 1.45,
-        }}>
-          <span style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>{t.remove}</span>
-          <span style={{ display: 'block', fontSize: 11, marginTop: 4, opacity: .9 }}>{t.recovery}</span>
+      <div id={panelId} hidden={!expanded} className="innopay-wallet-panel">
+        <button type="button" onClick={forget} className="innopay-wallet-delete">
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4"
+            style={{ flexShrink: 0, marginTop: 1, opacity: .8 }}>
+            <path d="M3 5h14M7 5V3h6v2M5 5l1 12h8l1-12M8 8v6m4-6v6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span><strong>{t.remove}</strong><small>{t.recovery}</small></span>
         </button>
-        {error && <p role="alert" style={{ fontSize: 12, marginTop: 8 }}>{t.error}</p>}
+        {error && <p role="alert" style={{ fontSize: 11, margin: '4px 0' }}>{t.error}</p>}
       </div>
-      <button type="button" aria-expanded={expanded} aria-controls={panelId}
-        onClick={() => setExpanded(value => !value)} style={{
-          position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          width: '100%', minHeight: 40, border: 0, borderRadius: '0 0 8px 8px',
-          background: 'rgba(255,255,255,.14)', color: '#fff', fontSize: 12, fontWeight: 600,
-        }}>
-        <svg aria-hidden="true" viewBox="0 0 280 16" preserveAspectRatio="none"
-          style={{ position: 'absolute', left: 0, top: -15, width: '100%', height: 16, pointerEvents: 'none' }}>
-          <path d="M0 16H76C104 16 107 1 140 1S176 16 204 16H280Z" fill="rgba(255,255,255,.14)" />
-          <path d="M128 7H152" stroke="rgba(255,255,255,.65)" strokeWidth="2" strokeLinecap="round" />
+      <button type="button" aria-expanded={expanded} aria-controls={panelId} className="innopay-wallet-toggle"
+        onClick={() => setExpanded(value => !value)}>
+        <svg aria-hidden="true" viewBox="0 0 280 5" preserveAspectRatio="none"
+          style={{ position: 'absolute', left: 0, top: -4, width: '100%', height: 5, pointerEvents: 'none' }}>
+          <path d="M0 5H116C128 5 128 1 140 1S152 5 164 5H280" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.16)" strokeWidth=".7" />
         </svg>
         {expanded ? t.collapse : t.expand}
-        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
           <path d={expanded ? 'M4 6l4 4 4-4' : 'M4 10l4-4 4 4'} />
         </svg>
       </button>
