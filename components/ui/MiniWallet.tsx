@@ -2,6 +2,9 @@
 
 import React, { useRef, useCallback } from 'react';
 import Draggable from './Draggable';
+import WalletActions from './WalletActions';
+import { forgetLocalWallet } from '@/lib/innopay/forget-wallet';
+
 import { getInnopayUrl } from '@/lib/utils';
 
 export type PulseState = 'none' | 'blue' | 'green' | 'green-slow' | 'green-solid' | 'red';
@@ -15,6 +18,7 @@ interface MiniWalletProps {
   balance: WalletBalance;
   onClose: () => void;
   visible: boolean;
+  language?: string;
   title?: string;
   initialPosition?: { x: number; y: number };
   balanceSource?: string; // 'localStorage-cache' or 'hive-engine'
@@ -37,12 +41,12 @@ export default function MiniWallet({
   onClose,
   visible,
   title = 'Votre portefeuille Innopay',
+  language = 'fr',
   initialPosition,
   balanceSource,
   pulseState = 'none',
   onPulseReset,
 }: MiniWalletProps) {
-  if (!visible) return null;
 
   // Double-tap detection (two taps within 400ms)
   const lastTapRef = useRef(0);
@@ -80,6 +84,8 @@ export default function MiniWallet({
     }
   }, []);
 
+  if (!visible) return null;
+
   const isCached = balanceSource === 'localStorage-cache';
   const balanceClassName = isCached
     ? 'font-bold text-lg italic text-blue-200'
@@ -109,7 +115,7 @@ export default function MiniWallet({
           }
         `}</style>
       )}
-      <Draggable
+      <Draggable keepInViewport bottomInset={40}
         className={`z-[9998] bg-gradient-to-r ${gradientClass} text-white px-4 py-3 rounded-lg shadow-lg transition-colors duration-700`}
         initialPosition={initialPosition || defaultPosition}
         style={{
@@ -164,6 +170,7 @@ export default function MiniWallet({
             </svg>
           </button>
         </div>
+        <WalletActions key={balance.accountName} accountName={balance.accountName} language={language} onForget={() => forgetLocalWallet()} />
       </Draggable>
     </>
   );

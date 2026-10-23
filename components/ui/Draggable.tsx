@@ -8,6 +8,8 @@ interface DraggableProps {
   className?: string;
   style?: React.CSSProperties;
   disabled?: boolean;
+  keepInViewport?: boolean;
+  bottomInset?: number;
   onPositionChange?: (position: { x: number; y: number }) => void;
 }
 
@@ -17,6 +19,8 @@ export default function Draggable({
   className = '',
   style = {},
   disabled = false,
+  keepInViewport = false,
+  bottomInset = 8,
   onPositionChange,
 }: DraggableProps) {
   const [position, setPosition] = useState(initialPosition);
@@ -34,6 +38,11 @@ export default function Draggable({
     const elementHeight = rect.height;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
+    if (keepInViewport) return {
+      x: Math.max(8, Math.min(newX, viewportWidth - elementWidth - 8)),
+      y: Math.max(8, Math.min(newY, viewportHeight - elementHeight - bottomInset)),
+    };
+
     const margin = 8;
 
     const minX = margin;
@@ -45,11 +54,11 @@ export default function Draggable({
       x: Math.max(minX, Math.min(maxX, newX)),
       y: Math.max(minY, Math.min(maxY, newY)),
     };
-  }, []);
+  }, [keepInViewport, bottomInset]);
 
   // On first drag, read the actual rendered position from the DOM
   const initPositionFromDOM = useCallback((clientX: number, clientY: number) => {
-    if (!hasBeenDragged && elementRef.current) {
+    if (!keepInViewport && !hasBeenDragged && elementRef.current) {
       const rect = elementRef.current.getBoundingClientRect();
       const actualX = rect.left;
       const actualY = rect.top;
@@ -65,7 +74,7 @@ export default function Draggable({
         y: clientY - position.y,
       };
     }
-  }, [hasBeenDragged, position]);
+  }, [hasBeenDragged, position, keepInViewport]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (disabled) return;
@@ -119,12 +128,34 @@ export default function Draggable({
   }, [isDragging, onPositionChange, constrainPosition]);
 
   // Before first drag: use CSS style props. After first drag: use pixel position.
-  const positionStyle = hasBeenDragged
+  const positionStyle = hasBeenDragged || keepInViewport
     ? { left: `${position.x}px`, top: `${position.y}px` }
     : { left: style.left, top: style.top, bottom: style.bottom, right: style.right };
 
   // Strip positioning props from style to avoid conflicts after dragging
   const { left, top, bottom, right, ...restStyle } = style;
+
+
+  // MiniWallet grows when its actions open; move it up before it slips below the footer.
+  useEffect(() => {
+    if (!keepInViewport || !elementRef.current) return;
+    const fit = () => {
+      const rect = elementRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPosition(previous => {
+        const next = {
+          x: Math.max(8, Math.min(previous.x, window.innerWidth - rect.width - 8)),
+          y: Math.max(8, Math.min(previous.y, window.innerHeight - rect.height - bottomInset)),
+        };
+        return next.x === previous.x && next.y === previous.y ? previous : next;
+      });
+    };
+    fit();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+    observer?.observe(elementRef.current);
+    window.addEventListener('resize', fit);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', fit); };
+  }, [keepInViewport, bottomInset]);
 
   return (
     <div
