@@ -3147,6 +3147,7 @@ export default function MenuPage() {
 
       {/* Wallet Balance Reopen Button */}
       <WalletReopenButton
+        language="fr"
         visible={!showWalletBalance && !!walletBalance}
         onClick={() => setShowWalletBalance(true)}
       />
@@ -3154,6 +3155,7 @@ export default function MenuPage() {
       {/* Persistent Wallet Balance Indicator */}
       {walletBalance && (
         <MiniWallet
+          language="fr"
           balance={walletBalance}
           visible={showWalletBalance}
           onClose={() => {
