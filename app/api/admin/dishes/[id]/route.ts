@@ -1,73 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { invalidateMenuCache } from '@/lib/data/menu';
+import { parseMenuId, parseMenuInput } from '@/lib/admin/menu';
+import { deleteMenuItem, saveDish } from '@/lib/admin/menu-store';
+import { menuError } from '@/lib/admin/menu-response';
 
-const prisma = new PrismaClient();
+type Context = { params: Promise<{ id: string }> };
 
-// PUT - Update dish
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PUT(request: NextRequest, { params }: Context) {
   try {
-    const { id } = await params;
-    const dishId = parseInt(id);
-    const body = await request.json();
-    const { name, description, price_eur, position, active, sold_out } = body;
-
-    const updatedDish = await prisma.dishes.update({
-      where: { dish_id: dishId },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(description !== undefined && { description }),
-        ...(price_eur !== undefined && { price_eur: parseFloat(price_eur) }),
-        ...(position !== undefined && { position }),
-        ...(active !== undefined && { active }),
-        ...(sold_out !== undefined && { sold_out }),
-      },
-    });
-
-    // Invalidate menu cache so changes appear immediately
-    invalidateMenuCache();
-    console.log(`[ADMIN] Updated dish ${dishId}, cache invalidated`);
-
-    return NextResponse.json(updatedDish);
-  } catch (error) {
-    console.error('Error updating dish:', error);
-    return NextResponse.json({ error: 'Failed to update dish' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
-  }
+    const id = parseMenuId((await params).id);
+    return NextResponse.json(await saveDish(parseMenuInput(await request.json(), 'dish', false), id));
+  } catch (error) { return menuError(error); }
 }
 
-// DELETE - Delete dish
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_request: NextRequest, { params }: Context) {
   try {
-    const { id } = await params;
-    const dishId = parseInt(id);
-
-    // Delete category relationships first
-    await prisma.categories_dishes.deleteMany({
-      where: { dish_id: dishId },
-    });
-
-    // Delete the dish
-    await prisma.dishes.delete({
-      where: { dish_id: dishId },
-    });
-
-    // Invalidate menu cache so deletion appears immediately
-    invalidateMenuCache();
-    console.log(`[ADMIN] Deleted dish ${dishId}, cache invalidated`);
-
-    return NextResponse.json({ message: 'Dish deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting dish:', error);
-    return NextResponse.json({ error: 'Failed to delete dish' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
-  }
+    await deleteMenuItem('dish', parseMenuId((await params).id));
+    return NextResponse.json({ success: true });
+  } catch (error) { return menuError(error); }
 }

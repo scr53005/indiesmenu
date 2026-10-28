@@ -1,5 +1,7 @@
 'use client';
 
+import { effectivePrice } from '@/lib/admin/menu';
+
 import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { PT_Sans } from 'next/font/google';
@@ -20,6 +22,7 @@ interface Dish {
   name: string;
   description?: string;
   price_eur: string;
+  discount?: number | null;
   sold_out?: boolean;
   position?: number;
 }
@@ -269,7 +272,7 @@ export default function PlatDuJourDisplay() {
               ))}
               {' '}
               <span className="text-red-500 font-bold text-4xl">
-                {data.suggestions[0].price_eur}€
+                {effectivePrice(data.suggestions[0].price_eur, data.suggestions[0].discount)}€
               </span>
             </p>
           </div>
@@ -290,10 +293,11 @@ export default function PlatDuJourDisplay() {
             >
               <p className={`text-4xl font-bold inline ${plat.sold_out ? 'line-through text-yellow-600' : 'text-yellow-400'}`}>
                 {plat.name}
+                {plat.description && ` ${plat.description}`}
               </p>
               {' '}
               <span className={`text-4xl font-bold ${plat.sold_out ? 'line-through text-red-400' : 'text-red-500'}`}>
-                {plat.price_eur}€
+                {effectivePrice(plat.price_eur, plat.discount)}€
               </span>
             </div>
           ))}
@@ -304,7 +308,7 @@ export default function PlatDuJourDisplay() {
               <p className="text-4xl font-bold text-orange-400">
                 Soupe de {smallSoup?.description || largeSoup?.description || 'Tomates'}{' '}
                 <span className="text-red-500 font-bold">
-                  {smallSoup?.price_eur}€/{largeSoup?.price_eur}€
+                  {smallSoup ? effectivePrice(smallSoup.price_eur, smallSoup.discount) : ''}€/{largeSoup ? effectivePrice(largeSoup.price_eur, largeSoup.discount) : ''}€
                 </span>
               </p>
             </div>

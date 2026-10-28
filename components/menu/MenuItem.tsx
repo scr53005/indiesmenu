@@ -92,6 +92,7 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
             {item.image && (
                 <Image
                     src={item.image}
+                    unoptimized={/^https?:\/\//i.test(item.image)}
                     alt={item.name}
                     width={800}
                     height={600}

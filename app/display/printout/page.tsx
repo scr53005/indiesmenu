@@ -1,5 +1,7 @@
 'use client';
 
+import { effectivePrice } from '@/lib/admin/menu';
+
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { PT_Sans } from 'next/font/google';
@@ -14,6 +16,7 @@ interface Dish {
   name: string;
   description?: string;
   price_eur: string;
+  discount?: number | null;
   sold_out?: boolean;
   position?: number;
 }
@@ -145,7 +148,7 @@ export default function PrintoutDisplay() {
                   ))}
                   {' '}
                   <span className="text-red-600 font-bold text-4xl">
-                    {data.suggestions[0].price_eur}€
+                    {effectivePrice(data.suggestions[0].price_eur, data.suggestions[0].discount)}€
                   </span>
                 </p>
               </div>
@@ -166,10 +169,11 @@ export default function PrintoutDisplay() {
                 >
                   <p className={`text-4xl font-bold inline ${plat.sold_out ? 'line-through text-gray-400' : 'text-blue-900'}`}>
                     {plat.name}
+                    {plat.description && ` ${plat.description}`}
                   </p>
                   {' '}
                   <span className={`text-4xl font-bold ${plat.sold_out ? 'line-through text-gray-400' : 'text-red-600'}`}>
-                    {plat.price_eur}€
+                    {effectivePrice(plat.price_eur, plat.discount)}€
                   </span>
                 </div>
               ))}
@@ -180,7 +184,7 @@ export default function PrintoutDisplay() {
                   <p className="text-4xl font-bold text-blue-800">
                     Soupe de {smallSoup?.description || largeSoup?.description || 'Tomates'}{' '}
                     <span className="text-red-600 font-bold">
-                      {smallSoup?.price_eur}€/{largeSoup?.price_eur}€
+                      {smallSoup ? effectivePrice(smallSoup.price_eur, smallSoup.discount) : ''}€/{largeSoup ? effectivePrice(largeSoup.price_eur, largeSoup.discount) : ''}€
                     </span>
                   </p>
                 </div>
