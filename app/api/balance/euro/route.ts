@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCurrencyRate } from '@/lib/currency-service';
+import { parseTokenBalances } from '@/lib/api/token-balances';
 
 /**
  * GET /api/balance/euro?account=<accountName>
@@ -24,6 +25,9 @@ export async function GET(req: NextRequest) {
   console.log('[BALANCE API] Fetching EURO balance for:', accountName);
 
   // Step 1: Try to fetch real balance from Hive-Engine (multiple endpoints with timeout)
+  // RUBIS come in the same answer as EURO. null = no Hive-Engine node answered, so unknown.
+  let rubis: number | null = null;
+
   const hiveEngineEndpoints = [
     'https://api.hive-engine.com/rpc/contracts',
     'https://engine.rishipanthee.com/contracts',
@@ -49,10 +53,12 @@ export async function GET(req: NextRequest) {
           params: {
             contract: 'tokens',
             table: 'balances',
+            // One request for both tokens (RUBIS-PLAN.md §5).
             query: {
               account: accountName,
-              symbol: 'EURO'
-            }
+              symbol: { $in: ['EURO', 'RUBIS'] }
+            },
+            limit: 2
           },
           id: 1
         }),
@@ -67,17 +73,21 @@ export async function GET(req: NextRequest) {
         const balanceData = await balanceResponse.json();
         console.log('[BALANCE API] Response data:', JSON.stringify(balanceData).substring(0, 200));
 
-        if (balanceData.result && balanceData.result.length > 0) {
-          const euroBalance = parseFloat(balanceData.result[0].balance);
-          console.log('[BALANCE API] ✓ Real EURO balance from Hive-Engine:', euroBalance);
+        const tokens = Array.isArray(balanceData.result) ? parseTokenBalances(balanceData.result) : null;
+        if (tokens) rubis = tokens.rubis;
+
+        if (tokens && tokens.euro !== null) {
+          console.log('[BALANCE API] ✓ Real EURO balance from Hive-Engine:', tokens.euro, '| RUBIS:', tokens.rubis);
 
           return NextResponse.json({
-            balance: euroBalance,
+            balance: tokens.euro,
+            rubis: tokens.rubis,
             source: 'hive-engine',
             endpoint
           });
         } else {
-          console.warn('[BALANCE API] Empty or missing result from endpoint:', endpoint);
+          // No EURO row: unchanged behaviour (next node, then HBD), but the RUBIS read is kept.
+          console.warn('[BALANCE API] No EURO row in result from endpoint:', endpoint);
           // Continue to next endpoint
         }
       } else {
@@ -142,6 +152,7 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({
           balance: calculatedEuroBalance,
+          rubis,
           source: 'hive-hbd-conversion',
           hbdBalance,
           eurUsdRate

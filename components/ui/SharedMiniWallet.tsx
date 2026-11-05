@@ -5,7 +5,7 @@ import { MiniWallet as Wallet, type PulseState } from '@innopay/ui';
 import { forgetLocalWallet } from '@/lib/innopay/forget-wallet';
 import { getInnopayUrl } from '@/lib/utils';
 
-export { WalletReopenButton } from '@innopay/ui';
+export { WalletReopenButton, RubisTeaser } from '@innopay/ui';
 export type { PulseState } from '@innopay/ui';
 export interface WalletBalance { accountName: string; euroBalance: number }
 interface Props {
@@ -18,6 +18,13 @@ interface Props {
   balanceSource?: string;
   pulseState?: PulseState;
   onPulseReset?: () => void;
+  // RUBIS (RUBIS-PLAN.md §5): the package formats and draws; the menu page supplies the data.
+  rubisBalance?: number | null;
+  rubisEarnable?: boolean;
+  rubisTeaser?: boolean;
+  onRubisTeaserEnd?: () => void;
+  spendRubisFirst?: boolean;
+  onSpendRubisFirstChange?: (value: boolean) => void;
 }
 
 /** App adapter: currency, hub navigation and local removal stay here. */

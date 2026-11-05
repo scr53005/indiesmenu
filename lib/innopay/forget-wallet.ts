@@ -12,6 +12,8 @@ const WALLET_STORAGE_KEYS = [
   'innopay_fulfilledDetectedAt', 'innopay_orderConfirmedForMemo', 'innopay_pending_order',
   'innopay_debug_last_params',
   'innopay_flow_pending', 'innopay_wallet_hidden',
+  // RUBIS balance cache. 'innopay_spend_rubis_first' is a device preference and deliberately stays.
+  'innopay_lastRubis',
 ] as const;
 
 export function clearWalletStorage(storage: Pick<Storage, 'removeItem'>): void {

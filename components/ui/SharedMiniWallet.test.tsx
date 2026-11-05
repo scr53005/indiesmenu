@@ -31,3 +31,23 @@ it('uses the installed package with app currency, hub link and confirmed local r
     act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals();
   }
 });
+
+it('passes the RUBIS balance and the spend-first setting through to the shared wallet', () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const onSpend = vi.fn();
+  try {
+    act(() => root.render(<MiniWallet balance={{ accountName: 'alice', euroBalance: 12.5 }}
+      language="en" visible onClose={vi.fn()} rubisBalance={0.35} rubisEarnable
+      spendRubisFirst onSpendRubisFirstChange={onSpend} />));
+    expect(host.querySelector('.mw-rubis-num')?.textContent).toBe('0.35');
+    const box = host.querySelector('.mw-pref input') as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    act(() => box.click());
+    expect(onSpend).toHaveBeenCalledWith(false);
+  } finally {
+    act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+  }
+});

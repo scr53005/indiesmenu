@@ -34,6 +34,14 @@ describe('forget wallet', () => {
     expect(localStorage.getItem('cart')).toBe('keep cart');
   });
 
+  it('clears the RUBIS balance cache but keeps the "Spend RUBIS first" device preference', () => {
+    localStorage.setItem('innopay_lastRubis', '0.35');
+    localStorage.setItem('innopay_spend_rubis_first', '0');
+    clearWalletStorage(localStorage);
+    expect(localStorage.getItem('innopay_lastRubis')).toBeNull();
+    expect(localStorage.getItem('innopay_spend_rubis_first')).toBe('0');
+  });
+
   it('removes forbidden legacy keys and is safe to repeat with no wallet', () => {
     localStorage.setItem('innopay_ownerPrivate', 'legacy');
     localStorage.setItem('innopay_masterPassword', 'legacy');

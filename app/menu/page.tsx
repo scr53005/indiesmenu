@@ -9,7 +9,8 @@ import MenuItem from '@/components/menu/MenuItem';
 import CartItemDisplay from '@/components/menu/CartItemDisplay';
 import DelayedOrderPanel from '@/components/menu/DelayedOrderPanel';
 import WalletNotificationBanner from '@/components/menu/WalletNotificationBanner';
-import MiniWallet, { WalletReopenButton } from '@/components/ui/SharedMiniWallet';
+import MiniWallet, { RubisTeaser, WalletReopenButton } from '@/components/ui/SharedMiniWallet';
+import { shouldShowRubisTeaser } from '@innopay/ui';
 import Draggable from '@/components/ui/Draggable';
 import BottomBanner from '@/components/ui/BottomBanner';
 import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart } from '@/lib/utils';
@@ -24,6 +25,10 @@ import {
   clearCredentials,
   ensureReady,
 } from '@/lib/innopay/keystore';
+import {
+  RUBIS_EARNABLE, confirmedRubis, isPaymentReturn, markTeaserShown, readSpendRubisFirst, readTeaserShown,
+  writeSpendRubisFirst,
+} from '@/lib/innopay/rubis';
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
@@ -136,7 +141,7 @@ export default function MenuPage() {
   const accountName = typeof window !== 'undefined' ? getAccountName() : null;
 
   // Fetch balance using React Query (replaces manual useEffect at line 602-705)
-  const { balance, isLoading: balanceLoading, refetch: refetchBalance, source: balanceSource } = useBalance(accountName, {
+  const { balance, rubis, isLoading: balanceLoading, refetch: refetchBalance, source: balanceSource } = useBalance(accountName, {
     enabled: !!accountName && !accountName.startsWith('mockaccount'),
   });
 
@@ -225,6 +230,40 @@ export default function MenuPage() {
   const [walletPulseState, setWalletPulseState] = useState<'none' | 'blue' | 'green' | 'green-slow' | 'green-solid' | 'red'>('none');
   const pulseIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const pulseStartTimeoutRef = useRef<NodeJS.Timeout | null>(null); // tracks the 9s startup delay
+
+  // RUBIS (RUBIS-PLAN.md §5, SPOKE-DOCUMENTATION.md MiniWallet → RUBIS). Display only.
+  const [rubisMounted, setRubisMounted] = useState(false);
+  // Start "shown" so nothing plays before the session flag has been read.
+  const [teaserShown, setTeaserShown] = useState(true);
+  const [paymentReturn, setPaymentReturn] = useState(false);
+  const [spendRubisFirst, setSpendRubisFirst] = useState(true);
+  useEffect(() => {
+    setRubisMounted(true);
+    setTeaserShown(readTeaserShown(sessionStorage));
+    setPaymentReturn(isPaymentReturn(window.location.search));
+    setSpendRubisFirst(readSpendRubisFirst(localStorage));
+  }, []);
+  // An order in flight (pulse) or a hub return being finalised counts as "paying": no teaser.
+  const rubisPaying = paymentReturn || walletPulseState !== 'none';
+  // Only while the wallet card is actually on screen (not minimised), on a fresh chain read.
+  const holderTeaser = !!accountName && showWalletBalance && !!walletBalance && shouldShowRubisTeaser({
+    earnable: RUBIS_EARNABLE, balance: confirmedRubis(balanceSource, rubis), paying: rubisPaying,
+    shownThisSession: teaserShown,
+  });
+  // A guest has no balance: 0 is the honest input (guest checkout earns nothing).
+  const guestTeaser = rubisMounted && !accountName && shouldShowRubisTeaser({
+    earnable: RUBIS_EARNABLE, balance: 0, paying: rubisPaying, shownThisSession: teaserShown,
+  });
+  // Remember at the start, so a reload during the teaser does not replay it. The local state
+  // flips only at the end, because flipping it now would stop the teaser at once.
+  useEffect(() => {
+    if (holderTeaser || guestTeaser) markTeaserShown(sessionStorage);
+  }, [holderTeaser, guestTeaser]);
+  const handleTeaserEnd = useCallback(() => setTeaserShown(true), []);
+  const handleSpendRubisFirstChange = useCallback((value: boolean) => {
+    setSpendRubisFirst(value);
+    writeSpendRubisFirst(localStorage, value);
+  }, []);
 
   // State for order processing timer
   const [orderProcessing, setOrderProcessing] = useState(false);
@@ -3145,6 +3184,9 @@ export default function MenuPage() {
         </div>
       )}
 
+      {/* Guest RUBIS teaser, just above the 30 px BottomBanner. */}
+      <RubisTeaser show={guestTeaser} onEnd={handleTeaserEnd} language="fr" bottom={44} />
+
       {/* Wallet Balance Reopen Button */}
       <WalletReopenButton
         language="fr"
@@ -3164,6 +3206,12 @@ export default function MenuPage() {
           }}
           balanceSource={balanceSource || undefined}
           pulseState={walletPulseState}
+          rubisBalance={rubis}
+          rubisEarnable={RUBIS_EARNABLE}
+          rubisTeaser={holderTeaser}
+          onRubisTeaserEnd={handleTeaserEnd}
+          spendRubisFirst={spendRubisFirst}
+          onSpendRubisFirstChange={handleSpendRubisFirstChange}
           onPulseReset={() => {
             setWalletPulseState('none');
             localStorage.removeItem('innopay_latestMemoContent');

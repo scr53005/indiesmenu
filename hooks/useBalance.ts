@@ -15,6 +15,7 @@ import {
   saveCachedBalance,
   type BalanceResponse
 } from '@/lib/api/balance';
+import { readCachedRubis, saveCachedRubis } from '@/lib/innopay/rubis';
 
 interface UseBalanceOptions {
   enabled?: boolean; // Whether to automatically fetch (default: true)
@@ -23,6 +24,8 @@ interface UseBalanceOptions {
 
 interface UseBalanceReturn {
   balance: number | null;
+  /** RUBIS held; null until known. Use `confirmedRubis(source, rubis)` before trusting a 0. */
+  rubis: number | null;
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -75,13 +78,17 @@ export function useBalance(
         if (cached) {
           const remaining = Math.round((trustUntil - Date.now()) / 1000);
           console.log(`[useBalance] Trust window active (${remaining}s left) — using cached balance:`, cached.balance);
-          return { balance: cached.balance, source: 'trust-window', timestamp: cached.timestamp };
+          return {
+            balance: cached.balance, rubis: readCachedRubis(localStorage),
+            source: 'trust-window', timestamp: cached.timestamp,
+          };
         }
       }
 
       // Fetch from blockchain
       const result = await fetchEuroBalance(accountName);
       saveCachedBalance(result.balance, result.timestamp);
+      if (result.rubis !== null) saveCachedRubis(localStorage, result.rubis);
       return result;
     },
     enabled: enabled && !!accountName,
@@ -97,6 +104,7 @@ export function useBalance(
       if (cached) {
         return {
           balance: cached.balance,
+          rubis: readCachedRubis(localStorage),
           source: 'localStorage-cache',
           timestamp: cached.timestamp,
         };
@@ -125,8 +133,10 @@ export function useBalance(
     },
     onSuccess: (newBalance) => {
       // Update the query cache optimistically
+      // A payment changes EURO only; keep the RUBIS already shown.
       queryClient.setQueryData<BalanceResponse>(['balance', accountName], (old) => ({
         balance: newBalance,
+        rubis: old?.rubis ?? readCachedRubis(localStorage),
         source: 'optimistic-update',
         timestamp: Date.now(),
       }));
@@ -136,6 +146,7 @@ export function useBalance(
 
   return {
     balance: data?.balance ?? null,
+    rubis: data?.rubis ?? null,
     isLoading,
     isError,
     error: error as Error | null,

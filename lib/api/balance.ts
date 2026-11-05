@@ -5,7 +5,9 @@
 
 export interface BalanceResponse {
   balance: number;
-  source: string; // 'hive-engine' | 'localStorage-optimistic'
+  /** RUBIS held; null when unknown (no Hive-Engine node answered, no cache). */
+  rubis: number | null;
+  source: string; // 'hive-engine' | 'hive-hbd-conversion' | 'localStorage-cache' | 'trust-window' | 'optimistic-update'
   timestamp: number;
 }
 
@@ -24,10 +26,13 @@ export async function fetchEuroBalance(accountName: string): Promise<BalanceResp
     const data = await response.json();
     const euroBalance = data.balance;
 
-    console.log(`[BALANCE] ${accountName}: ${euroBalance} (${data.source})`);
+    const rubis = typeof data.rubis === 'number' && Number.isFinite(data.rubis) ? data.rubis : null;
+
+    console.log(`[BALANCE] ${accountName}: ${euroBalance} EURO, ${rubis} RUBIS (${data.source})`);
 
     return {
       balance: parseFloat(euroBalance.toFixed(2)),
+      rubis,
       source: data.source,
       timestamp: Date.now(),
     };
