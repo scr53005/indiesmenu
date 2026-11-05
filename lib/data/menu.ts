@@ -1,9 +1,8 @@
 // indiesmenu/lib/data/menu.ts
 
-import { PrismaClient } from '@prisma/client';
+import prisma from '../prisma'; // relative: lib file (CLAUDE.md alias gotcha)
+import { revalidateTag, unstable_cache } from 'next/cache';
 // import { Decimal } from '@prisma/client/runtime/library';
-
-const prisma = new PrismaClient();
 
 export type FormattedCuisson = {
   id: number;
@@ -53,299 +52,244 @@ export type MenuData = {
 };
 
 export async function getMenuData(): Promise<MenuData> {
-  try {
-    // Fetch categories with nested dishes and drinks
-    const categories = await prisma.categories.findMany({
-      include: {
-        categories_dishes: {
-          include: {
-            dishes: true, // Include the actual dish details
-          },
+  // Fetch categories with nested dishes and drinks
+  const categories = await prisma.categories.findMany({
+    include: {
+      categories_dishes: {
+        include: {
+          dishes: true, // Include the actual dish details
         },
-        categories_drinks: {
-          include: {
-            drinks: {
-              include: {
-                drink_sizes: true, // Include drink sizes for each drink
-              },
+      },
+      categories_drinks: {
+        include: {
+          drinks: {
+            include: {
+              drink_sizes: true, // Include drink sizes for each drink
             },
           },
         },
       },
-    });
+    },
+  });
 
-    // Custom ordering: hardcoded category order by category_id
-    // Order: SUGGESTION(30), PLAT DU JOUR(31), PARTAGER(20), FINGER FOOD(21),
-    //        SALADES(22), POISSONS(23), SOUPE DU MOMENT(24), BURGERS(25),
-    //        VIANDES(27), DESSERTS(28), KIDS MENU(29)
-    const categoryOrder = [30, 31, 20, 21, 22, 23, 24, 25, 27, 28, 29];
-    const sortedCategories = categories.sort((a, b) => {
-      const aIndex = categoryOrder.indexOf(a.category_id);
-      const bIndex = categoryOrder.indexOf(b.category_id);
+  // Custom ordering: hardcoded category order by category_id
+  // Order: SUGGESTION(30), PLAT DU JOUR(31), PARTAGER(20), FINGER FOOD(21),
+  //        SALADES(22), POISSONS(23), SOUPE DU MOMENT(24), BURGERS(25),
+  //        VIANDES(27), DESSERTS(28), KIDS MENU(29)
+  const categoryOrder = [30, 31, 20, 21, 22, 23, 24, 25, 27, 28, 29];
+  const sortedCategories = categories.sort((a, b) => {
+    const aIndex = categoryOrder.indexOf(a.category_id);
+    const bIndex = categoryOrder.indexOf(b.category_id);
 
-      // If both are in the order list, sort by their position
-      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-      // If only a is in the list, it comes first
-      if (aIndex !== -1) return -1;
-      // If only b is in the list, it comes first
-      if (bIndex !== -1) return 1;
-      // Otherwise, maintain original order (shouldn't happen if all categories are listed)
-      return 0;
-    });
+    // If both are in the order list, sort by their position
+    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+    // If only a is in the list, it comes first
+    if (aIndex !== -1) return -1;
+    // If only b is in the list, it comes first
+    if (bIndex !== -1) return 1;
+    // Otherwise, maintain original order (shouldn't happen if all categories are listed)
+    return 0;
+  });
 
-    // Fetch dishes and drinks separately to include their categories (as needed for formatting)
-    // Filter to only include active dishes that are not sold out
-    const dishes = await prisma.dishes.findMany({
-      where: {
-        active: true,
-        sold_out: false,
-      },
-      include: {
-        categories_dishes: {
-          include: {
-            categories: true,
-          },
-        },
-        dishes_cuisson: { // NEW: Include related cuisson entries
-          include: {
-            cuisson: true, // Include the actual cuisson details
-          },
-        },
-        dishes_ingredients: { // NEW: Include related ingredient entries
-          include: {
-            ingredients: true, // Include the actual ingredient details
-          },
+  // Fetch dishes and drinks separately to include their categories (as needed for formatting)
+  // Filter to only include active dishes that are not sold out
+  const dishes = await prisma.dishes.findMany({
+    where: {
+      active: true,
+      sold_out: false,
+    },
+    include: {
+      categories_dishes: {
+        include: {
+          categories: true,
         },
       },
-    });
-
-    const drinks = await prisma.drinks.findMany({
-      include: {
-        categories_drinks: {
-          include: {
-            categories: true,
-          },
+      dishes_cuisson: { // NEW: Include related cuisson entries
+        include: {
+          cuisson: true, // Include the actual cuisson details
         },
-        drink_sizes: true, // Include drink sizes for each drink
-        drinks_ingredients: { // NEW: Include related ingredient entries
-          include: {
-            ingredients: true, // Include the actual ingredient details
-          },
-        },        
       },
+      dishes_ingredients: { // NEW: Include related ingredient entries
+        include: {
+          ingredients: true, // Include the actual ingredient details
+        },
+      },
+    },
+  });
+
+  const drinks = await prisma.drinks.findMany({
+    include: {
+      categories_drinks: {
+        include: {
+          categories: true,
+        },
+      },
+      drink_sizes: true, // Include drink sizes for each drink
+      drinks_ingredients: { // NEW: Include related ingredient entries
+        include: {
+          ingredients: true, // Include the actual ingredient details
+        },
+      },        
+    },
+  });
+
+  // NEW: Fetch all cuissons and ingredients globally (with error handling)
+  let allCuissons: Array<{ cuisson_id: number; english_name: string; french_name: string }> = [];
+  let allIngredients: Array<{ ingredient_id: number; name: string }> = [];
+
+  try {
+    allCuissons = await prisma.cuisson.findMany({
+      orderBy: { english_name: 'asc' }
     });
-
-    // NEW: Fetch all cuissons and ingredients globally (with error handling)
-    let allCuissons: Array<{ cuisson_id: number; english_name: string; french_name: string }> = [];
-    let allIngredients: Array<{ ingredient_id: number; name: string }> = [];
-
+  } catch (error) {
+    console.error('[MENU] Error fetching cuissons from database (non-fatal):', error);
+    // Load from fallback file
     try {
-      allCuissons = await prisma.cuisson.findMany({
-        orderBy: { english_name: 'asc' }
-      });
-    } catch (error) {
-      console.error('[MENU] Error fetching cuissons from database (non-fatal):', error);
-      // Load from fallback file
-      try {
-        const fallbackCuissons = await import('./fallback-cuissons.json');
-        allCuissons = fallbackCuissons.default.map(c => ({
-          cuisson_id: c.id,
-          english_name: c.english_name,
-          french_name: c.french_name
-        }));
-        console.log('[MENU] Loaded cuissons from fallback file');
-      } catch (fallbackError) {
-        console.error('[MENU] Failed to load fallback cuissons:', fallbackError);
-        // Continue with empty array as last resort
-      }
+      const fallbackCuissons = await import('./fallback-cuissons.json');
+      allCuissons = fallbackCuissons.default.map(c => ({
+        cuisson_id: c.id,
+        english_name: c.english_name,
+        french_name: c.french_name
+      }));
+      console.log('[MENU] Loaded cuissons from fallback file');
+    } catch (fallbackError) {
+      console.error('[MENU] Failed to load fallback cuissons:', fallbackError);
+      // Continue with empty array as last resort
     }
+  }
 
-    try {
-      allIngredients = await prisma.ingredients.findMany({
-        orderBy: { name: 'asc' }
-      });
-    } catch (error) {
-      console.error('[MENU] Error fetching ingredients from database (non-fatal):', error);
-      // Load from fallback file
-      try {
-        const fallbackIngredients = await import('./fallback-ingredients.json');
-        allIngredients = fallbackIngredients.default.map(i => ({
-          ingredient_id: i.id,
-          name: i.name
-        }));
-        console.log('[MENU] Loaded ingredients from fallback file');
-      } catch (fallbackError) {
-        console.error('[MENU] Failed to load fallback ingredients:', fallbackError);
-        // Continue with empty array as last resort
-      }
-    }
-
-    // --- Prepare drinks for frontend format ---
-    const formattedDrinks = new Map<number, FormattedDrink>();
-
-    drinks.forEach((drink) => {
-      formattedDrinks.set(drink.drink_id, {
-        id: `drink-${drink.drink_id}`,
-        name: drink.name,
-        type: 'drink',
-        availableSizes: drink.drink_sizes.map((ds) => ({
-          size: ds.size,
-          price: (ds.price_eur.toNumber() * (ds.discount ?? 1.0)).toFixed(2),
-          discount: ds.discount ?? 1.0, // Pass discount to frontend (1.0 = no discount)
-        })),
-        categoryIds: drink.categories_drinks.map(cd => cd.category_id),
-        image: drink.image || undefined,
-        ingredients: drink.drinks_ingredients.map(di => ({ // Map associated ingredients
-          id: di.ingredients.ingredient_id,
-          name: di.ingredients.name,
-        })),
-        selection_mode: drink.selection_mode || undefined,
-      });
+  try {
+    allIngredients = await prisma.ingredients.findMany({
+      orderBy: { name: 'asc' }
     });
+  } catch (error) {
+    console.error('[MENU] Error fetching ingredients from database (non-fatal):', error);
+    // Load from fallback file
+    try {
+      const fallbackIngredients = await import('./fallback-ingredients.json');
+      allIngredients = fallbackIngredients.default.map(i => ({
+        ingredient_id: i.id,
+        name: i.name
+      }));
+      console.log('[MENU] Loaded ingredients from fallback file');
+    } catch (fallbackError) {
+      console.error('[MENU] Failed to load fallback ingredients:', fallbackError);
+      // Continue with empty array as last resort
+    }
+  }
 
-    // Format dishes for frontend
-    const formattedDishes: FormattedDish[] = dishes.map((dish) => ({
-      id: `dish-${dish.dish_id}`,
-      name: dish.name,
-      type: 'dish',
-      price: (dish.price_eur.toNumber() * (dish.discount ?? 1.0)).toFixed(2), // Apply discount if available
-      discount: dish.discount ?? 1.0, // Pass discount to frontend (1.0 = no discount)
-      categoryIds: dish.categories_dishes.map((cd) => cd.category_id),
-      image: dish.image || undefined,
-      cuissons: dish.dishes_cuisson.map(dc => ({ // Map associated cuissons
-        id: dc.cuisson.cuisson_id,
-        english_name: dc.cuisson.english_name,
-        french_name: dc.cuisson.french_name,
+  // --- Prepare drinks for frontend format ---
+  const formattedDrinks = new Map<number, FormattedDrink>();
+
+  drinks.forEach((drink) => {
+    formattedDrinks.set(drink.drink_id, {
+      id: `drink-${drink.drink_id}`,
+      name: drink.name,
+      type: 'drink',
+      availableSizes: drink.drink_sizes.map((ds) => ({
+        size: ds.size,
+        price: (ds.price_eur.toNumber() * (ds.discount ?? 1.0)).toFixed(2),
+        discount: ds.discount ?? 1.0, // Pass discount to frontend (1.0 = no discount)
       })),
-      ingredients: dish.dishes_ingredients.map(di => ({ // Map associated ingredients
+      categoryIds: drink.categories_drinks.map(cd => cd.category_id),
+      image: drink.image || undefined,
+      ingredients: drink.drinks_ingredients.map(di => ({ // Map associated ingredients
         id: di.ingredients.ingredient_id,
         name: di.ingredients.name,
       })),
-    }));
-
-    // let conversionRate = 1.0; // Set a default conversion rate, if applicable
-    const conversionRate = await prisma.currency_conversion.findFirst({
-      orderBy: {
-        date: 'desc', // Sort by date in descending order to get the most recent
-      },
-      select: {
-        conversion_rate: true, // Only select the conversion_rate field
-      },
+      selection_mode: drink.selection_mode || undefined,
     });
+  });
 
-    return {
-      categories: sortedCategories,
-      dishes: formattedDishes,
-      drinks: Array.from(formattedDrinks.values()),
-      cuissons: allCuissons.map(c => ({ // Format global cuissons list
-        id: c.cuisson_id,
-        english_name: c.english_name,
-        french_name: c.french_name,
-      })),
-      ingredients: allIngredients.map(i => ({ // Format global ingredients list
-        id: i.ingredient_id,
-        name: i.name,
-      })),
-      conversion_rate: conversionRate ? conversionRate.conversion_rate.toNumber(): 1.0000, // Include conversion rate if available
-    };
+  // Format dishes for frontend
+  const formattedDishes: FormattedDish[] = dishes.map((dish) => ({
+    id: `dish-${dish.dish_id}`,
+    name: dish.name,
+    type: 'dish',
+    price: (dish.price_eur.toNumber() * (dish.discount ?? 1.0)).toFixed(2), // Apply discount if available
+    discount: dish.discount ?? 1.0, // Pass discount to frontend (1.0 = no discount)
+    categoryIds: dish.categories_dishes.map((cd) => cd.category_id),
+    image: dish.image || undefined,
+    cuissons: dish.dishes_cuisson.map(dc => ({ // Map associated cuissons
+      id: dc.cuisson.cuisson_id,
+      english_name: dc.cuisson.english_name,
+      french_name: dc.cuisson.french_name,
+    })),
+    ingredients: dish.dishes_ingredients.map(di => ({ // Map associated ingredients
+      id: di.ingredients.ingredient_id,
+      name: di.ingredients.name,
+    })),
+  }));
 
-  } finally {
-    // Keep prisma.$disconnect() here as this is the "core" logic function
-    await prisma.$disconnect();
-  }
+  // let conversionRate = 1.0; // Set a default conversion rate, if applicable
+  const conversionRate = await prisma.currency_conversion.findFirst({
+    orderBy: {
+      date: 'desc', // Sort by date in descending order to get the most recent
+    },
+    select: {
+      conversion_rate: true, // Only select the conversion_rate field
+    },
+  });
+
+  return {
+    categories: sortedCategories,
+    dishes: formattedDishes,
+    drinks: Array.from(formattedDrinks.values()),
+    cuissons: allCuissons.map(c => ({ // Format global cuissons list
+      id: c.cuisson_id,
+      english_name: c.english_name,
+      french_name: c.french_name,
+    })),
+    ingredients: allIngredients.map(i => ({ // Format global ingredients list
+      id: i.ingredient_id,
+      name: i.name,
+    })),
+    conversion_rate: conversionRate ? conversionRate.conversion_rate.toNumber(): 1.0000, // Include conversion rate if available
+  };
 }
 
 // ===================================
 // CACHING LAYER
 // ===================================
+//
+// Next's shared data cache, tagged 'menu' (2026-11-05). It replaces a module-level variable:
+// that variable lived in one server process and one bundle, so invalidateMenuCache() from an
+// admin save only cleared the admin route's own copy. The menu layout (app/menu/layout.tsx,
+// phase P) and every other Vercel instance kept serving the old menu for up to 7 days. The
+// data cache is shared by all routes and instances, and revalidateTag clears it everywhere.
+// It stores JSON, so values come back as plain JSON (Prisma Decimals in `categories` become
+// strings): callers already received JSON before (the /api/menu response, the layout).
 
-let menuCache: {
-  data: MenuData | null;
-  timestamp: number;
-  isStale: boolean;
-} = {
-  data: null,
-  timestamp: 0,
-  isStale: true,
-};
+export const MENU_CACHE_TAG = 'menu';
 
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 1 week in milliseconds
-const STALE_WHILE_REVALIDATE_TTL = 24 * 60 * 60 * 1000; // 24 hours - serve stale while fetching fresh
+const loadCachedMenu = unstable_cache(getMenuData, ['indies-menu-v1'], {
+  tags: [MENU_CACHE_TAG],
+  revalidate: 7 * 24 * 60 * 60, // safety net; admin saves invalidate at once
+});
 
-/**
- * Get menu data with server-side caching
- * - Cache revalidates every 7 days
- * - Serves stale data while revalidating in background
- * - Never throws errors (returns last good data on failure)
- */
+// Last menu this instance served, for when the database is down: the menu keeps showing.
+let lastGoodMenu: MenuData | null = null;
+
+/** The menu, from the shared cache; never throws while this instance has served a menu before. */
 export async function getCachedMenuData(): Promise<MenuData> {
-  const now = Date.now();
-  const cacheAge = now - menuCache.timestamp;
-
-  // Case 1: Cache is fresh (< 7 days old)
-  if (menuCache.data && cacheAge < CACHE_TTL) {
-    console.log(`[MENU CACHE] Serving fresh cache (age: ${Math.round(cacheAge / 1000 / 60)} minutes)`);
-    return menuCache.data;
-  }
-
-  // Case 2: Cache is stale but not too old (7-31 days) - serve stale, revalidate in background
-  if (menuCache.data && cacheAge < STALE_WHILE_REVALIDATE_TTL && !menuCache.isStale) {
-    console.log(`[MENU CACHE] Serving stale cache, revalidating in background`);
-    menuCache.isStale = true; // Mark as being revalidated
-
-    // Revalidate in background (don't await)
-    getMenuData()
-      .then((freshData) => {
-        menuCache = {
-          data: freshData,
-          timestamp: Date.now(),
-          isStale: false,
-        };
-        console.log(`[MENU CACHE] Background revalidation successful`);
-      })
-      .catch((error) => {
-        console.error(`[MENU CACHE] Background revalidation failed:`, error);
-        menuCache.isStale = false; // Reset flag so we can try again later
-      });
-
-    return menuCache.data; // Return stale data immediately
-  }
-
-  // Case 3: No cache or cache is very old - fetch fresh data
-  console.log(`[MENU CACHE] No cache or cache too old, fetching fresh data`);
-
   try {
-    const freshData = await getMenuData();
-    menuCache = {
-      data: freshData,
-      timestamp: now,
-      isStale: false,
-    };
-    console.log(`[MENU CACHE] Fresh data cached successfully`);
-    return freshData;
+    const menu = await loadCachedMenu();
+    lastGoodMenu = menu;
+    return menu;
   } catch (error) {
-    console.error(`[MENU CACHE] Failed to fetch fresh data:`, error);
-
-    // If we have any cached data (even if very old), return it as fallback
-    if (menuCache.data) {
-      console.warn(`[MENU CACHE] Returning stale cache due to error (age: ${Math.round(cacheAge / 1000 / 60 / 60)} hours)`);
-      return menuCache.data;
+    if (lastGoodMenu) {
+      console.error('[MENU CACHE] Load failed, serving the last good menu:', error);
+      return lastGoodMenu;
     }
-
-    // No cache and fetch failed - throw error (will be handled by route handler)
     throw error;
   }
 }
 
 /**
- * Invalidates the menu cache
- * Call this after creating/updating/deleting dishes or drinks
+ * Call after creating/updating/deleting dishes or drinks (lib/admin/menu-store.ts).
+ * `expire: 0` makes the next request rebuild the menu instead of serving the old one once
+ * more ('max' would be stale-while-revalidate: one more customer would see the old price).
  */
 export function invalidateMenuCache(): void {
-  console.log('[MENU CACHE] Cache invalidated manually');
-  menuCache = {
-    data: null,
-    timestamp: 0,
-    isStale: true,
-  };
+  revalidateTag(MENU_CACHE_TAG, { expire: 0 });
 }

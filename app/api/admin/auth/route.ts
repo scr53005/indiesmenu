@@ -1,45 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import {
+  ADMIN_COOKIE, ADMIN_SESSION_TTL_SECONDS, adminSecret, constantTimeEqual, createAdminSession,
+} from '@/lib/admin/session';
 
 export async function POST(request: NextRequest) {
   try {
     const { password } = await request.json();
 
-    // Check password (from environment variable)
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    // No fallback password: without ADMIN_PASSWORD the admin stays closed.
+    const secret = adminSecret();
+    if (!secret) {
+      console.error('[ADMIN AUTH] ADMIN_PASSWORD is not set; admin login disabled');
+      return NextResponse.json({ error: 'Admin login is not configured' }, { status: 503 });
+    }
 
-    if (password === adminPassword) {
-      // Set a session cookie
+    if (typeof password === 'string' && constantTimeEqual(password, secret)) {
       const response = NextResponse.json({ success: true });
-
-      // Set cookie for 24 hours
-      response.cookies.set('admin_session', 'authenticated', {
+      // Signed, expiring session (lib/admin/session.ts) checked by proxy.ts.
+      response.cookies.set(ADMIN_COOKIE, await createAdminSession(secret), {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 60 * 60 * 24, // 24 hours
+        maxAge: ADMIN_SESSION_TTL_SECONDS,
         path: '/',
       });
-
       return response;
-    } else {
-      return NextResponse.json(
-        { error: 'Invalid password' },
-        { status: 401 }
-      );
     }
+
+    return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
   } catch (error) {
     console.error('Auth error:', error);
-    return NextResponse.json(
-      { error: 'Authentication failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Authentication failed' }, { status: 500 });
   }
 }
 
 // Logout
 export async function DELETE() {
   const response = NextResponse.json({ success: true });
-  response.cookies.delete('admin_session');
+  response.cookies.delete(ADMIN_COOKIE);
   return response;
 }

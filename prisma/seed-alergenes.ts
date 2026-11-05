@@ -2,8 +2,12 @@
 // Based on EU Regulation 1169/2011 (14 mandatory allergens)
 
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { loadEnv } from '../scripts/loadEnv';
 
-const prisma = new PrismaClient();
+// Prisma 7: no automatic .env loading, and the client needs the pg adapter.
+loadEnv();
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.POSTGRES_URL! }) });
 
 const alergenes = [
   {

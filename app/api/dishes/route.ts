@@ -1,8 +1,6 @@
 // app/api/dishes/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client'; // Adjust to your Prisma output path
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,8 +16,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

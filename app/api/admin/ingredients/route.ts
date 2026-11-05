@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma';
 
 // GET: Fetch all ingredients with their allergen assignments
 export async function GET() {

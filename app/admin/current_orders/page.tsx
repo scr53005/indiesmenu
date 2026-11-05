@@ -2,8 +2,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import { getTable, hydrateMemo, HydratedOrderLine, getOrderTiming, OrderTiming } from '@/lib/utils';
-import { MenuData } from '@/lib/data/menu';
+import type { MenuData } from '@/lib/data/menu'; // type only: menu.ts is server code
 import { generateReceiptHtml } from '@/lib/print-utils';
+import { readSoundOn, writeSoundOn } from '@/lib/admin/co-sound';
+import { useRouter } from 'next/navigation';
 import { isRestaurantOpen } from '@/lib/config/kitchen-hours';
 import 'react-toastify/dist/ReactToastify.css';
 import React from 'react';
@@ -113,21 +115,46 @@ export default function CurrentOrdersPage() {
       bell1Ref.current.load();
       bell2Ref.current = new Audio('/sounds/chime-2.mp3');
       bell2Ref.current.load();
+      // Restore the kitchen's bell choice: it used to reset to off on every page load
+      // (lib/admin/co-sound.ts). Read after mount, not in useState, to keep SSR == hydration.
+      setCanPlayAudio(readSoundOn(window.sessionStorage));
     }
   }, []);
 
-  const toggleAudio = () => {
-    setCanPlayAudio(prev => !prev);
+  const router = useRouter();
+  // Same-tab plain clicks only; Ctrl/middle-click still open a new tab as a normal link.
+  const navigate = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    router.push(e.currentTarget.getAttribute('href')!);
   };
+
+  const toggleAudio = () => {
+    setCanPlayAudio(prev => {
+      writeSoundOn(window.sessionStorage, !prev);
+      return !prev;
+    });
+  };
+
+  // A browser may refuse sound until the page has been clicked once (autoplay policy), e.g.
+  // after a reload. Then show "Activer le son" again instead of ringing silently.
+  const onPlayRefused = useCallback((e: unknown) => {
+    console.error('[AUDIO] Error playing bell:', e);
+    if (e instanceof DOMException && e.name === 'NotAllowedError') {
+      setCanPlayAudio(false);
+      writeSoundOn(window.sessionStorage, false);
+      toast.warning('Son bloqué par le navigateur : cliquez sur « Activer le son ».', { autoClose: false });
+    }
+  }, []);
 
   const playBellSounds = useCallback(() => {
     if (canPlayAudio && bell1Ref.current && bell2Ref.current) {
       bell1Ref.current.currentTime = 0;
-      bell1Ref.current.play().catch(e => console.error('[AUDIO] Error playing police siren:', e));
+      bell1Ref.current.play().catch(onPlayRefused);
       bell2Ref.current.currentTime = 0;
-      bell2Ref.current.play().catch(e => console.error('[AUDIO] Error playing chime:', e));
+      bell2Ref.current.play().catch(onPlayRefused);
     }
-  }, [canPlayAudio]);
+  }, [canPlayAudio, onPlayRefused]);
 
   // Sequential print queue: each job waits for the previous one to fully spool
   // before writing to the shared iframe. Prevents the race where a second
@@ -610,8 +637,10 @@ export default function CurrentOrdersPage() {
           {canPlayAudio ? '🔇 Couper le son' : '🔔 Activer le son'}
         </button>
         <div className="nav-buttons">
-          <a href="/admin" className="nav-button dashboard-button">🏠 Tableau de bord</a>
-          <a href="/admin/history" className="nav-button history-button">📜 Historique</a>
+          {/* Client-side navigation keeps the same document, so the browser keeps the sound
+              unlocked. Plain <a> (not <Link>) so the scoped styled-jsx classes still apply. */}
+          <a href="/admin" onClick={navigate} className="nav-button dashboard-button">🏠 Tableau de bord</a>
+          <a href="/admin/history" onClick={navigate} className="nav-button history-button">📜 Historique</a>
         </div>
       </div>
       {pauseReason === 'closed' && (

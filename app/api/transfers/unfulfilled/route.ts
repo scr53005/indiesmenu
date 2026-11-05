@@ -2,11 +2,9 @@
 // Called by current_orders page on mount to show existing pending orders
 
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma';
 import { getCachedMenuData, type MenuData } from '@/lib/data/menu';
 import { hydrateMemo, type HydratedOrderLine } from '@/lib/utils';
-
-const prisma = new PrismaClient();
 
 function getOrderContent(memo: string | null | undefined): string {
   const safeMemo = memo || '';

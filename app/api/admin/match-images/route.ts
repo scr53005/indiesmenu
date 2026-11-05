@@ -1,9 +1,7 @@
 // API endpoint for fuzzy matching image names to dishes and drinks
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma';
 import { isSupportedMenuImageFileName, menuImageSearchName } from '@/lib/menuImageFiles';
-
-const prisma = new PrismaClient();
 
 type Match = {
   id: number;

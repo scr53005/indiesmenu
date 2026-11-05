@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient, dishes } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma';
+import type { dishes } from '@prisma/client';
 
 export async function GET() {
   try {
@@ -78,7 +77,5 @@ export async function GET() {
       { error: 'Failed to fetch daily specials' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

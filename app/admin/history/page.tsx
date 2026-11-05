@@ -1,7 +1,9 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { getTable, hydrateMemo, HydratedOrderLine } from '@/lib/utils';
-import { MenuData } from '@/lib/data/menu';
+import type { MenuData } from '@/lib/data/menu'; // type only: menu.ts is server code
+import { newOpenOrderCheck } from '@/lib/admin/co-sound';
 import { isRestaurantOpen } from '@/lib/config/kitchen-hours';
 import { Lato } from 'next/font/google';
 
@@ -31,6 +33,14 @@ interface GroupedOrders {
 }
 
 export default function OrderHistory() {
+  // Client-side navigation keeps the same document, so the CO page's sound stays unlocked.
+  // Plain <a> + onClick (not <Link>) so the scoped styled-jsx classes still apply.
+  const router = useRouter();
+  const navigate = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    router.push(e.currentTarget.getAttribute('href')!);
+  };
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
   const [groupedOrders, setGroupedOrders] = useState<GroupedOrders>({});
   const [loading, setLoading] = useState(true);
@@ -240,7 +250,10 @@ export default function OrderHistory() {
       } catch (err) { /* silent */ }
     };
 
-    // Sync + check: pull from Redis into local DB, redirect if unfulfilled orders exist
+    // Sync + check: pull from Redis into local DB, go to the CO page when a NEW order arrives.
+    // Orders already open when this page opened don't count (lib/admin/co-sound.ts): bouncing
+    // on them made the history unreachable while any order was open.
+    let openBaseline: ReadonlySet<string> | null = null;
     const syncAndCheckForNewOrders = async () => {
       try {
         await fetch('/api/transfers/sync-from-merchant-hub', { method: 'POST' });
@@ -250,9 +263,13 @@ export default function OrderHistory() {
         const res = await fetch('/api/transfers/unfulfilled');
         if (res.ok) {
           const data = await res.json();
-          if (data.transfers && data.transfers.length > 0) {
-            console.log(`[HISTORY] ${data.transfers.length} unfulfilled order(s) detected — redirecting to CO page`);
-            window.location.href = '/admin/current_orders';
+          const ids: string[] = (data.transfers ?? []).map((t: { id: string }) => t.id);
+          const check = newOpenOrderCheck(openBaseline, ids);
+          openBaseline = check.baseline;
+          if (check.jump) {
+            console.log('[HISTORY] New unfulfilled order detected — going to the CO page');
+            // Client-side navigation: same document, so the CO page's sound stays unlocked.
+            router.push('/admin/current_orders');
           }
         }
       } catch (err) { /* silent */ }
@@ -337,10 +354,10 @@ export default function OrderHistory() {
       <div className="nav-header">
         <h1>Historique des ordres</h1>
         <div className="nav-buttons">
-          <a href="/admin" className="nav-button dashboard-button">
+          <a href="/admin" onClick={navigate} className="nav-button dashboard-button">
             🏠 Tableau de bord
           </a>
-          <a href="/admin/current_orders" className="nav-button orders-button">
+          <a href="/admin/current_orders" onClick={navigate} className="nav-button orders-button">
             🛎️ Commandes en cours
           </a>
         </div>

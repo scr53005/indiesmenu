@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma';
 
-const prisma = new PrismaClient();
 const hafPool = new Pool({
   connectionString: process.env.PG_CONNECTION_STRING,
   query_timeout: 30000,

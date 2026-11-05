@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma';
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -49,8 +47,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Transfer not found or already fulfilled' }, { status: 404 });
     }
     return NextResponse.json({ error: `Failed to fulfill transfer: ${error.message}` }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
