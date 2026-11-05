@@ -38,6 +38,9 @@ import { useInitialMenu } from '@/lib/data/menu-context';
 import { defaultMenuSection, groupMenu, luxembourgMinutes } from '@/lib/data/group-menu';
 
 
+/** Height of the dishes/drinks bar; must match `.fixed-menu-selector { height }` in globals.css. */
+const MENU_SELECTOR_HEIGHT = 73;
+
 export default function MenuPage() {
   const { cart, table, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable, updateComment, delayedTiming, setDelayedTiming } = useCart();
   // Use the imported MenuData type for the menu state
@@ -82,7 +85,9 @@ export default function MenuPage() {
   const menuSelectorRef = useRef<HTMLDivElement>(null);
   const welcomeCarouselRef = useRef<HTMLDivElement>(null);
   const [cartHeight, setCartHeight] = useState(0);
-  const [menuSelectorHeight, setMenuSelectorHeight] = useState(0);
+  // Start at the bar's CSS height (globals.css .fixed-menu-selector), not 0: the server HTML
+  // must already pad the content, or the menu jumps once JS measures the bar (layout shift).
+  const [menuSelectorHeight, setMenuSelectorHeight] = useState(MENU_SELECTOR_HEIGHT);
   const [welcomeCarouselHeight, setWelcomeCarouselHeight] = useState(0);
 
   // State for wallet notification

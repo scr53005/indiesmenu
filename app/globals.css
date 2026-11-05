@@ -72,6 +72,12 @@ body {
   /* top property will be set dynamically via inline style in JSX */
   display: flex;
   justify-content: space-around;
+  /* Fixed height = MENU_SELECTOR_HEIGHT in app/menu/page.tsx (its natural height: 10 + 52 + 10
+     + 1 border). The server-rendered HTML pads the content by this before any JS runs; when
+     the padding started at 0 and JS measured the bar later, the whole menu jumped down
+     (PageSpeed "cumulative layout shift" 0.155, 2026-11-05). */
+  height: 73px;
+  align-items: center;
   padding: 10px;
   border-bottom: 1px solid #eee;
   z-index: 900; /* Below cart */
