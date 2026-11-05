@@ -1,6 +1,7 @@
 // components/MenuItem.tsx
 import React from 'react';
 import Image from 'next/image';
+import { isOptimizableImage, MENU_CARD_IMAGE_SIZES } from '../../lib/data/image';
 // Import the enriched types directly from your menu data file
 import { FormattedCuisson, FormattedIngredient, FormattedDish, FormattedDrink } from '@/lib/data/menu';
 
@@ -92,10 +93,11 @@ const MenuItem: React.FC<MenuItemProps> = React.memo(({
             {item.image && (
                 <Image
                     src={item.image}
-                    unoptimized={/^https?:\/\//i.test(item.image)}
+                    unoptimized={!isOptimizableImage(item.image)}
                     alt={item.name}
                     width={800}
                     height={600}
+                    sizes={MENU_CARD_IMAGE_SIZES}
                     className="menu-item-image"
                     loading="lazy"
                     quality={75}

@@ -1,7 +1,7 @@
 import { Buffer } from 'buffer'; // Needed for client-side base64 encoding
 import { FormattedDish, FormattedDrink, MenuData } from '@/lib/data/menu';
-import { parseStringPromise } from 'xml2js';
-import prisma from '@/lib/prisma';
+// No server-only imports here (Prisma, xml2js): the menu page bundles this file for the phone.
+// Server code is reached via dynamic import (see getLatestEurUsdRate).
 
 // Interface for the return type
 export interface CurrencyRate {

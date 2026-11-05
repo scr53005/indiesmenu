@@ -1,6 +1,6 @@
 // indiesmenu-front/app/menu/page.tsx
 'use client';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useCart } from '@/app/context/CartContext';
@@ -34,20 +34,18 @@ import '@/app/globals.css'; // Import global styles
 
 // Import the enriched types directly from your menu data file
 import { MenuData, FormattedDish, FormattedDrink, FormattedCuisson, FormattedIngredient } from '@/lib/data/menu';
+import { useInitialMenu } from '@/lib/data/menu-context';
+import { defaultMenuSection, groupMenu, luxembourgMinutes } from '@/lib/data/group-menu';
 
-// New Interface for Grouped Items (more flexible)
-interface GroupedCategory<T> {
-  id: number;
-  name: string;
-  items: T[];
-}
 
 export default function MenuPage() {
   const { cart, table, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable, updateComment, delayedTiming, setDelayedTiming } = useCart();
   // Use the imported MenuData type for the menu state
-  const [menu, setMenu] = useState<MenuData>({ categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [], conversion_rate: 1.0000 }); // Initialize with empty data
+  // Server-rendered menu (app/menu/layout.tsx); null only when the server could not load it.
+  const initialMenu = useInitialMenu();
+  const [menu, setMenu] = useState<MenuData>(initialMenu ?? { categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [], conversion_rate: 1.0000 });
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialMenu);
   const [selectedSizes, setSelectedSizes] = useState<{ [key: string]: string }>({}); // Track selected drink sizes
   const [selectedCuisson, setSelectedCuisson] = useState<{ [key: string]: string }>({}); // Track selected cuisson for dishes
   const [selectedIngredients, setSelectedIngredients] = useState<{ [key: string]: string }>({}); // Track selected ingredients for drinks
@@ -69,12 +67,14 @@ export default function MenuPage() {
   }, [searchParams, table]);
 
   // State for menu navigation
-  const [activeMenuSection, setActiveMenuSection] = useState<'dishes' | 'drinks' | null>(null);
+  // With a server-rendered menu, pick the section now so it is in the HTML; Luxembourg time on both sides.
+  const [activeMenuSection, setActiveMenuSection] = useState<'dishes' | 'drinks' | null>(
+    () => (initialMenu ? defaultMenuSection(luxembourgMinutes(new Date()).minutes) : null));
   const [openCategories, setOpenCategories] = useState<Set<number>>(new Set());
 
   // Grouped menu data for easier rendering - ensure types are correct
-  const [groupedDishes, setGroupedDishes] = useState<GroupedCategory<FormattedDish>[]>([]);
-  const [groupedDrinks, setGroupedDrinks] = useState<GroupedCategory<FormattedDrink>[]>([]);
+  // Computed during render (not in an effect) so the server HTML already lists the dishes.
+  const { dishes: groupedDishes, drinks: groupedDrinks } = useMemo(() => groupMenu(menu), [menu]);
 
   // Refs for dynamic height calculation
   const cartRef = useRef<HTMLDivElement>(null);
@@ -137,8 +137,19 @@ export default function MenuPage() {
     euroBalance: number;
   } | null>(null);
 
-  // Get account name for React Query balance fetching
-  const accountName = typeof window !== 'undefined' ? getAccountName() : null;
+  // The page is server-rendered (app/menu/layout.tsx), so the server render and the phone's
+  // first (hydration) render must not read browser storage: both must produce the same HTML.
+  // `hydrated` flips right after the first render; everything browser-only keys off it.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => { setHydrated(true); }, []);
+
+  // Get account name for React Query balance fetching. Re-read on every render after
+  // hydration (not stored in state) so an account created/imported mid-session is picked up.
+  const accountName = hydrated ? getAccountName() : null;
+  const isDevHost = hydrated && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname.includes('127.0.0.1') ||
+    window.location.hostname.startsWith('192.168.'));
 
   // Fetch balance using React Query (replaces manual useEffect at line 602-705)
   const { balance, rubis, isLoading: balanceLoading, refetch: refetchBalance, source: balanceSource } = useBalance(accountName, {
@@ -1080,6 +1091,33 @@ export default function MenuPage() {
     // Set the table number in the cart context
     setTable(table);
 
+    // Default section and the closed popups, from Luxembourg time. Client-side only (effect): the
+    // popups must reflect the phone's "now", and they are not part of the first paint.
+    const applyServiceRules = () => {
+      const { minutes: totalMinutes, dayOfWeek } = luxembourgMinutes(new Date());
+      // Lunch 11:45-14:15 and dinner 18:30-21:59 open on the dishes, otherwise on the drinks.
+      setActiveMenuSection(defaultMenuSection(totalMinutes));
+
+      // Restaurant & kitchen closure checks
+      if (!isRestaurantOpen(dayOfWeek, totalMinutes)) {
+        setIsRestaurantClosed(true);
+        setNextOpenInfo(getNextOpenDay(dayOfWeek));
+        console.log('Restaurant closed');
+      } else if (!isKitchenOpen(dayOfWeek, totalMinutes)) {
+        setIsKitchenClosed(true);
+        const closeTime = getKitchenCloseTime(dayOfWeek, totalMinutes);
+        setKitchenCloseTime(closeTime || 'fermée');
+        console.log(`Kitchen closed (closeTime: ${closeTime})`);
+      }
+    };
+
+    // The server already sent the menu (app/menu/layout.tsx): nothing to fetch.
+    if (initialMenu) {
+      applyServiceRules();
+      return;
+    }
+
+    // Fallback when the server could not load the menu: fetch it, as before phase P.
     const fetchMenu = async () => {
       try {
         setLoading(true);
@@ -1092,43 +1130,7 @@ export default function MenuPage() {
         const data: MenuData = await response.json();
         setMenu(data);
         setLoading(false);
-
-        // Determine default menu section based on Luxembourg time
-        const luxTime = new Date().toLocaleString('en-US', {
-          timeZone: 'Europe/Luxembourg',
-          hour12: false
-        });
-        const luxDate = new Date(luxTime);
-        const hours = luxDate.getHours();
-        const minutes = luxDate.getMinutes();
-        const totalMinutes = hours * 60 + minutes;
-
-        // Lunch: 11:45 - 14:15 (705 - 855 minutes)
-        // Dinner: 18:30 - 21:59 (1110 - 1319 minutes)
-        const isLunchTime = totalMinutes >= 705 && totalMinutes <= 855;
-        const isDinnerTime = totalMinutes >= 1110 && totalMinutes <= 1319;
-
-        if (isLunchTime || isDinnerTime) {
-          setActiveMenuSection('dishes');
-          console.log('Meal service time - defaulting to dishes');
-        } else {
-          setActiveMenuSection('drinks');
-          console.log('Outside meal service - defaulting to drinks');
-        }
-
-        // Restaurant & kitchen closure checks
-        const dayOfWeek = luxDate.getDay(); // 0=Sun, 6=Sat
-        if (!isRestaurantOpen(dayOfWeek, totalMinutes)) {
-          setIsRestaurantClosed(true);
-          setNextOpenInfo(getNextOpenDay(dayOfWeek));
-          console.log('Restaurant closed');
-        } else if (!isKitchenOpen(dayOfWeek, totalMinutes)) {
-          setIsKitchenClosed(true);
-          const closeTime = getKitchenCloseTime(dayOfWeek, totalMinutes);
-          setKitchenCloseTime(closeTime || 'fermée');
-          console.log(`Kitchen closed (closeTime: ${closeTime})`);
-        }
-
+        applyServiceRules();
         console.log("Fetched conversion rate:", data.conversion_rate);
       } catch (e: any) {
         setError(e.message);
@@ -1138,50 +1140,8 @@ export default function MenuPage() {
     };
 
     fetchMenu();
-  }, [setTable, table]);
+  }, [setTable, table, initialMenu]);
 
-  // Process menu data into grouped categories once fetched
-  useEffect(() => {
-    if (menu) {
-      // Filter out Sauces category (26) and maintain category order from API
-      const filteredCategories = menu.categories.filter(cat => cat.category_id !== 26);
-
-      // Build dishes by category
-      const dishesArray: GroupedCategory<FormattedDish>[] = filteredCategories.map(cat => ({
-        id: cat.category_id,
-        name: cat.name,
-        items: menu.dishes
-          .filter(dish => dish.categoryIds.includes(cat.category_id))
-          .sort((a, b) => {
-            // Items with images first
-            if (a.image && !b.image) return -1;
-            if (!a.image && b.image) return 1;
-            return 0; // Maintain original order for items with same image status
-          })
-      }));
-
-      // Build drinks by category
-      const drinksArray: GroupedCategory<FormattedDrink>[] = filteredCategories.map(cat => ({
-        id: cat.category_id,
-        name: cat.name,
-        items: menu.drinks
-          .filter(drink => drink.categoryIds.includes(cat.category_id))
-          .sort((a, b) => {
-            // Items with images first
-            if (a.image && !b.image) return -1;
-            if (!a.image && b.image) return 1;
-            return 0; // Maintain original order for items with same image status
-          })
-      }));
-
-      // Filter out empty categories
-      const nonEmptyDishes = dishesArray.filter(cat => cat.items.length > 0);
-      const nonEmptyDrinks = drinksArray.filter(cat => cat.items.length > 0);
-
-      setGroupedDishes(nonEmptyDishes);
-      setGroupedDrinks(nonEmptyDrinks);
-    }
-  }, [menu]);
 
   // Load saved wallet credentials on mount
   useEffect(() => {
@@ -3061,9 +3021,7 @@ export default function MenuPage() {
       )}
 
       {/* DEV ONLY: Clear localStorage button */}
-      {(window.location.hostname === 'localhost' ||
-        window.location.hostname.includes('127.0.0.1') ||
-        window.location.hostname.startsWith('192.168.')) && (
+      {isDevHost && (
         <div className="fixed top-2 right-2 z-[10001]">
           <button
             onClick={() => {
@@ -3772,7 +3730,7 @@ export default function MenuPage() {
           }
         }}
         cartHasDishes={isKitchenClosed || cart.some(item => item.id.startsWith('dish-'))}
-        currentDay={new Date().getDay()}
+        currentDay={luxembourgMinutes(new Date()).dayOfWeek /* same answer on the UTC server and the phone */}
         hasTable={!!table}
       />
 
@@ -4012,7 +3970,10 @@ export default function MenuPage() {
                 src={image}
                 alt="Indies Cafe"
                 fill
-                priority
+                sizes="100vw"
+                // Only the first slide is visible on load (and is the page's LCP); preloading
+                // the hidden second slide made it compete for bandwidth with the first.
+                priority={index === 0}
                 className="object-cover transition-opacity duration-1000"
                 style={{
                   opacity: currentImageIndex === index ? 1 : 0,
