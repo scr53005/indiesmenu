@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import MenuItem from '@/components/menu/MenuItem';
-import { MenuData, FormattedDish, FormattedDrink } from '@/lib/data/menu';
+import type { MenuData, FormattedDish, FormattedDrink } from '@/lib/data/menu';
 import '@/app/globals.css';
 
 interface GroupedCategory<T> {

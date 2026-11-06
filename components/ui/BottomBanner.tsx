@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 
 interface BottomBannerProps {
-  language?: 'fr' | 'en';
+  /** Any app language; one without its own strings here (e.g. 'lb' until R5) gets French. */
+  language?: string;
 }
 
 export default function BottomBanner({ language = 'fr' }: BottomBannerProps) {
@@ -28,7 +29,7 @@ export default function BottomBanner({ language = 'fr' }: BottomBannerProps) {
     },
   };
 
-  const t = translations[language];
+  const t = language === 'en' ? translations.en : translations.fr;
 
   return (
     <div

@@ -114,7 +114,7 @@ Le nouveau système utilise:
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import { getTable, hydrateMemo, HydratedOrderLine, getLatestEurUsdRate } from '@/lib/utils';
-import { MenuData } from '@/lib/data/menu';
+import type { MenuData } from '@/lib/data/menu';
 import 'react-toastify/dist/ReactToastify.css';
 import React from 'react';
 import Image from 'next/image';

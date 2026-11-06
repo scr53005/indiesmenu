@@ -3,7 +3,7 @@ import React from 'react';
 import Image from 'next/image';
 import { isOptimizableImage, MENU_CARD_IMAGE_SIZES } from '../../lib/data/image';
 // Import the enriched types directly from your menu data file
-import { FormattedCuisson, FormattedIngredient, FormattedDish, FormattedDrink } from '@/lib/data/menu';
+import type { FormattedCuisson, FormattedIngredient, FormattedDish, FormattedDrink } from '@/lib/data/menu';
 
 // Define the props for the MenuItem component
 interface MenuItemProps {

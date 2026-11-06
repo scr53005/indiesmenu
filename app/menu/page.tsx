@@ -11,9 +11,23 @@ import DelayedOrderPanel from '@/components/menu/DelayedOrderPanel';
 import WalletNotificationBanner from '@/components/menu/WalletNotificationBanner';
 import MiniWallet, { RubisTeaser, WalletReopenButton } from '@/components/ui/SharedMiniWallet';
 import { shouldShowRubisTeaser } from '@innopay/ui';
-import Draggable from '@/components/ui/Draggable';
+import { useI18n } from '@/lib/i18n';
+import { useWalletPulse } from '@/hooks/useWalletPulse';
+import { useMenu } from '@/hooks/useMenu';
+import { useImportAccount } from '@/hooks/useImportAccount';
+import PaymentProgressBanners from '@/components/menu/overlays/PaymentProgressBanners';
+import { FlowSuccessBanner, TopupSuccessBanner, WaiterCalledBanner } from '@/components/menu/overlays/SuccessBanners';
+import { KitchenClosedBanner, RestaurantClosedPopup } from '@/components/menu/overlays/ClosedNotices';
+import AccountCreatedBanner from '@/components/menu/overlays/AccountCreatedBanner';
+import DuplicateOrderModal from '@/components/menu/overlays/DuplicateOrderModal';
+import ExternalWalletModal from '@/components/menu/overlays/ExternalWalletModal';
+import ImportAccountModal from '@/components/menu/overlays/ImportAccountModal';
+import GuestCheckoutModal from '@/components/menu/overlays/GuestCheckoutModal';
+import WalletStatusBar from '@/components/menu/overlays/WalletStatusBar';
+import { CallWaiterModal, WaiterRequestedStrip } from '@/components/menu/overlays/CallWaiterOverlays';
+import CartCompositionModal from '@/components/menu/overlays/CartCompositionModal';
 import BottomBanner from '@/components/ui/BottomBanner';
-import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart } from '@/lib/utils';
+import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart, distriate } from '@/lib/utils';
 import { isKitchenOpen, getKitchenCloseTime, isRestaurantOpen, getNextOpenDay } from '@/lib/config/kitchen-hours';
 import {
   saveKeys,
@@ -29,11 +43,12 @@ import {
   RUBIS_EARNABLE, confirmedRubis, isPaymentReturn, markTeaserShown, readSpendRubisFirst, readTeaserShown,
   writeSpendRubisFirst,
 } from '@/lib/innopay/rubis';
+import { startBalanceSettling } from '@/lib/innopay/balance-settle';
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
 // Import the enriched types directly from your menu data file
-import { MenuData, FormattedDish, FormattedDrink, FormattedCuisson, FormattedIngredient } from '@/lib/data/menu';
+import type { FormattedDish, FormattedDrink } from '@/lib/data/menu'; // types only: menu.ts is server code
 import { useInitialMenu } from '@/lib/data/menu-context';
 import { defaultMenuSection, groupMenu, luxembourgMinutes } from '@/lib/data/group-menu';
 
@@ -43,12 +58,12 @@ const MENU_SELECTOR_HEIGHT = 73;
 
 export default function MenuPage() {
   const { cart, table, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable, updateComment, delayedTiming, setDelayedTiming } = useCart();
-  // Use the imported MenuData type for the menu state
   // Server-rendered menu (app/menu/layout.tsx); null only when the server could not load it.
   const initialMenu = useInitialMenu();
-  const [menu, setMenu] = useState<MenuData>(initialMenu ?? { categories: [], dishes: [], drinks: [], cuissons: [], ingredients: [], conversion_rate: 1.0000 });
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!initialMenu);
+  // Customer language (lib/i18n): always 'fr' until R5 adds en/lb to SUPPORTED_LANGUAGES.
+  const { language, t } = useI18n();
+  // Server-sent menu, or the /api/menu fallback (hooks/useMenu.ts).
+  const { menu, loading, error, ready: menuReady } = useMenu(initialMenu);
   const [selectedSizes, setSelectedSizes] = useState<{ [key: string]: string }>({}); // Track selected drink sizes
   const [selectedCuisson, setSelectedCuisson] = useState<{ [key: string]: string }>({}); // Track selected cuisson for dishes
   const [selectedIngredients, setSelectedIngredients] = useState<{ [key: string]: string }>({}); // Track selected ingredients for drinks
@@ -212,8 +227,8 @@ export default function MenuPage() {
     return () => { if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current); };
   }, [refetchBalance]);
 
-  // State for import account modal (email verification system)
-  const [showImportModal, setShowImportModal] = useState(false);
+  // Import an existing account by email + code (hooks/useImportAccount.ts)
+  const { importDisabled, openImport: handleImportAccount, modalProps: importModalProps } = useImportAccount();
 
   // State for external wallet warning modal (FreeNow collision issue)
   const [showExternalWalletWarning, setShowExternalWalletWarning] = useState(false);
@@ -223,18 +238,6 @@ export default function MenuPage() {
   // before the hive:// redirect — that's the point of no return.
   const pendingMemoRef = useRef<string>('');
   const [freeNowOpened, setFreeNowOpened] = useState(false);
-  const [importEmail, setImportEmail] = useState('');
-  const [importError, setImportError] = useState('');
-  const [importAttempts, setImportAttempts] = useState(5);
-  const [importDisabled, setImportDisabled] = useState(false);
-  const [importLoading, setImportLoading] = useState(false);
-  const [importStep, setImportStep] = useState<'email' | 'code' | 'select'>('email');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [multipleAccounts, setMultipleAccounts] = useState<Array<{
-    accountName: string;
-    creationDate: string;
-    euroBalance: number;
-  }>>([]);
 
   // State for duplicate order prevention modal
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -243,9 +246,11 @@ export default function MenuPage() {
   // State for post-order MiniWallet pulsing (Level 3 guardrail)
   // Persistent: survives page refreshes via localStorage keys:
   //   innopay_latestMemoContent, innopay_latestMemoDateTime, innopay_fulfilledDetectedAt
-  const [walletPulseState, setWalletPulseState] = useState<'none' | 'blue' | 'green' | 'green-slow' | 'green-solid' | 'red'>('none');
-  const pulseIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pulseStartTimeoutRef = useRef<NodeJS.Timeout | null>(null); // tracks the 9s startup delay
+  // (hooks/useWalletPulse.ts; the rules are in lib/innopay/pulse.ts). The cart is cleared
+  // when the order's transfer first shows up in the spoke DB.
+  const {
+    pulseState: walletPulseState, startOrderPulsing, resetPulse, hidePulse,
+  } = useWalletPulse({ onOrderConfirmed: clearCart });
 
   // RUBIS (RUBIS-PLAN.md §5, SPOKE-DOCUMENTATION.md MiniWallet → RUBIS). Display only.
   const [rubisMounted, setRubisMounted] = useState(false);
@@ -283,6 +288,15 @@ export default function MenuPage() {
 
   // State for order processing timer
   const [orderProcessing, setOrderProcessing] = useState(false);
+  // Leaving for the hub/Stripe (Flow 7): the order button says "Veuillez patienter…".
+  const [redirecting, setRedirecting] = useState(false);
+  useEffect(() => {
+    // Back button from the hub: Safari/Chrome restore this page from memory (bfcache) with its
+    // state frozen, so un-freeze the button or it would stay on "Veuillez patienter…".
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) setRedirecting(false); };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
   const [orderElapsedSeconds, setOrderElapsedSeconds] = useState(0);
   const orderTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -315,176 +329,10 @@ export default function MenuPage() {
       if (orderTimerRef.current) {
         clearInterval(orderTimerRef.current);
       }
-      if (pulseIntervalRef.current) {
-        clearTimeout(pulseIntervalRef.current);
-      }
-      if (pulseStartTimeoutRef.current) {
-        clearTimeout(pulseStartTimeoutRef.current);
-      }
       if (guestCheckoutTimerRef.current) {
         clearInterval(guestCheckoutTimerRef.current);
       }
     };
-  }, []);
-
-  // Persistent pulsing state machine — polls spoke DB while innopay_latestMemoContent exists
-  // State transitions:
-  //   No transfer:   age<20m→BLUE, 20m-2h→RED, >2h→cleanup
-  //   Unfulfilled:   age<20m→GREEN, 20-30m→GREEN-SLOW, 30m-2h→RED, >2h→cleanup
-  //   Fulfilled:     SOLID GREEN for 10min from detection, then cleanup
-  // Adaptive polling: 15s when actively tracking (green/green-slow), 60s otherwise (blue/red/solid)
-  // Retry on failure: 5s after network error instead of waiting the full interval
-  // clearCart via ref so pulseCheck doesn't restart when the cart changes —
-  // fires once on first transfer detection (idempotent via LS key below).
-  const clearCartRef = useRef(clearCart);
-  useEffect(() => { clearCartRef.current = clearCart; }, [clearCart]);
-
-  const schedulePulse = useCallback((delayMs: number) => {
-    if (pulseIntervalRef.current) clearTimeout(pulseIntervalRef.current);
-    pulseIntervalRef.current = setTimeout(async () => {
-      await pulseCheckRef.current();
-    }, delayMs) as unknown as NodeJS.Timeout;
-  }, []);
-
-  const pulseCheck = useCallback(async () => {
-    const memoPrefix = localStorage.getItem('innopay_latestMemoContent');
-    const orderTime = parseInt(localStorage.getItem('innopay_latestMemoDateTime') || '0');
-    if (!memoPrefix || !orderTime) {
-      setWalletPulseState('none');
-      return;
-    }
-
-    const ageMs = Date.now() - orderTime;
-    const ageMin = ageMs / 60_000;
-    const TWO_HOURS = 120;
-    const ACTIVE_POLL_MS = 15_000;  // 15s when green/green-slow (awaiting fulfillment)
-    const PASSIVE_POLL_MS = 60_000; // 60s when blue/red/green-solid
-
-    // Check if already in fulfilled-detected state (solid green for 10 min)
-    const fulfilledAt = parseInt(localStorage.getItem('innopay_fulfilledDetectedAt') || '0');
-    if (fulfilledAt > 0) {
-      const sinceDetected = (Date.now() - fulfilledAt) / 60_000;
-      if (sinceDetected < 10) {
-        setWalletPulseState('green-solid');
-        schedulePulse(PASSIVE_POLL_MS);
-        return;
-      }
-      // 10 min elapsed — cleanup
-      localStorage.removeItem('innopay_latestMemoContent');
-      localStorage.removeItem('innopay_latestMemoDateTime');
-      localStorage.removeItem('innopay_fulfilledDetectedAt');
-      localStorage.removeItem('innopay_orderConfirmedForMemo');
-      setWalletPulseState('none');
-      return;
-    }
-
-    // Auto-cleanup after 2h regardless
-    if (ageMin > TWO_HOURS) {
-      localStorage.removeItem('innopay_latestMemoContent');
-      localStorage.removeItem('innopay_latestMemoDateTime');
-      localStorage.removeItem('innopay_orderConfirmedForMemo');
-      setWalletPulseState('none');
-      return;
-    }
-
-    // Query spoke DB via check-mine
-    try {
-      const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(); // 3h window
-      const res = await fetch(`/api/transfers/check-mine?memo_prefix=${encodeURIComponent(memoPrefix)}&since=${since}`);
-      if (!res.ok) {
-        // Non-OK response — retry sooner than normal interval
-        schedulePulse(5_000);
-        return;
-      }
-      const data = await res.json();
-
-      if (!data.found) {
-        // No transfer in DB yet
-        setWalletPulseState(ageMin < 20 ? 'blue' : 'red');
-        schedulePulse(PASSIVE_POLL_MS);
-        return;
-      }
-
-      // First detection of the transfer for this memo: authoritative "order
-      // landed in DB" signal. Safe to clear cart now — the order cannot be
-      // withdrawn anymore. Idempotent via `innopay_orderConfirmedForMemo` so
-      // a re-hydrated cart doesn't get wiped when the same transfer is
-      // re-detected on refresh.
-      const alreadyConfirmed = localStorage.getItem('innopay_orderConfirmedForMemo') === memoPrefix;
-      if (!alreadyConfirmed) {
-        localStorage.setItem('innopay_orderConfirmedForMemo', memoPrefix);
-        try { clearCartRef.current(); } catch (err) {
-          console.warn('[PULSE] clearCart threw:', err);
-        }
-      }
-
-      if (data.fulfilled) {
-        // Just detected fulfillment — start 10-min solid green window
-        localStorage.setItem('innopay_fulfilledDetectedAt', Date.now().toString());
-        setWalletPulseState('green-solid');
-        schedulePulse(PASSIVE_POLL_MS);
-        return;
-      }
-
-      // Unfulfilled — kitchen has it, poll actively
-      if (ageMin < 20) {
-        setWalletPulseState('green');
-      } else if (ageMin < 30) {
-        setWalletPulseState('green-slow');
-      } else {
-        setWalletPulseState('red');
-      }
-      schedulePulse(ACTIVE_POLL_MS);
-    } catch (err) {
-      // Network error — retry after 5s instead of waiting the full interval
-      schedulePulse(5_000);
-    }
-  }, [schedulePulse]);
-
-  // Ref so schedulePulse (stable) can call the latest pulseCheck without circular dep
-  const pulseCheckRef = useRef(pulseCheck);
-  useEffect(() => { pulseCheckRef.current = pulseCheck; }, [pulseCheck]);
-
-  // Start pulse polling on mount (persists across refreshes)
-  useEffect(() => {
-    const initialDelay = setTimeout(() => {
-      pulseCheck();
-    }, 9_000);
-
-    // When the tab regains visibility or focus (typical after returning from
-    // Keychain/Ecency), fire an immediate pulseCheck so cart-clear doesn't wait
-    // for the next 60s poll boundary. Browsers throttle background intervals
-    // unpredictably, so this is our fastest-path signal.
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        pulseCheckRef.current();
-      }
-    };
-    const onFocus = () => { pulseCheckRef.current(); };
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onFocus);
-
-    return () => {
-      clearTimeout(initialDelay);
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onFocus);
-      if (pulseIntervalRef.current) { clearTimeout(pulseIntervalRef.current); pulseIntervalRef.current = null; }
-    };
-  }, [pulseCheck]);
-
-  // Called after a new order to kick a fresh pulse cycle immediately
-  const startOrderPulsing = useCallback((_memoPrefix: string) => {
-    // LS already written by storeMemoBeforeOrder — just reset state and restart polling
-    localStorage.removeItem('innopay_fulfilledDetectedAt');
-    localStorage.removeItem('innopay_orderConfirmedForMemo');
-    setWalletPulseState('blue');
-    if (pulseIntervalRef.current) { clearTimeout(pulseIntervalRef.current); pulseIntervalRef.current = null; }
-    if (pulseStartTimeoutRef.current) { clearTimeout(pulseStartTimeoutRef.current); pulseStartTimeoutRef.current = null; }
-    // First check after 9s (give blockchain time)
-    pulseStartTimeoutRef.current = setTimeout(() => {
-      pulseStartTimeoutRef.current = null;
-      pulseCheckRef.current();
-    }, 9_000);
   }, []);
 
   // Check for payment success on mount
@@ -751,6 +599,10 @@ export default function MenuPage() {
               // FLOW 5: Create new account with order payment
               console.log('[FLOW 5 NEW ACCOUNT] Account created - webhook already paid restaurant');
 
+              // The new account still reads 0.00 on Hive-Engine for a few seconds: show the hub's
+              // balance meanwhile, then refetch from the chain (lib/innopay/balance-settle.ts).
+              startBalanceSettling(localStorage, credentials.euroBalance, Date.now());
+
               // Update wallet balance state
               setWalletBalance({
                 accountName: credentials.accountName,
@@ -782,6 +634,7 @@ export default function MenuPage() {
             } else if (currentFlow === 'flow4_create_account_only') {
               // FLOW 4: Create account only (no order)
               console.log('[FLOW 4] Account created without order - credentials imported');
+              startBalanceSettling(localStorage, credentials.euroBalance, Date.now());
 
               // Update wallet balance state
               setWalletBalance({
@@ -852,17 +705,6 @@ export default function MenuPage() {
   }, []);
 
 
-  // Load import attempts counter from localStorage
-  useEffect(() => {
-    const storedAttempts = localStorage.getItem('innopay_import_attempts');
-    if (storedAttempts) {
-      const attempts = parseInt(storedAttempts, 10);
-      setImportAttempts(attempts);
-      if (attempts <= 0) {
-        setImportDisabled(true);
-      }
-    }
-  }, []);
 
   // Check for topup success return from innopay (Flow 2 - pure topup without order)
   useEffect(() => {
@@ -1095,57 +937,31 @@ export default function MenuPage() {
   useEffect(() => {
     // Set the table number in the cart context
     setTable(table);
+  }, [setTable, table]);
 
-    // Default section and the closed popups, from Luxembourg time. Client-side only (effect): the
-    // popups must reflect the phone's "now", and they are not part of the first paint.
-    const applyServiceRules = () => {
-      const { minutes: totalMinutes, dayOfWeek } = luxembourgMinutes(new Date());
-      // Lunch 11:45-14:15 and dinner 18:30-21:59 open on the dishes, otherwise on the drinks.
-      setActiveMenuSection(defaultMenuSection(totalMinutes));
+  // Default section and the closed popups, from Luxembourg time, once the menu is there (at once
+  // when the server sent it, after the fallback fetch otherwise). Client-side only (effect): the
+  // popups must reflect the phone's "now", and they are not part of the first paint.
+  const serviceRulesApplied = useRef(false);
+  useEffect(() => {
+    if (!menuReady || serviceRulesApplied.current) return;
+    serviceRulesApplied.current = true;
+    const { minutes: totalMinutes, dayOfWeek } = luxembourgMinutes(new Date());
+    // Lunch 11:45-14:15 and dinner 18:30-21:59 open on the dishes, otherwise on the drinks.
+    setActiveMenuSection(defaultMenuSection(totalMinutes));
 
-      // Restaurant & kitchen closure checks
-      if (!isRestaurantOpen(dayOfWeek, totalMinutes)) {
-        setIsRestaurantClosed(true);
-        setNextOpenInfo(getNextOpenDay(dayOfWeek));
-        console.log('Restaurant closed');
-      } else if (!isKitchenOpen(dayOfWeek, totalMinutes)) {
-        setIsKitchenClosed(true);
-        const closeTime = getKitchenCloseTime(dayOfWeek, totalMinutes);
-        setKitchenCloseTime(closeTime || 'fermée');
-        console.log(`Kitchen closed (closeTime: ${closeTime})`);
-      }
-    };
-
-    // The server already sent the menu (app/menu/layout.tsx): nothing to fetch.
-    if (initialMenu) {
-      applyServiceRules();
-      return;
+    // Restaurant & kitchen closure checks
+    if (!isRestaurantOpen(dayOfWeek, totalMinutes)) {
+      setIsRestaurantClosed(true);
+      setNextOpenInfo(getNextOpenDay(dayOfWeek));
+      console.log('Restaurant closed');
+    } else if (!isKitchenOpen(dayOfWeek, totalMinutes)) {
+      setIsKitchenClosed(true);
+      const closeTime = getKitchenCloseTime(dayOfWeek, totalMinutes);
+      setKitchenCloseTime(closeTime || 'fermée');
+      console.log(`Kitchen closed (closeTime: ${closeTime})`);
     }
-
-    // Fallback when the server could not load the menu: fetch it, as before phase P.
-    const fetchMenu = async () => {
-      try {
-        setLoading(true);
-        setError(null); // Reset error state before fetching
-        const response = await fetch('/api/menu'); // Fetch from your Next.js API route
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        // Cast data to the imported MenuData type
-        const data: MenuData = await response.json();
-        setMenu(data);
-        setLoading(false);
-        applyServiceRules();
-        console.log("Fetched conversion rate:", data.conversion_rate);
-      } catch (e: any) {
-        setError(e.message);
-        setLoading(false);
-        console.error("Failed to fetch menu:", e);
-      }
-    };
-
-    fetchMenu();
-  }, [setTable, table, initialMenu]);
+  }, [menuReady]);
 
 
   // Load saved wallet credentials on mount
@@ -1440,7 +1256,14 @@ export default function MenuPage() {
     // Call waiter parameters (0.02 EURO tokens, special memo)
     const callWaiterAmount = 0.02;
     const reasonEncoded = reason?.trim() ? ` n:${encodeComment(reason.trim())}` : '';
-    const callWaiterMemo = `Un serveur est appelé${reasonEncoded} ` + (table ? `TABLE ${table}` : '');
+    // A fresh `-inno-` reference, like every order: merchant-hub only forwards memos containing
+    // `-inno-`, and the hub's /api/wallet-payment (security fix 2026-11-02) pays the restaurant
+    // only if the customer's transfer memo contains the `distriateSuffix` it is given. With the
+    // bare literal '-inno-' as suffix and no reference in the memo, every wallet waiter call was
+    // refused ("transfer memo does not reference this order"), found 2026-11-05.
+    const { distriate } = await import('@/lib/utils');
+    const waiterSuffix = distriate();
+    const callWaiterMemo = `Un serveur est appelé${reasonEncoded} ${table ? `TABLE ${table} ` : ''}${waiterSuffix}`;
 
     console.log('[CALL WAITER] Order details:', {
       hasAccount: !!accountName,
@@ -1575,7 +1398,7 @@ export default function MenuPage() {
             amountEuro: callWaiterAmount,
             eurUsdRate: eurUsdRate,
             orderMemo: callWaiterMemo,
-            distriateSuffix: '-inno-'  // Must contain -inno- to pass merchant-hub memo filter
+            distriateSuffix: waiterSuffix  // the reference inside callWaiterMemo (hub checks it)
           };
 
           console.log('[CALL WAITER] Payment payload:', paymentPayload);
@@ -1884,6 +1707,9 @@ export default function MenuPage() {
 
           // Redirect to innopay landing page with order context
           // Webhook will execute all transfers and Stripe will redirect back with session_id
+          // Freeze the button until the browser has left: loading the hub takes a few seconds
+          // on a phone, and a button back on "Commandez" looked like the click had failed.
+          setRedirecting(true);
           window.location.href = `${innopayUrl}?${params.toString()}`;
           return;
         }
@@ -2288,17 +2114,6 @@ export default function MenuPage() {
     }
   }, [pendingHiveUrl]);
 
-  // Handle import account button click
-  const handleImportAccount = useCallback(() => {
-    if (importDisabled) return;
-    setShowImportModal(true);
-    setImportEmail('');
-    setImportError('');
-    setImportStep('email');
-    setVerificationCode('');
-    setMultipleAccounts([]);
-  }, [importDisabled]);
-
   // Handle "Créer un compte" button in wallet notification banner
   const handleCreateAccount = useCallback(() => {
     const baseUrl = typeof window !== 'undefined'
@@ -2311,7 +2126,9 @@ export default function MenuPage() {
       orderAmount = '0.02';
       discount = '0';
       const reasonEncoded = waiterReason?.trim() ? ` n:${encodeComment(waiterReason.trim())}` : '';
-      customMemo = `Un serveur est appelé${reasonEncoded} ` + (table ? `TABLE ${table}` : '');
+      // `-inno-` reference required: merchant-hub drops memos without it, so this waiter call
+      // never reached the CO page (found 2026-11-06; same rule as the wallet waiter call).
+      customMemo = `Un serveur est appelé${reasonEncoded} ${table ? `TABLE ${table} ` : ''}${distriate()}`;
       console.log(`[${new Date().toISOString()}] [CALL WAITER] Opening account creation for call waiter`);
     } else {
       orderAmount = getTotalEurPrice();
@@ -2371,193 +2188,6 @@ export default function MenuPage() {
       handleGuestCheckout();
     }
   }, [handleGuestCheckout, isCallWaiterFlow]);
-
-  // Handle email submission (request verification code)
-  const handleRequestCode = useCallback(async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const sanitizedEmail = importEmail.trim().toLowerCase();
-
-    if (!emailRegex.test(sanitizedEmail)) {
-      setImportError('Format d\'email invalide');
-      setTimeout(() => setImportError(''), 3000);
-      return;
-    }
-
-    setImportLoading(true);
-    setImportError('');
-
-    try {
-      const innopayUrl = getInnopayUrl();
-      console.log('[VERIFY] Requesting code for:', sanitizedEmail);
-
-      const response = await fetch(`${innopayUrl}/api/verify/request-code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: sanitizedEmail, language: 'fr' })
-      });
-
-      const data = await response.json();
-      console.log('[VERIFY] Request response:', data);
-
-      if (data.found === true) {
-        // Code sent! Move to code entry step
-        setImportStep('code');
-        setImportLoading(false);
-      } else if (data.found === false) {
-        // Email not found - decrement attempts
-        const newAttempts = importAttempts - 1;
-        setImportAttempts(newAttempts);
-        localStorage.setItem('innopay_import_attempts', newAttempts.toString());
-
-        if (newAttempts <= 0) {
-          setImportError('Rien dans la base de données, désolé!');
-          setImportDisabled(true);
-
-          setTimeout(() => {
-            setImportError('');
-            setImportLoading(false);
-            setShowImportModal(false);
-          }, 3000);
-        } else {
-          setImportError(`Vous avez peut-être utilisé une adresse mail différente (${newAttempts} tentatives restantes)`);
-
-          setTimeout(() => {
-            setImportError('');
-            setImportLoading(false);
-          }, 3000);
-        }
-      } else if (data.error) {
-        setImportError(data.error);
-        setTimeout(() => {
-          setImportError('');
-          setImportLoading(false);
-        }, 3000);
-      }
-    } catch (error) {
-      console.error('[VERIFY] Network error:', error);
-      setImportError('Erreur de connexion au serveur');
-      setTimeout(() => {
-        setImportError('');
-        setImportLoading(false);
-      }, 3000);
-    }
-  }, [importEmail, importAttempts]);
-
-  // Handle verification code submission
-  const handleVerifyCode = useCallback(async () => {
-    if (!verificationCode || verificationCode.length !== 6) {
-      setImportError('Entrez un code à 6 chiffres');
-      setTimeout(() => setImportError(''), 3000);
-      return;
-    }
-
-    setImportLoading(true);
-    setImportError('');
-
-    try {
-      const innopayUrl = getInnopayUrl();
-      console.log('[VERIFY] Checking code:', verificationCode);
-
-      const response = await fetch(`${innopayUrl}/api/verify/check-code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: importEmail.trim().toLowerCase(),
-          code: verificationCode
-        })
-      });
-
-      const data = await response.json();
-      console.log('[VERIFY] Check response:', data);
-
-      if (data.success === true) {
-        if (data.single === true) {
-          // Single account - auto-import
-          console.log('[VERIFY] Single account found:', data.accountName);
-
-          // Flow 8 re-import persists ONLY active + memo (SPOKE-KEY-SECURITY.md §4).
-          // Awaited so the encrypted store + cache are populated before the reload.
-          await saveKeys({
-            accountName: data.accountName,
-            activeKey: data.keys?.active,
-            memoKey: data.keys?.memo,
-          });
-
-          // Refresh page to activate account
-          window.location.reload();
-
-        } else {
-          // Multiple accounts - show selection
-          console.log('[VERIFY] Multiple accounts found:', data.accounts);
-          setMultipleAccounts(data.accounts);
-          setImportStep('select');
-          setImportLoading(false);
-        }
-      } else if (data.error) {
-        setImportError(data.error);
-        setTimeout(() => {
-          setImportError('');
-          setImportLoading(false);
-        }, 3000);
-      }
-    } catch (error) {
-      console.error('[VERIFY] Network error:', error);
-      setImportError('Erreur de connexion au serveur');
-      setTimeout(() => {
-        setImportError('');
-        setImportLoading(false);
-      }, 3000);
-    }
-  }, [verificationCode, importEmail]);
-
-  // Handle account selection (when multiple accounts found)
-  const handleSelectAccount = useCallback(async (accountName: string) => {
-    setImportLoading(true);
-    setImportError('');
-
-    try {
-      const innopayUrl = getInnopayUrl();
-      console.log('[VERIFY] Selecting account:', accountName);
-
-      const response = await fetch(`${innopayUrl}/api/verify/get-credentials`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountName,
-          email: importEmail.trim().toLowerCase()
-        })
-      });
-
-      const data = await response.json();
-      console.log('[VERIFY] Credentials response:', data);
-
-      if (data.accountName) {
-        // Flow 8 re-import persists ONLY active + memo (SPOKE-KEY-SECURITY.md §4).
-        // Awaited so the encrypted store + cache are populated before the reload.
-        await saveKeys({
-          accountName: data.accountName,
-          activeKey: data.keys?.active,
-          memoKey: data.keys?.memo,
-        });
-
-        // Refresh page to activate account
-        window.location.reload();
-      } else if (data.error) {
-        setImportError(data.error);
-        setTimeout(() => {
-          setImportError('');
-          setImportLoading(false);
-        }, 3000);
-      }
-    } catch (error) {
-      console.error('[VERIFY] Network error:', error);
-      setImportError('Erreur de connexion au serveur');
-      setTimeout(() => {
-        setImportError('');
-        setImportLoading(false);
-      }, 3000);
-    }
-  }, [importEmail]);
 
   const proceedWithGuestCheckout = useCallback(async () => {
     if (guestCheckoutProcessing) return; // Prevent duplicate Stripe sessions
@@ -2724,7 +2354,9 @@ export default function MenuPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Wallet Notification Banner — memoized component for fast re-display */}
-      {showWalletNotification && !walletCredentials && !showPaymentSuccess && !flow4Success && (
+      {/* !accountName: the banner offers import / create / guest, which only makes sense without
+          an account. Its flag can be set on mount before a hub return has saved the new keys. */}
+      {showWalletNotification && !walletCredentials && !accountName && !showPaymentSuccess && !flow4Success && (
         <WalletNotificationBanner
           topOffset={cart.length === 0 && welcomeCarouselHeight > 0
             ? `${totalFixedHeaderHeight + welcomeCarouselHeight}px`
@@ -2744,285 +2376,48 @@ export default function MenuPage() {
         />
       )}
 
-      {/* Payment Success Banner - Two States */}
-      {showPaymentSuccess && !blockchainComplete && !transmissionError && (
-        <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-700"></div>
-              <div>
-                <p className="font-semibold text-base md:text-lg">
-                  Paiement réussi!
-                </p>
-                <p className="text-sm opacity-90">
-                  Commande en cours de transmission...
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Payment progress / transmission error / account-created processing (yellow, grey) */}
+      <PaymentProgressBanners
+        showPaymentSuccess={showPaymentSuccess}
+        blockchainComplete={blockchainComplete}
+        transmissionError={transmissionError}
+        showAccountCreated={showAccountCreated}
+        accountCreationComplete={accountCreationComplete}
+        onShowOrder={() => setShowCartComposition(true)}
+        onClearOrder={() => {
+          clearCart();
+          setShowPaymentSuccess(false);
+          setTransmissionError(false);
+        }}
+      />
 
-      {/* Transmission Error Banner - Shows below yellow payment success */}
-      {showPaymentSuccess && transmissionError && (
-        <>
-          {/* Yellow payment success banner (stays visible) */}
-          <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-3 shadow-lg">
-            <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">✓</span>
-                <p className="font-semibold text-base md:text-lg">
-                  Paiement réussi!
-                </p>
-              </div>
-            </div>
-          </div>
+      {/* UNIFIED Success Banner - Flow 4 (wallet ready) / Flows 5, 6, 7 (order sent) */}
+      <FlowSuccessBanner
+        kind={flow4Success ? 'walletReady' : (flow5Success || flow6Success || flow7Success) ? 'orderSent' : null}
+        onDismiss={() => {
+          // Clear all flow success states
+          setFlow4Success(false);
+          setFlow5Success(false);
+          setFlow6Success(false);
+          setFlow7Success(false);
+          // Also clear the yellow "processing" banner for Flow 3 (guest checkout)
+          setShowPaymentSuccess(false);
+          setBlockchainComplete(true);
+        }}
+      />
 
-          {/* Grey error banner below */}
-          <div className="fixed left-0 right-0 z-[8990] bg-gradient-to-r from-gray-600 to-gray-700 text-white px-4 py-4 shadow-lg" style={{ top: '60px' }}>
-            <div className="max-w-4xl mx-auto">
-              <div className="flex flex-col items-center gap-3">
-                <div className="text-center">
-                  <p className="font-semibold text-base md:text-lg">
-                    Une erreur de transmission s'est produite
-                  </p>
-                  <p className="text-sm opacity-90">
-                    Veuillez appeler un serveur et nous en excuser
-                  </p>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowCartComposition(true)}
-                    className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors shadow-md opacity-80 hover:opacity-100"
-                  >
-                    Commande
-                  </button>
-                  <button
-                    onClick={() => {
-                      clearCart();
-                      setShowPaymentSuccess(false);
-                      setTransmissionError(false);
-                    }}
-                    className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-lg transition-colors shadow-md opacity-80 hover:opacity-100"
-                  >
-                    Effacer
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* REMOVED: Duplicate success banner - now unified below with Flow 5 and Flow 7 */}
-
-      {/* Account Creation Success - Yellow Banner (Processing) */}
-      {showAccountCreated && !accountCreationComplete && (
-        <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-700"></div>
-              <div>
-                <p className="font-semibold text-base md:text-lg">
-                  Compte créé! Paiement réussi!
-                </p>
-                <p className="text-sm opacity-90">
-                  Commande en cours de transmission...
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* UNIFIED Success Banner - All Flows (4, 5, 6, 7) */}
-      {/* Flow 4: Account created only (no order) */}
-      {/* Flow 5: Account created with order payment */}
-      {/* Flow 6: Payment with existing account */}
-      {/* Flow 7: Topup + order payment */}
-      {(flow4Success || flow5Success || flow6Success || flow7Success) && (
-        <div className="fixed top-0 left-0 right-0 z-[9020] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">✓</span>
-              <div>
-                {/* Conditional message based on flow type */}
-                {flow4Success ? (
-                  // Flow 4: Account created, no order placed
-                  <p className="font-semibold text-base md:text-lg">
-                    Votre portefeuille Innopay est prêt, vous pouvez déjà commander
-                  </p>
-                ) : (
-                  // Flows 5/6/7: Order was placed and paid
-                  <p className="font-semibold text-base md:text-lg">
-                    Votre commande a été transmise et est en cours de préparation
-                  </p>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                // Clear all flow success states
-                setFlow4Success(false);
-                setFlow5Success(false);
-                setFlow6Success(false);
-                setFlow7Success(false);
-                // Also clear the yellow "processing" banner for Flow 3 (guest checkout)
-                setShowPaymentSuccess(false);
-                setBlockchainComplete(true);
-              }}
-              className="bg-white text-green-700 px-4 py-2 rounded-lg font-semibold hover:bg-green-50 transition-colors ml-4"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Waiter Called Success Banner */}
-      {waiterCalledSuccess && (
-        <div className="fixed top-0 left-0 right-0 z-[9020] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">🔔</span>
-              <div>
-                <p className="font-semibold text-base md:text-lg">
-                  Un serveur arrive à votre table!
-                </p>
-                <p className="text-sm opacity-90">
-                  Waiter notified - someone will be with you shortly
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setWaiterCalledSuccess(false)}
-              className="bg-white text-blue-700 px-4 py-2 rounded-lg font-semibold hover:bg-blue-50 transition-colors ml-4"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
+      <WaiterCalledBanner show={waiterCalledSuccess} onDismiss={() => setWaiterCalledSuccess(false)} />
 
       {/* Restaurant Closed Popup — shown when trying to order drinks outside opening hours */}
-      {showClosedPopup && nextOpenInfo && (
-        <>
-          <div
-            onClick={() => setShowClosedPopup(false)}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.5)',
-              zIndex: 9998,
-            }}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              left: '50%',
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              zIndex: 9999,
-              width: 300,
-              borderRadius: 18,
-              overflow: 'hidden',
-              background: 'rgba(255, 252, 248, 0.97)',
-              backdropFilter: 'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
-              boxShadow: '0 8px 40px rgba(0,0,0,0.25)',
-              border: '1px solid rgba(180, 160, 130, 0.25)',
-              padding: '24px 20px',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: 32, marginBottom: 12 }}>🚪</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#3a2e1e', marginBottom: 8 }}>
-              Le restaurant est fermé
-            </div>
-            <div style={{ fontSize: 13, color: '#5a4a3a', lineHeight: 1.5, marginBottom: 6 }}>
-              Merci de nous rendre visite à nouveau <strong>{nextOpenInfo.fr}</strong> à partir de <strong>{nextOpenInfo.openTime}</strong>.
-            </div>
-            <div style={{ fontSize: 12, color: '#8b7a6a', lineHeight: 1.5, fontStyle: 'italic', marginBottom: 16 }}>
-              The restaurant is closed. Please visit us again <strong>{nextOpenInfo.en}</strong> from <strong>{nextOpenInfo.openTime}</strong>.
-            </div>
-            <button
-              onClick={() => setShowClosedPopup(false)}
-              style={{
-                padding: '10px 28px',
-                borderRadius: 12,
-                border: 'none',
-                background: 'linear-gradient(135deg, #8b6e4e 0%, #a0845c 100%)',
-                color: '#fff',
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(139, 110, 78, 0.35)',
-              }}
-            >
-              OK
-            </button>
-          </div>
-        </>
-      )}
+      {showClosedPopup && <RestaurantClosedPopup info={nextOpenInfo} onClose={() => setShowClosedPopup(false)} />}
 
       {/* Kitchen Closed Banner — dine-in customers after hours */}
       {isKitchenClosed && table && (
-        kitchenClosedBannerMinimized ? (
-          // Minimized: small red pill in lower-left corner
-          <div
-            className="fixed bottom-5 left-5 z-[9010] cursor-pointer"
-            onClick={() => setKitchenClosedBannerMinimized(false)}
-          >
-            <div className="bg-gradient-to-r from-red-800 to-red-900 text-white px-3 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-semibold hover:from-red-700 hover:to-red-800 transition-all">
-              <span>🍳</span>
-              <span>Cuisine fermée</span>
-            </div>
-          </div>
-        ) : (
-          // Maximized: draggable blood-red banner
-          <Draggable
-            className="z-[9010]"
-            initialPosition={{ x: 16, y: 0 }}
-            style={{ bottom: '80px', left: '0px', top: 'auto', maxWidth: '340px' }}
-          >
-            <div
-              className="bg-gradient-to-br from-red-800 to-red-950 text-white rounded-xl shadow-2xl border border-red-700/50 overflow-hidden"
-              ref={(el) => {
-                if (el) {
-                  const timer = setTimeout(() => setKitchenClosedBannerMinimized(true), 5000);
-                  (el as any).__autoMinTimer = timer;
-                }
-                return () => {
-                  if (el && (el as any).__autoMinTimer) clearTimeout((el as any).__autoMinTimer);
-                };
-              }}
-            >
-              {/* Header — entire row is tap target to minimize */}
-              <div
-                className="flex items-center justify-between px-4 pt-3 pb-2 cursor-pointer active:bg-white/10"
-                onClick={() => setKitchenClosedBannerMinimized(true)}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-white opacity-50 text-xs flex-shrink-0">⋮⋮</span>
-                  <span className="text-lg">🍳</span>
-                  <span className="font-bold text-sm">Cuisine fermée / Kitchen closed</span>
-                </div>
-                <span className="text-white/60 text-lg font-bold ml-2 leading-none">▾</span>
-              </div>
-              {/* Bilingual message */}
-              <div className="px-4 pb-3 pt-1 space-y-2">
-                <p className="text-sm text-red-100 italic leading-snug">
-                  La cuisine a fermé à {kitchenCloseTime} mais vous pouvez commander pour plus tard en utilisant la commande différée 🕔
-                </p>
-                <p className="text-xs text-red-200/70 italic leading-snug">
-                  The kitchen closed at {kitchenCloseTime} but you can order for later using the delayed order feature 🕔
-                </p>
-              </div>
-            </div>
-          </Draggable>
-        )
+        <KitchenClosedBanner
+          closeTime={kitchenCloseTime}
+          minimized={kitchenClosedBannerMinimized}
+          onMinimizedChange={setKitchenClosedBannerMinimized}
+        />
       )}
 
       {/* DEV ONLY: Clear localStorage button */}
@@ -3066,93 +2461,30 @@ export default function MenuPage() {
         </div>
       )}
 
-      {/* Topup Success Banner */}
-      {showTopupSuccess && (
-        <div className="fixed top-0 left-0 right-0 z-[9010] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">✓</span>
-              <div>
-                <p className="font-semibold text-base md:text-lg">
-                  Rechargement réussi!
-                </p>
-                <p className="text-sm opacity-90">
-                  Mise à jour du solde en cours...
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                setShowTopupSuccess(false);
-                setFlow5Success(true);
-                console.log('[TOPUP BANNER] Dismissed manually, showing unified success banner');
-              }}
-              className="text-white hover:bg-white/20 rounded-full p-1 transition-colors flex-shrink-0"
-              aria-label="Dismiss"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
+      <TopupSuccessBanner
+        show={showTopupSuccess}
+        onDismiss={() => {
+          setShowTopupSuccess(false);
+          setFlow5Success(true);
+          console.log('[TOPUP BANNER] Dismissed manually, showing unified success banner');
+        }}
+      />
 
       {/* Account Creation Success - Blue Banner (Account Credentials) */}
-      {showAccountCreated && accountCreationComplete && newAccountCredentials && (
-        <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">🎉</span>
-                <div>
-                  <p className="font-semibold text-base md:text-lg">
-                    Compte créé avec succès!
-                  </p>
-                  <p className="text-sm opacity-90">
-                    Votre commande est en cours de préparation
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowAccountCreated(false);
-                  setNewAccountCredentials(null);
-                }}
-                className="bg-white text-blue-700 px-4 py-2 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
-              >
-                OK
-              </button>
-            </div>
-            <div className="bg-white/10 rounded-lg p-3 text-sm">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div>
-                  <span className="opacity-75">Compte:</span>
-                  <span className="ml-2 font-mono font-bold">{newAccountCredentials.accountName}</span>
-                </div>
-                <div>
-                  <span className="opacity-75">Solde:</span>
-                  <span className="ml-2 font-bold">{newAccountCredentials.euroBalance.toFixed(2)} EURO</span>
-                </div>
-              </div>
-              <div className="mt-2">
-                <span className="opacity-75">Mot de passe:</span>
-                <span className="ml-2 font-mono text-xs break-all">{newAccountCredentials.masterPassword}</span>
-              </div>
-              <p className="mt-2 text-xs opacity-75">
-                💡 Vos identifiants sont sauvegardés. Vous pouvez commander directement la prochaine fois!
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <AccountCreatedBanner
+        credentials={showAccountCreated && accountCreationComplete ? newAccountCredentials : null}
+        onDismiss={() => {
+          setShowAccountCreated(false);
+          setNewAccountCredentials(null);
+        }}
+      />
 
       {/* Guest RUBIS teaser, just above the 30 px BottomBanner. */}
-      <RubisTeaser show={guestTeaser} onEnd={handleTeaserEnd} language="fr" bottom={44} />
+      <RubisTeaser show={guestTeaser} onEnd={handleTeaserEnd} language={language} bottom={44} />
 
       {/* Wallet Balance Reopen Button */}
       <WalletReopenButton
-        language="fr"
+        language={language}
         visible={!showWalletBalance && !!walletBalance}
         onClick={() => setShowWalletBalance(true)}
       />
@@ -3160,11 +2492,11 @@ export default function MenuPage() {
       {/* Persistent Wallet Balance Indicator */}
       {walletBalance && (
         <MiniWallet
-          language="fr"
+          language={language}
           balance={walletBalance}
           visible={showWalletBalance}
           onClose={() => {
-            if (walletPulseState !== 'none') setWalletPulseState('none');
+            if (walletPulseState !== 'none') hidePulse();
             setShowWalletBalance(false);
           }}
           balanceSource={balanceSource || undefined}
@@ -3175,483 +2507,74 @@ export default function MenuPage() {
           onRubisTeaserEnd={handleTeaserEnd}
           spendRubisFirst={spendRubisFirst}
           onSpendRubisFirstChange={handleSpendRubisFirstChange}
-          onPulseReset={() => {
-            setWalletPulseState('none');
-            localStorage.removeItem('innopay_latestMemoContent');
-            localStorage.removeItem('innopay_latestMemoDateTime');
-            localStorage.removeItem('innopay_fulfilledDetectedAt');
-            if (pulseIntervalRef.current) { clearTimeout(pulseIntervalRef.current); pulseIntervalRef.current = null; }
-            if (pulseStartTimeoutRef.current) { clearTimeout(pulseStartTimeoutRef.current); pulseStartTimeoutRef.current = null; }
-          }}
+          onPulseReset={resetPulse}
         />
       )}
 
       {/* Duplicate Order Prevention Modal */}
-      {showDuplicateModal && (
-        <>
-          <div
-            onClick={() => setShowDuplicateModal(false)}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.35)',
-              zIndex: 10010,
-            }}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              left: '50%',
-              top: '10%',
-              transform: 'translateX(-50%)',
-              zIndex: 10011,
-              width: 280,
-              borderRadius: 18,
-              overflow: 'hidden',
-              background: 'rgba(255, 252, 248, 0.95)',
-              backdropFilter: 'blur(24px) saturate(1.4)',
-              WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
-              boxShadow: '0 8px 40px rgba(0,0,0,0.22), 0 1.5px 4px rgba(0,0,0,0.08)',
-              border: '1px solid rgba(180, 160, 130, 0.25)',
-              colorScheme: 'light',
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '14px 16px 10px',
-                borderBottom: '1px solid rgba(180, 160, 130, 0.15)',
-                gap: 7,
-              }}
-            >
-              <span style={{ fontSize: 18 }}>⚠️</span>
-              <span
-                style={{
-                  fontSize: 15,
-                  fontWeight: 700,
-                  color: '#3a2e1e',
-                }}
-              >
-                Commande similaire récente
-              </span>
-            </div>
-
-            {/* Message */}
-            <div style={{ padding: '14px 20px 10px' }}>
-              <p style={{ fontSize: 14, color: '#555', textAlign: 'center', margin: 0, lineHeight: 1.4 }}>
-                Une commande identique a été passée il y a moins de 15 minutes.
-              </p>
-            </div>
-
-            {/* Actions */}
-            <div style={{ padding: '4px 20px 14px', display: 'flex', gap: 10, alignItems: 'center' }}>
-              <button
-                onClick={() => {
-                  setShowDuplicateModal(false);
-                  setShowGuestWarningModal(false);
-                  setGuestCheckoutProcessing(false);
-                  skipDuplicateCheckRef.current = true;
-                  // Mixed posture: an account is sufficient — a missing local active key
-                  // is handled by the innopay-authority fallback inside handleOrder().
-                  const hasCredentials = !!getAccountName();
-                  if (hasCredentials) {
-                    handleOrder();
-                  } else {
-                    setShowWalletNotification(true);
-                  }
-                }}
-                style={{
-                  flex: 1,
-                  height: 44,
-                  borderRadius: 12,
-                  border: 'none',
-                  background: '#555',
-                  color: '#bbb',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Pas grave
-              </button>
-              <button
-                onClick={() => {
-                  setShowDuplicateModal(false);
-                  setShowGuestWarningModal(false);
-                  setGuestCheckoutProcessing(false);
-                }}
-                style={{
-                  flex: 1,
-                  height: 44,
-                  borderRadius: 12,
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 10px rgba(37, 99, 235, 0.35)',
-                }}
-              >
-                Merci du rappel !
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <DuplicateOrderModal
+        open={showDuplicateModal}
+        onOrderAnyway={() => {
+          setShowDuplicateModal(false);
+          setShowGuestWarningModal(false);
+          setGuestCheckoutProcessing(false);
+          skipDuplicateCheckRef.current = true;
+          // Mixed posture: an account is sufficient — a missing local active key
+          // is handled by the innopay-authority fallback inside handleOrder().
+          const hasCredentials = !!getAccountName();
+          if (hasCredentials) {
+            handleOrder();
+          } else {
+            setShowWalletNotification(true);
+          }
+        }}
+        onCancel={() => {
+          setShowDuplicateModal(false);
+          setShowGuestWarningModal(false);
+          setGuestCheckoutProcessing(false);
+        }}
+      />
 
       {/* External Wallet Warning Modal - FreeNow collision workaround */}
-      {showExternalWalletWarning && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-70">
-          <div className="bg-white rounded-xl p-6 max-w-sm mx-4 shadow-2xl relative">
-            {/* Close button */}
-            <button
-              onClick={() => {
-                setShowExternalWalletWarning(false);
-                setPendingHiveUrl('');
-                setFreeNowOpened(false);
-              }}
-              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
-            >
-              ×
-            </button>
-
-            {!freeNowOpened ? (
-              // Initial warning state
-              <>
-                <div className="text-center mb-4">
-                  <span className="text-4xl">⚠️</span>
-                </div>
-                <h3 className="text-lg font-bold mb-3 text-gray-800 text-center">
-                  Portefeuille externe
-                </h3>
-                <p className="text-sm text-gray-600 mb-4 text-center">
-                  Ceci va ouvrir votre application Hive Keychain ou Ecency.
-                </p>
-                <p className="text-xs text-orange-600 mb-4 text-center bg-orange-50 p-2 rounded">
-                  <strong>Note:</strong> Si l&apos;application FreeNow (taxi) s&apos;ouvre à la place,
-                  revenez ici et utilisez les options de secours.
-                </p>
-                <div className="space-y-2">
-                  <button
-                    onClick={proceedWithExternalWallet}
-                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-                  >
-                    Ouvrir Hive Keychain
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowExternalWalletWarning(false);
-                      setPendingHiveUrl('');
-                    }}
-                    className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-300 transition-colors text-sm"
-                  >
-                    Annuler
-                  </button>
-                </div>
-              </>
-            ) : (
-              // FreeNow opened / recovery state
-              <>
-                <div className="text-center mb-4">
-                  <span className="text-4xl">🚕</span>
-                </div>
-                <h3 className="text-lg font-bold mb-3 text-gray-800 text-center">
-                  FreeNow s&apos;est ouvert?
-                </h3>
-                <p className="text-sm text-gray-600 mb-4 text-center">
-                  Pas de souci! Utilisez une de ces alternatives:
-                </p>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => {
-                      setShowExternalWalletWarning(false);
-                      setPendingHiveUrl('');
-                      setFreeNowOpened(false);
-                      // User will use innopay flow instead
-                    }}
-                    className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
-                  >
-                    Payer avec Innopay
-                  </button>
-                  <button
-                    onClick={copyHiveUrlToClipboard}
-                    className="w-full bg-gray-600 text-white py-2 rounded-lg font-medium hover:bg-gray-700 transition-colors text-sm"
-                  >
-                    Copier le lien de transaction
-                  </button>
-                  <button
-                    onClick={proceedWithExternalWallet}
-                    className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-300 transition-colors text-sm"
-                  >
-                    Réessayer quand même
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500 mt-3 text-center">
-                  Astuce: Ouvrez Hive Keychain manuellement, puis collez le lien copié.
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <ExternalWalletModal
+        open={showExternalWalletWarning}
+        freeNowOpened={freeNowOpened}
+        onProceed={proceedWithExternalWallet}
+        onCopyLink={copyHiveUrlToClipboard}
+        onClose={() => {
+          setShowExternalWalletWarning(false);
+          setPendingHiveUrl('');
+          setFreeNowOpened(false);
+        }}
+        onCancel={() => {
+          setShowExternalWalletWarning(false);
+          setPendingHiveUrl('');
+        }}
+      />
 
       {/* Import Account Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-60">
-          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl relative">
-            {/* Close button */}
-            <button
-              onClick={() => setShowImportModal(false)}
-              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
-            >
-              ×
-            </button>
-
-            <h3 className="text-xl font-bold mb-4 text-gray-800 text-center">Importer un compte</h3>
-
-            {/* Show appropriate content based on step and error state */}
-            {importError && importStep === 'email' ? (
-              <div className="text-center py-8">
-                <p className="text-red-600 font-semibold text-lg">{importError}</p>
-              </div>
-            ) : (
-              <>
-                {/* Step 1: Email input (original design) */}
-                {importStep === 'email' && (
-                  <>
-                    <p className="text-sm text-gray-600 mb-4 text-center">
-                      Entrez l'adresse email que vous avez utilisé pour créer le compte
-                    </p>
-
-                    <input
-                      type="email"
-                      value={importEmail}
-                      onChange={(e) => setImportEmail(e.target.value)}
-                      placeholder="votre@email.com"
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg mb-4 focus:outline-none focus:border-blue-500 text-gray-800"
-                      disabled={importLoading}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !importLoading) {
-                          handleRequestCode();
-                        }
-                      }}
-                    />
-
-                    <p className="text-xs text-gray-500 mb-4 text-center">
-                      {importAttempts} tentative{importAttempts > 1 ? 's' : ''} restante{importAttempts > 1 ? 's' : ''}
-                    </p>
-
-                    <button
-                      onClick={handleRequestCode}
-                      disabled={importLoading || !importEmail}
-                      className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    >
-                      {importLoading ? 'Recherche...' : 'Récupérer'}
-                    </button>
-                  </>
-                )}
-
-                {/* Step 2: Code verification (replaces the old immediate import) */}
-                {importStep === 'code' && (
-                  <>
-                    <p className="text-sm text-gray-600 mb-4 text-center">
-                      Un code de vérification a été envoyé à <strong>{importEmail}</strong>
-                    </p>
-
-                    <input
-                      type="text"
-                      value={verificationCode}
-                      onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="Code à 6 chiffres"
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg mb-4 focus:outline-none focus:border-blue-500 text-gray-800 text-center text-2xl font-mono tracking-widest"
-                      disabled={importLoading}
-                      maxLength={6}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !importLoading && verificationCode.length === 6) {
-                          handleVerifyCode();
-                        }
-                      }}
-                    />
-
-                    {importError && (
-                      <p className="text-xs text-red-600 mb-4 text-center">{importError}</p>
-                    )}
-
-                    <button
-                      onClick={handleVerifyCode}
-                      disabled={importLoading || verificationCode.length !== 6}
-                      className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed mb-2"
-                    >
-                      {importLoading ? 'Vérification...' : 'Vérifier'}
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setImportStep('email');
-                        setVerificationCode('');
-                        setImportError('');
-                      }}
-                      className="w-full text-blue-600 hover:text-blue-800 text-sm"
-                    >
-                      ← Retour
-                    </button>
-                  </>
-                )}
-
-                {/* Step 3: Multiple accounts selection (if needed) */}
-                {importStep === 'select' && (
-                  <>
-                    <p className="text-sm text-gray-600 mb-4 text-center">
-                      Plusieurs comptes trouvés. Sélectionnez celui à importer:
-                    </p>
-
-                    <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
-                      {multipleAccounts.map((account) => (
-                        <button
-                          key={account.accountName}
-                          onClick={() => handleSelectAccount(account.accountName)}
-                          className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
-                        >
-                          <div className="font-semibold text-gray-800">{account.accountName}</div>
-                          <div className="text-sm text-gray-600">
-                            Solde: {account.euroBalance.toFixed(2)} € •
-                            Créé: {new Date(account.creationDate).toLocaleDateString('fr-FR')}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-
-                    {importError && (
-                      <p className="text-xs text-red-600 mb-4 text-center">{importError}</p>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <ImportAccountModal {...importModalProps} />
 
       {/* Guest Checkout Warning Modal — adapts for waiter flow vs normal order */}
-      {showGuestWarningModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-60">
-          <div className="bg-gray-700 text-gray-300 rounded-lg p-6 max-w-md mx-4 shadow-xl">
-            {isCallWaiterFlow ? (
-              <>
-                <h3 className="text-lg font-semibold mb-4 text-center">Appeler un serveur sans compte</h3>
-
-                <p className="text-sm mb-3">
-                  Appeler un serveur sans compte coûte <span className="text-red-500 font-bold">1.00€</span> (commission carte bancaire).
-                </p>
-
-                <p className="text-sm mb-4">
-                  En créant un compte Innopay <span className="text-green-400 font-semibold">gratuit</span>, ce service ne coûte que <span className="text-green-400 font-bold">0.02€</span>.
-                </p>
-
-                <div className="flex flex-col gap-3 mt-6">
-                  <button
-                    disabled={guestCheckoutProcessing}
-                    onClick={() => proceedWithGuestCheckout()}
-                    className={`px-4 py-3 rounded-lg font-semibold transition-colors ${
-                      guestCheckoutProcessing
-                        ? 'bg-gray-500 text-gray-400 cursor-not-allowed animate-pulse'
-                        : 'bg-black text-gray-300 hover:bg-gray-900'
-                    }`}
-                  >
-                    {guestCheckoutProcessing
-                      ? <>Redirection vers le paiement ({guestCheckoutSeconds}s)<span className="inline-block ml-1 animate-bounce">...</span></>
-                      : <>Continuer et payer <span className="text-red-500">1.00€</span></>
-                    }
-                  </button>
-
-                  {!guestCheckoutProcessing && (
-                    <button
-                      onClick={() => setShowGuestWarningModal(false)}
-                      className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
-                    >
-                      Créer un compte (0.02€)
-                    </button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <h3 className="text-lg font-semibold mb-4 text-center">Commander sans compte</h3>
-
-                <p className="text-sm mb-3">
-                  Commander sans compte implique une <span className="text-red-600 font-semibold">charge supplémentaire de <span className="text-red-500 font-bold">5%</span></span> liée aux commissions de carte bancaire.
-                </p>
-
-                {parseFloat(getDiscountAmount()) > 0 && (
-                  <p className="text-sm mb-4">
-                    En commandant sans créer un compte vous <span className="text-red-600 font-semibold">renoncez à un discount de: <span className="text-red-500 font-bold">{getDiscountAmount()} €</span></span>
-                  </p>
-                )}
-
-                <div className="flex flex-col gap-3 mt-6">
-                  <button
-                    disabled={guestCheckoutProcessing}
-                    onClick={() => proceedWithGuestCheckout()}
-                    className={`px-4 py-3 rounded-lg font-semibold transition-colors ${
-                      guestCheckoutProcessing
-                        ? 'bg-gray-500 text-gray-400 cursor-not-allowed animate-pulse'
-                        : 'bg-black text-gray-300 hover:bg-gray-900'
-                    }`}
-                  >
-                    {guestCheckoutProcessing
-                      ? <>Redirection vers le paiement ({guestCheckoutSeconds}s)<span className="inline-block ml-1 animate-bounce">...</span></>
-                      : <>Continuer et payer <span className="text-red-500">{(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)} €</span></>
-                    }
-                  </button>
-
-                  {!guestCheckoutProcessing && (
-                    <button
-                      onClick={() => setShowGuestWarningModal(false)}
-                      className="bg-white text-blue-600 px-4 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors"
-                    >
-                      Revenir pour bénéficier
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <GuestCheckoutModal
+        open={showGuestWarningModal}
+        waiterFlow={isCallWaiterFlow}
+        processing={guestCheckoutProcessing}
+        seconds={guestCheckoutSeconds}
+        guestTotal={(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)}
+        discountLost={getDiscountAmount()}
+        onProceed={() => proceedWithGuestCheckout()}
+        onBack={() => setShowGuestWarningModal(false)}
+      />
 
       {/* Wallet Status Display - Shows when credentials are loaded */}
-      {walletCredentials && (
-        <div className="fixed top-[80px] left-0 right-0 z-[8990] bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">✓</span>
-              <div>
-                <p className="font-semibold text-sm md:text-base">
-                  Connecté: @{walletCredentials.username}
-                </p>
-                <p className="text-xs opacity-90">
-                  Portefeuille Innopay actif
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                if (confirm('Déconnecter votre portefeuille?')) {
-                  clearCredentials(); // remove all key material, not just the display blob
-                  setWalletCredentials(null);
-                }
-              }}
-              className="text-white hover:text-green-200 transition-colors px-3 py-1 text-sm border border-white rounded"
-            >
-              Déconnecter
-            </button>
-          </div>
-        </div>
-      )}
+      <WalletStatusBar
+        username={walletCredentials?.username ?? null}
+        onDisconnect={() => {
+          clearCredentials(); // remove all key material, not just the display blob
+          setWalletCredentials(null);
+        }}
+      />
 
       {/* Fixed Cart Section */}
       {cart.length > 0 && (
@@ -3696,8 +2619,12 @@ export default function MenuPage() {
             <button onClick={() => { setWaiterReason(''); setWaiterConfirmed(false); setShowWaiterModal(true); }} className="call-waiter-button">
               Serveur&nbsp;!
             </button>
-            <button onClick={handleOrder} className="order-now-button" disabled={orderProcessing || flow6Cooldown > 0}>
-              {flow6Cooldown > 0 ? `Solde... ${flow6Cooldown}s` : orderProcessing ? `${orderElapsedSeconds}s` : 'Commandez'}
+            <button onClick={handleOrder} className="order-now-button" disabled={redirecting || orderProcessing || flow6Cooldown > 0}>
+              {redirecting
+                ? t('order.redirecting')
+                : flow6Cooldown > 0
+                  ? t('order.balanceCooldown', { seconds: flow6Cooldown })
+                  : orderProcessing ? `${orderElapsedSeconds}s` : t('order.button')}
             </button>
           </div>
         </div>
@@ -3740,203 +2667,42 @@ export default function MenuPage() {
       />
 
       {/* Call Waiter Modal — two modes: input (centered modal) and confirmed (top strip) */}
-      {showWaiterModal && !waiterConfirmed && (
-        <>
-          <div
-            onClick={() => setShowWaiterModal(false)}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.35)',
-              zIndex: 9998,
-            }}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              left: '50%',
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              zIndex: 9999,
-              width: 280,
-              borderRadius: 18,
-              overflow: 'hidden',
-              background: 'rgba(255, 252, 248, 0.95)',
-              backdropFilter: 'blur(24px) saturate(1.4)',
-              WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
-              boxShadow: '0 8px 40px rgba(0,0,0,0.22), 0 1.5px 4px rgba(0,0,0,0.08)',
-              border: '1px solid rgba(180, 160, 130, 0.25)',
-              colorScheme: 'light',
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '14px 16px 10px',
-                borderBottom: '1px solid rgba(180, 160, 130, 0.15)',
-                gap: 7,
-              }}
-            >
-              <span style={{ fontSize: 18 }}>🔔</span>
-              <span
-                style={{
-                  fontSize: 15,
-                  fontWeight: 700,
-                  color: '#3a2e1e',
-                }}
-              >
-                Appeler un serveur
-              </span>
-            </div>
+      <CallWaiterModal
+        open={showWaiterModal && !waiterConfirmed}
+        reason={waiterReason}
+        onReasonChange={setWaiterReason}
+        onCancel={() => setShowWaiterModal(false)}
+        onConfirm={() => {
+          // Check if user has an account — if yes, direct payment (a missing local
+          // active key is handled by the innopay-authority fallback); if no, show strip + banner
+          const accountName = getAccountName();
 
-            {/* Reason input */}
-            <div style={{ padding: '14px 20px 10px' }}>
-              <input
-                type="text"
-                placeholder="Motif (optionnel)..."
-                maxLength={80}
-                value={waiterReason}
-                onChange={(e) => setWaiterReason(e.target.value)}
-                autoFocus
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1.5px solid #999',
-                  fontSize: 15,
-                  color: '#000',
-                  background: '#fff',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = '#dc3545'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(220,53,69,0.15)'; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = '#999'; e.currentTarget.style.boxShadow = 'none'; }}
-              />
-            </div>
-
-            {/* Actions: Confirm + red X cancel on same row */}
-            <div style={{ padding: '4px 20px 14px', display: 'flex', gap: 10, alignItems: 'center' }}>
-              <button
-                onClick={() => {
-                  // Check if user has an account — if yes, direct payment (a missing local
-                  // active key is handled by the innopay-authority fallback); if no, show strip + banner
-                  const accountName = getAccountName();
-
-                  if (accountName) {
-                    // Has credentials — direct payment flow
-                    setShowWaiterModal(false);
-                    handleCallWaiter(waiterReason);
-                  } else {
-                    // No credentials — transform to strip + show wallet banner
-                    setWaiterConfirmed(true);
-                    setIsCallWaiterFlow(true);
-                    setShowWalletNotification(true);
-                    setIsSafariBanner(false);
-                  }
-                }}
-                style={{
-                  flex: 1,
-                  height: 44,
-                  borderRadius: 12,
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)',
-                  color: '#fff',
-                  fontSize: 15,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 10px rgba(220, 53, 69, 0.35)',
-                }}
-              >
-                🔔 Appeler (0.02€)
-              </button>
-              <button
-                onClick={() => setShowWaiterModal(false)}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: '50%',
-                  border: 'none',
-                  background: '#dc3545',
-                  color: '#fff',
-                  fontSize: 18,
-                  fontWeight: 700,
-                  lineHeight: 1,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  boxShadow: '0 2px 6px rgba(220, 53, 69, 0.35)',
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+          if (accountName) {
+            // Has credentials — direct payment flow
+            setShowWaiterModal(false);
+            handleCallWaiter(waiterReason);
+          } else {
+            // No credentials — transform to strip + show wallet banner
+            setWaiterConfirmed(true);
+            setIsCallWaiterFlow(true);
+            setShowWalletNotification(true);
+            setIsSafariBanner(false);
+          }
+        }}
+      />
 
       {/* Call Waiter — confirmed strip (non-blocking, stays at top) */}
-      {showWaiterModal && waiterConfirmed && (
-        <div
-          style={{
-            position: 'fixed',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            top: `${totalFixedHeaderHeight + 8}px`,
-            zIndex: 9997,
-            width: '90%',
-            maxWidth: 400,
-            borderRadius: 12,
-            background: 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)',
-            color: '#fff',
-            padding: '10px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            boxShadow: '0 4px 20px rgba(220, 53, 69, 0.4)',
-            colorScheme: 'light',
-          }}
-        >
-          <span style={{ fontSize: 20, flexShrink: 0 }}>🔔</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Serveur demandé</div>
-            {waiterReason?.trim() && (
-              <div style={{ fontSize: 12, opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {waiterReason.trim()}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={() => {
-              setShowWaiterModal(false);
-              setWaiterConfirmed(false);
-              setIsCallWaiterFlow(false);
-              setShowWalletNotification(false);
-            }}
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              border: '1.5px solid rgba(255,255,255,0.5)',
-              background: 'transparent',
-              color: '#fff',
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
+      <WaiterRequestedStrip
+        show={showWaiterModal && waiterConfirmed}
+        reason={waiterReason ?? ''}
+        top={totalFixedHeaderHeight + 8}
+        onCancel={() => {
+          setShowWaiterModal(false);
+          setWaiterConfirmed(false);
+          setIsCallWaiterFlow(false);
+          setShowWalletNotification(false);
+        }}
+      />
 
       {/* Fixed Menu Selector (Dishes/Drinks) - Positioned dynamically */}
       <div
@@ -4091,76 +2857,15 @@ export default function MenuPage() {
       </div>
 
       {/* Cart Composition Modal */}
-      {showCartComposition && (
-        <div
-          className="fixed inset-0 z-[10000] bg-black bg-opacity-50 flex items-center justify-center p-4"
-          onClick={() => setShowCartComposition(false)}
-        >
-          <div
-            className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 flex justify-between items-center rounded-t-lg">
-              <h2 className="text-xl font-bold">Composition de la commande</h2>
-              <button
-                onClick={() => setShowCartComposition(false)}
-                className="text-2xl hover:text-gray-200 transition-colors"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-6">
-              {cart.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">Panier vide</p>
-              ) : (
-                <>
-                  <div className="space-y-4">
-                    {cart.map((item, index) => (
-                      <div key={index} className="border-b border-gray-200 pb-4">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-800">{item.name}</h3>
-                            {item.options?.size && (
-                              <p className="text-sm text-gray-600">Taille: {item.options.size}</p>
-                            )}
-                            {item.options?.cuisson && (
-                              <p className="text-sm text-gray-600">Cuisson: {item.options.cuisson}</p>
-                            )}
-                            {item.options?.selectedIngredients && item.options.selectedIngredients.length > 0 && (
-                              <p className="text-sm text-gray-600">
-                                Ingrédients: {item.options.selectedIngredients}
-                              </p>
-                            )}
-                            <p className="text-sm text-gray-500 mt-1">
-                              Quantité: {item.quantity}
-                            </p>
-                          </div>
-                          <div className="text-right ml-4">
-                            <p className="font-semibold text-gray-800">
-                              {(parseFloat(item.price) * item.quantity).toFixed(2)} €
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-6 pt-4 border-t-2 border-gray-300">
-                    <div className="flex justify-between items-center">
-                      <span className="text-lg font-bold text-gray-800">Total:</span>
-                      <span className="text-2xl font-bold text-blue-600">
-                        {getTotalEurPrice()} €
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <CartCompositionModal
+        open={showCartComposition}
+        cart={cart}
+        total={getTotalEurPrice()}
+        onClose={() => setShowCartComposition(false)}
+      />
 
       {/* Bottom Contact/Legal Banner */}
-      <BottomBanner language="fr" />
+      <BottomBanner language={language} />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useSearchParams } from 'next/navigation';
 import { generateHiveTransferUrl, generateDistriatedHiveOp, dehydrateMemo } from '@/lib/utils';
 
-interface CartItem {
+export interface CartItem {
   id: string; // This ID should be unique, incorporating options like 'drink-123-large' or 'dish-456-mediumrare'
   name: string; // e.g., 'Coca-Cola (Large)' or 'Steak (Medium Rare)'
   price: string;
