@@ -11,20 +11,26 @@
 //     (indies' grey banner with "show order" / "clear order").
 // The states are mutually exclusive, which replaces the ~20 boolean flags of the old page.
 
+/** Spoke flows. 1 and 2 (create / top up on wallet.innopay.lu) are hub-only; 8 (import) has no payment. */
 export type FlowType = 3 | 4 | 5 | 6 | 7;
 
-/** What the yellow banner is waiting for. */
-export type ProcessingStep = 'paying' | 'waiterCalling' | 'finalizing' | 'awaitingChain';
+/**
+ * What a processing state is waiting for. Only two have a yellow banner:
+ *   - awaitingChain: guest paid at Stripe, the order is not on the chain yet;
+ *   - accountCreating: account created in the hub's popup, keys being stored.
+ * 'finalizing' (fetching the keys after a return) shows nothing, as before R4.
+ */
+export type ProcessingStep = 'paying' | 'waiterCalling' | 'finalizing' | 'awaitingChain' | 'accountCreating';
 
 /** Which green banner a success shows. */
-export type SuccessBanner = 'orderSent' | 'walletReady' | 'topup';
+export type SuccessBanner = 'orderSent' | 'walletReady';
 
 export type PaymentState =
   | { status: 'idle' }
   | { status: 'redirecting'; flow: FlowType; url?: string }
   | { status: 'processing'; flow: FlowType; step: ProcessingStep; sessionId?: string }
   | { status: 'success'; flow: FlowType; banner: SuccessBanner }
-  | { status: 'account_created'; flow: FlowType; accountName: string }
+  | { status: 'account_created'; flow: FlowType; accountName: string; euroBalance: number }
   | { status: 'waiter_called'; table: string }
   | { status: 'error'; flow: FlowType; error: string; canRetry: boolean; reason: 'failed' | 'transmission' };
 
@@ -35,7 +41,7 @@ export type PaymentEvent =
   | { type: 'RETURN_FROM_HUB'; flow: FlowType; step?: ProcessingStep; sessionId?: string }
   | { type: 'PROCESSING_UPDATE'; step: ProcessingStep }
   | { type: 'PAYMENT_SUCCESS'; banner: SuccessBanner }
-  | { type: 'ACCOUNT_CREATED'; accountName: string }
+  | { type: 'ACCOUNT_CREATED'; accountName: string; euroBalance: number }
   | { type: 'WAITER_CALLED'; table: string }
   | { type: 'ERROR'; error: string; canRetry?: boolean; reason?: 'failed' | 'transmission' }
   | { type: 'RESET' }
@@ -87,7 +93,9 @@ export function paymentReducer(state: PaymentState, event: PaymentEvent): Paymen
       if (event.type === 'PROCESSING_UPDATE') return { ...state, step: event.step };
       if (event.type === 'SWITCH_TO_REDIRECT') return { status: 'redirecting', flow: event.flow };
       if (event.type === 'PAYMENT_SUCCESS') return { status: 'success', flow: state.flow, banner: event.banner };
-      if (event.type === 'ACCOUNT_CREATED') return { status: 'account_created', flow: state.flow, accountName: event.accountName };
+      if (event.type === 'ACCOUNT_CREATED') {
+        return { status: 'account_created', flow: state.flow, accountName: event.accountName, euroBalance: event.euroBalance };
+      }
       if (event.type === 'WAITER_CALLED') return { status: 'waiter_called', table: event.table };
       if (event.type === 'ERROR') {
         return { status: 'error', flow: state.flow, error: event.error, canRetry: event.canRetry ?? true, reason: event.reason ?? 'failed' };

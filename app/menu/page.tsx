@@ -1,6 +1,6 @@
 // indiesmenu-front/app/menu/page.tsx
 'use client';
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, useReducer } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useCart } from '@/app/context/CartContext';
@@ -15,8 +15,11 @@ import { useI18n } from '@/lib/i18n';
 import { useWalletPulse } from '@/hooks/useWalletPulse';
 import { useMenu } from '@/hooks/useMenu';
 import { useImportAccount } from '@/hooks/useImportAccount';
-import PaymentProgressBanners from '@/components/menu/overlays/PaymentProgressBanners';
-import { FlowSuccessBanner, TopupSuccessBanner, WaiterCalledBanner } from '@/components/menu/overlays/SuccessBanners';
+import PaymentProgressBanners, { progressOf } from '@/components/menu/overlays/PaymentProgressBanners';
+import PaymentErrorBanner from '@/components/menu/overlays/PaymentErrorBanner';
+import { usePaymentReturn } from '@/hooks/usePaymentReturn';
+import { initialPaymentState, paymentReducer } from '@/lib/innopay/paymentStateMachine';
+import { FlowSuccessBanner, WaiterCalledBanner } from '@/components/menu/overlays/SuccessBanners';
 import { KitchenClosedBanner, RestaurantClosedPopup } from '@/components/menu/overlays/ClosedNotices';
 import AccountCreatedBanner from '@/components/menu/overlays/AccountCreatedBanner';
 import DuplicateOrderModal from '@/components/menu/overlays/DuplicateOrderModal';
@@ -27,13 +30,12 @@ import WalletStatusBar from '@/components/menu/overlays/WalletStatusBar';
 import { CallWaiterModal, WaiterRequestedStrip } from '@/components/menu/overlays/CallWaiterOverlays';
 import CartCompositionModal from '@/components/menu/overlays/CartCompositionModal';
 import BottomBanner from '@/components/ui/BottomBanner';
+import { createAccountCarriesOrder } from '@/lib/innopay/payment-requests';
 import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart, distriate } from '@/lib/utils';
 import { isKitchenOpen, getKitchenCloseTime, isRestaurantOpen, getNextOpenDay } from '@/lib/config/kitchen-hours';
 import {
-  saveKeys,
   getAccountName,
   getActiveKey,
-  saveWalletBlob,
   loadWalletBlob,
   purgeForbidden,
   clearCredentials,
@@ -43,7 +45,6 @@ import {
   RUBIS_EARNABLE, confirmedRubis, isPaymentReturn, markTeaserShown, readSpendRubisFirst, readTeaserShown,
   writeSpendRubisFirst,
 } from '@/lib/innopay/rubis';
-import { startBalanceSettling } from '@/lib/innopay/balance-settle';
 // import { Prisma} from '@prisma/client';
 import '@/app/globals.css'; // Import global styles
 
@@ -111,11 +112,9 @@ export default function MenuPage() {
   const [isCallWaiterFlow, setIsCallWaiterFlow] = useState(false); // Track if banner is for call waiter
   const [walletCredentials, setWalletCredentials] = useState<{username: string} | null>(null);
 
-  // State for payment success notification
-  const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
-  const [blockchainComplete, setBlockchainComplete] = useState(false);
-  const [transmissionError, setTransmissionError] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  // Payment state machine (lib/innopay/paymentStateMachine.ts). R4b: returns from the hub drive
+  // it (hooks/usePaymentReturn.ts); R4c moves the order / waiter buttons onto it too.
+  const [paymentState, dispatchPayment] = useReducer(paymentReducer, initialPaymentState);
   const [showCartComposition, setShowCartComposition] = useState(false);
 
   // State for guest checkout warning modal
@@ -140,15 +139,6 @@ export default function MenuPage() {
   const [showWaiterModal, setShowWaiterModal] = useState(false);
   const [waiterReason, setWaiterReason] = useState('');
   const [waiterConfirmed, setWaiterConfirmed] = useState(false);
-
-  // State for account creation success notification
-  const [showAccountCreated, setShowAccountCreated] = useState(false);
-  const [accountCreationComplete, setAccountCreationComplete] = useState(false);
-  const [newAccountCredentials, setNewAccountCredentials] = useState<{
-    accountName: string;
-    masterPassword: string;
-    euroBalance: number;
-  } | null>(null);
 
   // State for persistent wallet balance indicator
   const [showWalletBalance, setShowWalletBalance] = useState(false);
@@ -190,14 +180,8 @@ export default function MenuPage() {
     }
   }, [balance, accountName]);
 
-  // State for topup success notification
-  const [showTopupSuccess, setShowTopupSuccess] = useState(false);
-
-  // Flow-specific success states (explicitly named for code readability)
-  const [flow4Success, setFlow4Success] = useState(false); // create_account_only
-  const [flow5Success, setFlow5Success] = useState(false); // create_account_and_pay
+  // Flow 6 and waiter successes stay flags until R4c moves those buttons onto the machine.
   const [flow6Success, setFlow6Success] = useState(false); // pay_with_account
-  const [flow7Success, setFlow7Success] = useState(false); // pay_with_topup
   const [waiterCalledSuccess, setWaiterCalledSuccess] = useState(false); // call_waiter
 
   // Flow 6 cooldown: prevent ordering before blockchain finalizes previous payment
@@ -307,22 +291,6 @@ export default function MenuPage() {
     '/images/indiesExt1600x878.jpg'
   ];
 
-  // Flow-specific success handlers - defined early to avoid hoisting issues
-  const handleFlow5Success = useCallback(() => {
-    console.log('[FLOW 5] create_account_and_pay success');
-    setFlow5Success(true);
-  }, []);
-
-  const handleFlow6Success = useCallback(() => {
-    console.log('[FLOW 6] pay_with_account success');
-    setFlow6Success(true);
-  }, []);
-
-  const handleFlow7Success = useCallback(() => {
-    console.log('[FLOW 7] pay_with_topup success');
-    setFlow7Success(true);
-  }, []);
-
   // Cleanup timer on unmount
   useEffect(() => {
     return () => {
@@ -335,604 +303,26 @@ export default function MenuPage() {
     };
   }, []);
 
-  // Check for payment success on mount
-  useEffect(() => {
-    const paymentStatus = searchParams.get('payment');
-    const sessionId = searchParams.get('session_id');
-    console.log('[PAYMENT SUCCESS CHECK] paymentStatus:', paymentStatus, 'sessionId:', sessionId);
-    console.log('[PAYMENT SUCCESS CHECK] Full URL:', window.location.href);
+  // Returns from the hub / Stripe and the popup hand-off (hooks/usePaymentReturn.ts; what each
+  // return does is in lib/innopay/apply-return.ts).
+  usePaymentReturn({
+    state: paymentState,
+    dispatch: dispatchPayment,
+    clearCart,
+    startOrderPulsing,
+    showWallet: (wallet) => { setWalletBalance(wallet); setShowWalletBalance(true); },
+    refetchBalance,
+    cleanUrl: () => cleanUrlPreservingTable('PAYMENT RETURN'),
+    onWalletConnected: (username) => {
+      setWalletCredentials({ username });
+      setShowWalletNotification(false);
+    },
+  });
+  const paymentProgress = progressOf(paymentState);
+  // A hub return is being shown: the "create an account" banner must stay out of the way.
+  const hubReturnShowing = paymentState.status === 'processing' || paymentState.status === 'success'
+    || paymentState.status === 'account_created' || paymentProgress === 'transmissionError';
 
-    if (paymentStatus === 'success' && sessionId) {
-      console.log('[PAYMENT SUCCESS] Setting showPaymentSuccess to true (Stripe confirmed)');
-      setShowPaymentSuccess(true);
-      setBlockchainComplete(false); // Start in "processing" state
-      setTransmissionError(false); // Reset error state
-      setCurrentSessionId(sessionId);
-      // DON'T clear cart yet - wait for blockchain confirmation
-      // Remove query params from URL while preserving table
-      cleanUrlPreservingTable('PAYMENT SUCCESS CHECK');
-    } else if (paymentStatus === 'cancelled') {
-      // User cancelled at Stripe checkout - clean URL and let them try again
-      console.log('[PAYMENT CANCELLED] User cancelled at Stripe, cleaning URL');
-      cleanUrlPreservingTable('PAYMENT CANCELLED');
-    } else {
-      console.log('[PAYMENT SUCCESS CHECK] No success payment detected');
-    }
-  }, [searchParams, clearCart, table]);
-
-  // Check for account creation success OR existing account (Flow 5) OR order success (Flow 7) on mount
-  useEffect(() => {
-    const accountCreated = searchParams.get('account_created');
-    const existingAccount = searchParams.get('existing_account');
-    const orderSuccess = searchParams.get('order_success');
-    const credentialToken = searchParams.get('credential_token');
-    const sessionId = searchParams.get('session_id'); // Flow 7 uses Stripe session_id
-    const balance = searchParams.get('balance');
-    const flowParam = searchParams.get('flow'); // Explicit flow from innopay (6 or 7)
-
-    // 🔧 DEBUG: Log URL params to localStorage to persist across page reload
-    const flowMarker = localStorage.getItem('innopay_flow_pending');
-    const debugLog = {
-      timestamp: new Date().toISOString(),
-      url: window.location.href,
-      accountCreated,
-      existingAccount,
-      orderSuccess,
-      credentialToken,
-      sessionId,
-      flowMarker,
-      flowParam
-    };
-    localStorage.setItem('innopay_debug_last_params', JSON.stringify(debugLog));
-    console.log('[CREDENTIAL CHECK] 🔧 DEBUG LOG:', debugLog);
-    console.log('[CREDENTIAL CHECK] accountCreated:', accountCreated, 'existingAccount:', existingAccount, 'orderSuccess:', orderSuccess, 'credentialToken:', credentialToken, 'sessionId:', sessionId, 'flowMarker:', flowMarker, 'flowParam:', flowParam);
-
-    // FLOW 7 PURE: If flow marker is flow7_topup_and_pay AND we have order_success,
-    // credentials are already in localStorage — no need to fetch from innopay
-    if (orderSuccess === 'true' && flowMarker === 'flow7_topup_and_pay') {
-      console.log('[FLOW 7 RETURN] Pure Flow 7 return - credentials already in localStorage');
-      const accountName = getAccountName();
-      if (accountName) {
-        // Clear cart in both React state AND localStorage (belt and suspenders)
-        clearCart();
-        localStorage.setItem('cart', '[]');
-        console.log('[FLOW 7 RETURN] Cart cleared (state + localStorage)');
-
-        // Clear flow marker - flow is complete
-        localStorage.removeItem('innopay_flow_pending');
-
-        // Show success banner BEFORE cleaning URL (so state updates are batched)
-        handleFlow7Success();
-
-        // Remove query params from URL while preserving table
-        cleanUrlPreservingTable('FLOW 7 RETURN');
-
-        // Update balance: fetch fresh from Hive-Engine via the useBalance hook
-        // The webhook transferred change to the account, so real balance is on-chain
-        setWalletBalance({ accountName, euroBalance: 0 }); // Placeholder until refresh
-        setShowWalletBalance(true);
-
-        // Start post-order pulsing (Level 3 guardrail) — use stored memo from before redirect
-        const storedMemoF7 = localStorage.getItem('innopay_latestMemoContent');
-        if (storedMemoF7) startOrderPulsing(storedMemoF7);
-
-        console.log('[FLOW 7 RETURN] Order paid by webhook - cart cleared, banner shown');
-      }
-      return; // Don't fall through to credential fetch
-    }
-
-    // For Flow 5, we get credential_token from webhook
-    const hasCredentials = credentialToken || sessionId;
-
-    if ((accountCreated === 'true' || existingAccount === 'true' || orderSuccess === 'true') && hasCredentials) {
-      // Retrieve credentials from innopay API using the token
-      const fetchCredentials = async () => {
-        try {
-          const innopayUrl = getInnopayUrl();
-
-          console.log('[ACCOUNT CREATED] Fetching credentials from innopay');
-          console.log('[ACCOUNT CREATED] Using:', credentialToken ? `credentialToken: ${credentialToken}` : `sessionId: ${sessionId}`);
-
-          const response = await fetch(`${innopayUrl}/api/account/credentials`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...(credentialToken && { credentialToken }),
-              ...(sessionId && { sessionId })
-            })
-          });
-
-          if (!response.ok) {
-            console.error('[ACCOUNT CREATED] Failed to fetch credentials:', response.status);
-            return;
-          }
-
-          const credentials = await response.json();
-          console.log('[ACCOUNT CREATED] Retrieved credentials for:', credentials.accountName);
-
-          // Store ONLY the active + memo keys (SPOKE-KEY-SECURITY.md §4): the master
-          // password is the owner-deriving secret and must never be persisted; the
-          // posting key is never used to sign in a spoke. The hub still RETURNS the
-          // full set so the one-time credential-display UX is unchanged.
-          // Awaited — saveKeys is async in Phase 1 (encrypts at rest + refreshes cache).
-          await saveKeys({
-            accountName: credentials.accountName,
-            activeKey: credentials.keys.active.privateKey,
-            memoKey: credentials.keys.memo.privateKey,
-          });
-
-          // Determine flow from URL param (source of truth from innopay) or fallback to marker
-          // flowParam: '4' = Flow 4 (create account only), '6' = Flow 6 (pay with existing account), '7' = Flow 7 (topup + pay)
-          let currentFlow = flowMarker; // Start with marker
-
-          // Override with explicit flow parameter from innopay (more reliable)
-          if (flowParam === '4') {
-            currentFlow = 'flow4_create_account_only';
-            console.log('[FLOW DETECTION] Explicit flow=4 detected - Flow 4 (create account only)');
-          } else if (flowParam === '6') {
-            currentFlow = 'flow6_pay_with_account';
-            console.log('[FLOW DETECTION] Explicit flow=6 detected - Flow 6 (pay with existing account)');
-          } else if (flowParam === '7') {
-            currentFlow = 'flow7_topup_and_pay';
-            console.log('[FLOW DETECTION] Explicit flow=7 detected - Flow 7 (topup + pay)');
-          }
-
-          console.log('[FLOW DETECTION] Final flow:', currentFlow, '(marker:', flowMarker, ', param:', flowParam, ')');
-
-          // Store balance to localStorage ONLY if NOT Flow 7 (Flow 7 will fetch real balance)
-          if (currentFlow !== 'flow7_topup_and_pay') {
-            localStorage.setItem('innopay_lastBalance', (credentials.euroBalance || 0).toString());
-            console.log('[ACCOUNT CREATED] Stored balance to localStorage:', credentials.euroBalance);
-          } else {
-            console.log('[FLOW 7] Skipping balance storage - will fetch real balance from blockchain');
-          }
-
-          // Handle differently based on flow
-          if (existingAccount === 'true') {
-            // FLOW 5 EXISTING ACCOUNT: Check balance and trigger payment
-            console.log('[EXISTING ACCOUNT] Retrieved credentials for existing account:', credentials.accountName);
-            console.log('[EXISTING ACCOUNT] Balance:', credentials.euroBalance);
-
-            // Update wallet balance state
-            setWalletBalance({
-              accountName: credentials.accountName,
-              euroBalance: credentials.euroBalance
-            });
-
-            // Remove query params from URL while preserving table
-            cleanUrlPreservingTable('EXISTING ACCOUNT');
-
-            // Check if Flow 5 marker exists, update to handover
-            if (currentFlow === 'flow5_create_and_pay') {
-              localStorage.setItem('innopay_flow_pending', 'flow5_existing_account_handover');
-              console.log('[FLOW 5] Marker updated: flow5_create_and_pay -> flow5_existing_account_handover');
-            }
-
-            // Check if payment was already made in innopay (order_success=true)
-            if (orderSuccess === 'true') {
-              console.log('[EXISTING ACCOUNT] Payment already completed in innopay - showing success and clearing cart');
-
-              // Clear cart - order has been paid
-              clearCart();
-
-              // Clear flow marker
-              localStorage.removeItem('innopay_flow_pending');
-
-              // Show MiniWallet with updated balance
-              setShowWalletBalance(true);
-
-              // Show success message
-              setShowPaymentSuccess(true);
-              setTimeout(() => setShowPaymentSuccess(false), 5000);
-
-            } else {
-              // Payment not yet made - auto-trigger payment check after a brief delay
-              setTimeout(() => {
-                const cartTotal = parseFloat(getTotalEurPrice());
-                console.log('[EXISTING ACCOUNT] Cart total:', cartTotal);
-
-                if (credentials.euroBalance >= cartTotal) {
-                  // Sufficient balance - trigger Flow 6 (pay_with_account)
-                  console.log('[EXISTING ACCOUNT] Sufficient balance - triggering Flow 6 payment');
-                  handleOrder();
-                } else {
-                  // Insufficient balance - trigger Flow 7 (pay_with_topup)
-                  console.log('[EXISTING ACCOUNT] Insufficient balance - triggering Flow 7');
-                  // Flow 7 will be triggered by the normal checkout button logic
-                  // which detects insufficient balance
-                  alert('Balance insuffisant. Redirection vers le rechargement...');
-                  // The user will need to click Commander again, which will trigger Flow 7
-                }
-              }, 500);
-            }
-          } else {
-            // Use explicit flow marker for reliable flow detection
-            if (currentFlow === 'flow7_topup_and_pay') {
-              // FLOW 7: Topup with order payment (unified webhook)
-              console.log('[FLOW 7 SUCCESS] Order completed via unified webhook approach');
-              console.log('[FLOW 7 SUCCESS] Account:', credentials.accountName, 'Balance:', credentials.euroBalance);
-
-              // Update wallet balance state with optimistic balance from webhook
-              setWalletBalance({
-                accountName: credentials.accountName,
-                euroBalance: credentials.euroBalance // Will be replaced by real balance from API
-              });
-
-              // Store balance with timestamp to prevent stale cache overwrites
-              localStorage.setItem('innopay_lastBalance', credentials.euroBalance.toString());
-              localStorage.setItem('innopay_lastBalance_timestamp', Date.now().toString());
-
-              // Clear cart - order has been paid
-              clearCart();
-
-              // Clear flow marker - flow is complete
-              localStorage.removeItem('innopay_flow_pending');
-              console.log('[FLOW 7 SUCCESS] Cleared flow marker');
-
-              // Remove query params from URL while preserving table
-              cleanUrlPreservingTable('FLOW 7 COMPLETION');
-
-              // Show success banner
-              handleFlow7Success();
-              console.log('[FLOW 7 SUCCESS] Order paid successfully - cart cleared, balance updated, banner shown');
-
-              // Start post-order pulsing (Level 3 guardrail) — use stored memo from before redirect
-              const storedMemo = localStorage.getItem('innopay_latestMemoContent');
-              if (storedMemo) startOrderPulsing(storedMemo);
-
-              // Trigger balance refresh AFTER all state updates and localStorage writes complete
-              // Increased from 3 to 5 seconds to allow Hive-Engine cache to update
-              setTimeout(() => {
-                console.log('[FLOW 7] Fetching fresh balance from localStorage');
-                const accountName = getAccountName();
-                const lastBalance = localStorage.getItem('innopay_lastBalance');
-                if (accountName && lastBalance) {
-                  setWalletBalance({
-                    accountName,
-                    euroBalance: parseFloat(lastBalance)
-                  });
-                  console.log('[FLOW 7] Balance updated:', lastBalance);
-                }
-              }, 5000); // 5 seconds to allow Hive-Engine cache to update
-
-            } else if (currentFlow === 'flow5_create_and_pay') {
-              // FLOW 5: Create new account with order payment
-              console.log('[FLOW 5 NEW ACCOUNT] Account created - webhook already paid restaurant');
-
-              // The new account still reads 0.00 on Hive-Engine for a few seconds: show the hub's
-              // balance meanwhile, then refetch from the chain (lib/innopay/balance-settle.ts).
-              startBalanceSettling(localStorage, credentials.euroBalance, Date.now());
-
-              // Update wallet balance state
-              setWalletBalance({
-                accountName: credentials.accountName,
-                euroBalance: credentials.euroBalance
-              });
-
-              // Clear cart - order was already paid by webhook
-              clearCart();
-
-              // Clear flow marker - flow is complete
-              localStorage.removeItem('innopay_flow_pending');
-              console.log('[FLOW 5 NEW ACCOUNT] Cart cleared, flow marker removed - order complete');
-
-              // Start post-order pulsing (Level 3 guardrail) — use stored memo from before redirect
-              const storedMemoF5 = localStorage.getItem('innopay_latestMemoContent');
-              if (storedMemoF5) startOrderPulsing(storedMemoF5);
-
-              // Remove query params from URL while preserving table
-              cleanUrlPreservingTable('FLOW 5 NEW ACCOUNT');
-
-              // Show success banner for Flow 5 (create_account_and_pay)
-              setNewAccountCredentials({
-                accountName: credentials.accountName,
-                masterPassword: credentials.masterPassword,
-                euroBalance: credentials.euroBalance,
-              });
-              handleFlow5Success();
-
-            } else if (currentFlow === 'flow4_create_account_only') {
-              // FLOW 4: Create account only (no order)
-              console.log('[FLOW 4] Account created without order - credentials imported');
-              startBalanceSettling(localStorage, credentials.euroBalance, Date.now());
-
-              // Update wallet balance state
-              setWalletBalance({
-                accountName: credentials.accountName,
-                euroBalance: credentials.euroBalance
-              });
-
-              // Show MiniWallet for new users
-              setShowWalletBalance(true);
-
-              // Cart stays intact (no order)
-              console.log('[FLOW 4] Keeping cart intact - no order placed');
-
-              // Remove query params from URL while preserving table
-              cleanUrlPreservingTable('FLOW 4 ACCOUNT CREATED');
-
-              // Show Flow 4 success banner (wallet ready, no order)
-              setFlow4Success(true);
-              console.log('[FLOW 4] Showing Flow 4 success banner - wallet ready');
-
-            } else {
-              // Normal account creation without order (no Flow 5 marker)
-              console.log('[ACCOUNT CREATED] ⚠️ Entered ELSE branch - currentFlow:', currentFlow);                                      
-              console.log('[ACCOUNT CREATED] This will cause page reload in 3 seconds!');     
-              setNewAccountCredentials({
-                accountName: credentials.accountName,
-                masterPassword: credentials.masterPassword,
-                euroBalance: credentials.euroBalance,
-              });
-              setShowAccountCreated(true);
-              setAccountCreationComplete(true); // Mark as complete immediately (blockchain already done)
-
-              // Clear cart since account was created with payment
-              clearCart();
-
-              console.log('[ACCOUNT CREATED] Success banner shown for account:', credentials.accountName);
-
-              // Remove query params from URL while preserving table
-              cleanUrlPreservingTable('ACCOUNT CREATED');
-
-              // Refresh page after 3 seconds to load mini wallet with stored credentials
-              setTimeout(() => {
-                console.log('[ACCOUNT CREATED] Refreshing page to display mini wallet');
-                window.location.reload();
-              }, 3000);
-            }
-          }
-        } catch (error) {
-          console.error('[ACCOUNT CREATED] Error fetching credentials:', error);
-        }
-      };
-
-      fetchCredentials();
-    }
-  }, [searchParams, clearCart, table, handleFlow5Success, handleFlow7Success]);
-
-  // 🔧 DEBUG: Display last URL params from localStorage (persists across page reload)
-  useEffect(() => {
-    const debugLog = localStorage.getItem('innopay_debug_last_params');
-    if (debugLog) {
-      try {
-        const parsed = JSON.parse(debugLog);
-        console.log('🔧 [DEBUG RESTORE] Last URL params before any reload:', parsed);
-      } catch (e) {
-        console.error('🔧 [DEBUG RESTORE] Failed to parse debug log:', e);
-      }
-    }
-  }, []);
-
-
-
-  // Check for topup success return from innopay (Flow 2 - pure topup without order)
-  useEffect(() => {
-    const topupSuccess = searchParams.get('topup_success');
-    const sessionId = searchParams.get('session_id');
-    const amountParam = searchParams.get('amount');
-    const flowParam = searchParams.get('flow');
-    const isFlow4 = flowParam === 'create_account_only';
-
-    console.log('[TOPUP RETURN] Check:', {
-      topupSuccess,
-      sessionId,
-      amountParam,
-      flowParam,
-      cartLength: cart.length
-    });
-
-    if (topupSuccess === 'true') {
-      console.log('[TOPUP RETURN] User returned from successful topup', {
-        hasSessionId: !!sessionId,
-        hasAmount: !!amountParam
-      });
-
-      // If session_id is present, this is create_account_and_pay flow
-      // Fetch credentials and set optimistic balance
-      if (sessionId) {
-        console.log('[TOPUP RETURN] create_account_and_pay flow detected, fetching credentials');
-
-        const fetchCredentialsAndClearCart = async () => {
-          try {
-            const innopayUrl = getInnopayUrl();
-
-            console.log('[TOPUP RETURN] Fetching credentials with session_id:', sessionId);
-            const response = await fetch(`${innopayUrl}/api/account/credentials`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sessionId })
-            });
-
-            if (!response.ok) {
-              console.error('[TOPUP RETURN] Failed to fetch credentials:', response.status);
-              return;
-            }
-
-            const credentials = await response.json();
-            console.log('[TOPUP RETURN] Credentials fetched:', credentials.accountName);
-
-            // Store ONLY active + memo (SPOKE-KEY-SECURITY.md §4) — never the master
-            // password or posting key. saveKeys only writes the fields that are present.
-            // Awaited — saveKeys is async in Phase 1 (encrypts at rest + refreshes cache).
-            await saveKeys({
-              accountName: credentials.accountName,
-              activeKey: credentials.keys?.active?.privateKey,
-              memoKey: credentials.keys?.memo?.privateKey,
-            });
-
-            // Set optimistic balance if amount provided
-            if (amountParam) {
-              const optimisticBalance = parseFloat(amountParam);
-              console.log('[TOPUP RETURN] Setting optimistic balance:', optimisticBalance);
-              // Save to localStorage for persistence
-              localStorage.setItem('innopay_lastBalance', optimisticBalance.toString());
-              setWalletBalance({
-                accountName: credentials.accountName,
-                euroBalance: optimisticBalance
-              });
-            } else {
-              // No amount param - fetch actual balance from API
-              console.log('[TOPUP RETURN] No amount param - setting balance from credentials');
-              // Save credentials balance to localStorage
-              localStorage.setItem('innopay_lastBalance', (credentials.euroBalance || 0).toString());
-              setWalletBalance({
-                accountName: credentials.accountName,
-                euroBalance: credentials.euroBalance || 0
-              });
-            }
-
-            // Show MiniWallet for new users on Flow 4
-            if (isFlow4) {
-              setShowWalletBalance(true);
-            }
-
-            // Clear cart only if this was create_account_and_pay (not Flow 4)
-            if (!isFlow4) {
-              console.log('[TOPUP RETURN] Clearing cart after successful create_account_and_pay');
-              clearCart();
-            } else {
-              console.log('[FLOW 4] create_account_only - keeping cart intact');
-            }
-
-            // Show success banner (Flow 4 vs others)
-            if (isFlow4) {
-              // FLOW 4: Create account only (no order)
-              setFlow4Success(true);
-              console.log('[FLOW 4] Account created successfully, showing Flow 4 success banner');
-            } else {
-              setShowTopupSuccess(true);
-            }
-
-            // Clear params from URL while preserving table
-            cleanUrlPreservingTable('TOPUP RETURN');
-
-            // Fetch fresh balance after topup, then show unified success banner
-            setTimeout(() => {
-              console.log('[TOPUP RETURN] Fetching fresh balance');
-              refetchBalance();
-              setShowTopupSuccess(false);
-              // Show unified success banner after topup banner disappears (not for Flow 4 — already showing its own banner)
-              if (!isFlow4) {
-                console.log('[FLOW 5] Showing unified success banner after topup');
-                setFlow5Success(true);
-              }
-            }, 3000);
-
-          } catch (error) {
-            console.error('[TOPUP RETURN] Error fetching credentials:', error);
-          }
-        };
-
-        fetchCredentialsAndClearCart();
-
-      } else {
-        // ───────────────────────────────────────────────────────────────────────────────
-        // FLOW 7 RETURN: Topup successful, reload to trigger Flow 6 payment
-        // Reference: FLOWS.md lines 197-244 - Step B Auto-pay
-        // Flow 7 marker is already set in sessionStorage before redirect
-        // After reload, the Flow 7 completion useEffect will check conditions and trigger Flow 6
-        // ───────────────────────────────────────────────────────────────────────────────
-        console.log('[TOPUP RETURN] Topup successful - updating balance and reloading');
-
-        // Update optimistic balance from topup
-        if (amountParam) {
-          const topupAmount = parseFloat(amountParam);
-          const currentBalance = parseFloat(localStorage.getItem('innopay_lastBalance') || '0');
-          const newBalance = currentBalance + topupAmount;
-          console.log('[TOPUP RETURN] Updated balance:', {
-            before: currentBalance,
-            topupAmount,
-            after: newBalance
-          });
-          localStorage.setItem('innopay_lastBalance', newBalance.toFixed(2));
-        }
-
-        // Standard topup without pending order (cart will be checked after reload)
-        console.log('[TOPUP RETURN] Reloading page - Flow 7 completion check will run on mount');
-
-        // Show success banner
-        setShowTopupSuccess(true);
-
-        // Clear params from URL while preserving table
-        cleanUrlPreservingTable('TOPUP SUCCESS');
-
-        // Reload page after 2 seconds to refresh wallet balance
-        setTimeout(() => {
-          console.log('[TOPUP RETURN] Reloading page to refresh wallet balance');
-          window.location.reload();
-        }, 2000);
-      }
-    }
-  }, [searchParams, table, clearCart]);
-
-  // ✅ Balance fetching now handled by React Query useBalance hook above (lines 109-122)
-  // Replaced 98 lines of manual fetch logic with automatic caching and smart refetching
-
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // FLOW 7: REMOVED - Now using unified webhook approach
-  // Old flow: topup → return → trigger Flow 6 (ping-pong)
-  // New flow: topup → webhook does everything → return with order_success=true
-  // ═══════════════════════════════════════════════════════════════════════════════
-
-  // Poll for blockchain transaction completion
-  useEffect(() => {
-    if (!showPaymentSuccess || !currentSessionId || blockchainComplete) {
-      return; // Don't poll if banner isn't showing or blockchain is already complete
-    }
-
-    let pollCount = 0;
-    const maxPolls = 60; // Poll for up to 60 seconds (60 polls × 1 second)
-
-    const pollInterval = setInterval(async () => {
-      pollCount++;
-      console.warn(`[BLOCKCHAIN POLL] Attempt ${pollCount}/${maxPolls} for session ${currentSessionId}`);
-
-      try {
-        const innopayUrl = getInnopayUrl();
-
-        const response = await fetch(`${innopayUrl}/api/checkout/status?session_id=${currentSessionId}`);
-
-        if (!response.ok) {
-          console.error('[BLOCKCHAIN POLL] API error:', response.status);
-          return;
-        }
-
-        const data = await response.json();
-        console.warn('[BLOCKCHAIN POLL] Status:', data);
-
-        if (data.isComplete) {
-          console.warn('[BLOCKCHAIN POLL] ✓ Blockchain transactions complete - Flow 6 success!');
-          handleFlow6Success(); // Flow 6: pay_with_account - Show unified success banner (works for Flow 3 guest checkout too)
-          clearCart(); // Clear cart only on successful blockchain completion
-
-          // Start post-order pulsing (Level 3 guardrail) — use stored memo from before checkout
-          const storedMemoF3 = localStorage.getItem('innopay_latestMemoContent');
-          if (storedMemoF3) startOrderPulsing(storedMemoF3);
-          clearInterval(pollInterval);
-
-          // Auto-hide banner after 10 seconds once blockchain is complete
-          setTimeout(() => {
-            console.warn('[PAYMENT SUCCESS] Auto-hiding banner after blockchain completion');
-            setShowPaymentSuccess(false);
-          }, 10000);
-        }
-
-      } catch (error) {
-        console.error('[BLOCKCHAIN POLL] Error:', error);
-      }
-
-      // Stop polling after max attempts
-      if (pollCount >= maxPolls) {
-        console.warn('[BLOCKCHAIN POLL] Timeout - stopped polling after 60 attempts');
-        clearInterval(pollInterval);
-        // Set transmission error flag
-        setTransmissionError(true);
-      }
-    }, 10000); // Poll every 10 seconds
-
-    return () => clearInterval(pollInterval);
-  }, [showPaymentSuccess, currentSessionId, blockchainComplete, handleFlow6Success]);
 
   useEffect(() => {
     // Set the table number in the cart context
@@ -996,85 +386,6 @@ export default function MenuPage() {
     }
   }, []);
 
-  // Drag handlers for wallet banner
-  // Listen for wallet credentials from wallet.innopay.lu
-  useEffect(() => {
-    const handleMessage = async (event: MessageEvent) => {
-      console.log('Received postMessage from:', event.origin, 'data:', event.data);
-
-      // Verify origin for security (allow localhost and local network for testing)
-      const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-      const allowedOrigins = [
-        'https://wallet.innopay.lu',
-        'http://localhost:3000',
-        `http://${currentHost}:3000`, // Dynamic local network support
-      ];
-
-      if (!allowedOrigins.includes(event.origin)) {
-        console.log('Rejected message from unauthorized origin:', event.origin);
-        console.log('Allowed origins:', allowedOrigins);
-        return;
-      }
-
-      // Handle both old and new account creation message types (Flow 4/5 POPUP
-      // variant: wallet.innopay.lu opened via window.open posts credentials back to
-      // window.opener after a freshly created account).
-      if (event.data.type === 'INNOPAY_WALLET_CREATED' || event.data.type === 'INNOPAY_ACCOUNT_CREATED') {
-        const { username, accountName, activeKey, masterPassword, euroBalance } = event.data;
-        const finalUsername = accountName || username; // Support both old and new field names
-        console.log(`[${new Date().toISOString()}] [INDIESMENU] Processing ${event.data.type} message for:`, finalUsername);
-
-        // Persist the account + ACTIVE key through the keystore (active key encrypted at
-        // rest in Phase 1; SPOKE-KEY-SECURITY.md §9). The hub derives + sends the REAL
-        // active key (innopay app/user/page.tsx). DEFENSIVE GUARD: a Hive active WIF
-        // starts with '5'; the auto-generated master password is 'P5…' (starts with 'P').
-        // If we ever receive something that isn't an active WIF — e.g. an un-updated hub
-        // still sending the master password during a staggered deploy — we must NEVER
-        // store it (the owner-deriving secret must not land in localStorage); we set only
-        // the account name and let signing use the seamless innopay-authority fallback.
-        // The display blob holds only { username } (§9.8). masterPassword (if sent) feeds
-        // only the one-time credential-display banner.
-        const looksLikeActiveWif =
-          typeof activeKey === 'string' &&
-          activeKey.startsWith('5') &&
-          activeKey.length >= 50 &&
-          activeKey.length <= 52;
-        if (looksLikeActiveWif) {
-          await saveKeys({ accountName: finalUsername, activeKey });
-        } else {
-          console.warn('[INDIESMENU] postMessage activeKey is not a Hive active WIF — not storing it (un-updated hub?); using innopay-authority fallback for signing.');
-          await saveKeys({ accountName: finalUsername });
-        }
-        setWalletCredentials({ username: finalUsername });
-        saveWalletBlob({ username: finalUsername });
-
-        // Hide wallet notification
-        setShowWalletNotification(false);
-
-        // Show account creation success banners
-        setShowAccountCreated(true);
-        setAccountCreationComplete(false); // Start with yellow banner
-
-        // Store account credentials for display
-        setNewAccountCredentials({
-          accountName: finalUsername,
-          masterPassword: masterPassword || '(stored securely)',
-          euroBalance: euroBalance || 0
-        });
-
-        console.log(`[${new Date().toISOString()}] [INDIESMENU] Wallet credentials stored for ${finalUsername}`);
-
-        // Simulate order transmission completion after 2 seconds (yellow → green transition)
-        setTimeout(() => {
-          setAccountCreationComplete(true);
-        }, 2000);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    console.log('postMessage listener registered');
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
 
   // Don't show wallet notification on page load anymore
   // It will only show when an order fails due to missing protocol handler
@@ -2115,7 +1426,8 @@ export default function MenuPage() {
   }, [pendingHiveUrl]);
 
   // Handle "Créer un compte" button in wallet notification banner
-  const handleCreateAccount = useCallback(() => {
+  // Returns whether it left for the hub (false: duplicate modal), so the banner button un-sinks.
+  const handleCreateAccount = useCallback((): boolean => {
     const baseUrl = typeof window !== 'undefined'
       ? `${getInnopayUrl()}/user`
       : 'https://wallet.innopay.lu/user';
@@ -2156,19 +1468,24 @@ export default function MenuPage() {
     params.set('return_url', returnUrl);
     console.log('[FLOW 5] Return URL set:', returnUrl);
 
-    // Duplicate order check (Level 2 guardrail)
-    if (!skipDuplicateCheckRef.current && checkDuplicateMemo(customMemo)) {
-      console.log('[FLOW 5] Duplicate memo detected, showing warning modal');
-      setShowDuplicateModal(true);
-      return;
+    // Flow 4 (empty cart, no waiter call) creates the account only: no order, so no duplicate
+    // check and no stored memo (a stored memo makes the MiniWallet pulse for a phantom order).
+    if (createAccountCarriesOrder(isCallWaiterFlow, orderAmount)) {
+      // Duplicate order check (Level 2 guardrail)
+      if (!skipDuplicateCheckRef.current && checkDuplicateMemo(customMemo)) {
+        console.log('[FLOW 5] Duplicate memo detected, showing warning modal');
+        setShowDuplicateModal(true);
+        return false;
+      }
+      skipDuplicateCheckRef.current = false;
+      storeMemoBeforeOrder(customMemo);
     }
-    skipDuplicateCheckRef.current = false;
-    storeMemoBeforeOrder(customMemo);
 
     localStorage.setItem('innopay_flow_pending', 'flow5_create_and_pay');
     console.log('[FLOW 5] Set flow marker: flow5_create_and_pay');
 
     window.location.href = `${baseUrl}?${params.toString()}`;
+    return true;
   }, [isCallWaiterFlow, waiterReason, table, recipient, getTotalEurPrice, getDiscountAmount, getMemoWithDistriate]);
 
   // Handle dismissing wallet notification banner
@@ -2184,7 +1501,8 @@ export default function MenuPage() {
       // Waiter flow: skip cart check, show warning modal directly
       setShowGuestWarningModal(true);
     } else {
-      setGuestCheckoutStarted(true);
+      // Only opens the 5% warning modal: the customer may still go back and choose an
+      // account. The guest key sinks in proceedWithGuestCheckout, when the order really leaves.
       handleGuestCheckout();
     }
   }, [handleGuestCheckout, isCallWaiterFlow]);
@@ -2240,7 +1558,7 @@ export default function MenuPage() {
       const returnUrl = `${window.location.origin}/menu?table=${table}`;
 
       console.log('Fetching from:', `${innopayUrl}/api/checkout/guest`);
-      console.log('Request body:', { amountEuro: amountEuroWithFee, recipient: 'indies.cafe', memo: customMemo, returnUrl });
+      console.log('Request body:', { amountEuro: amountEuroWithFee, recipient, memo: customMemo, returnUrl });
 
       // Timeout after 30 seconds to avoid infinite spinner
       const controller = new AbortController();
@@ -2251,7 +1569,8 @@ export default function MenuPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amountEuro: amountEuroWithFee,
-          recipient: 'indies.cafe',
+          // Never hard-code the account: on dev this must be indies-test (NEXT_PUBLIC_HIVE_ACCOUNT).
+          recipient,
           memo: customMemo,
           returnUrl
         }),
@@ -2284,6 +1603,7 @@ export default function MenuPage() {
 
       if (guestCheckoutTimerRef.current) { clearInterval(guestCheckoutTimerRef.current); guestCheckoutTimerRef.current = null; }
       setGuestCheckoutProcessing(false); // Re-enable button on error
+      setGuestCheckoutStarted(false);
       setShowGuestWarningModal(false); // Close modal so user can retry
       const isTimeout = error instanceof DOMException && error.name === 'AbortError';
       const errorDetails = isTimeout
@@ -2291,7 +1611,7 @@ export default function MenuPage() {
         : (error.message || 'Erreur inconnue');
       alert(`${errorDetails}\n\nVeuillez réessayer ou contacter contact@innopay.lu`);
     }
-  }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table, guestCheckoutProcessing, isCallWaiterFlow, waiterReason]);
+  }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table, guestCheckoutProcessing, isCallWaiterFlow, waiterReason, recipient]);
 
 
   const toggleCategory = useCallback((categoryId: number) => {
@@ -2356,7 +1676,7 @@ export default function MenuPage() {
       {/* Wallet Notification Banner — memoized component for fast re-display */}
       {/* !accountName: the banner offers import / create / guest, which only makes sense without
           an account. Its flag can be set on mount before a hub return has saved the new keys. */}
-      {showWalletNotification && !walletCredentials && !accountName && !showPaymentSuccess && !flow4Success && (
+      {showWalletNotification && !walletCredentials && !accountName && !hubReturnShowing && (
         <WalletNotificationBanner
           topOffset={cart.length === 0 && welcomeCarouselHeight > 0
             ? `${totalFixedHeaderHeight + welcomeCarouselHeight}px`
@@ -2378,31 +1698,26 @@ export default function MenuPage() {
 
       {/* Payment progress / transmission error / account-created processing (yellow, grey) */}
       <PaymentProgressBanners
-        showPaymentSuccess={showPaymentSuccess}
-        blockchainComplete={blockchainComplete}
-        transmissionError={transmissionError}
-        showAccountCreated={showAccountCreated}
-        accountCreationComplete={accountCreationComplete}
+        progress={paymentProgress}
         onShowOrder={() => setShowCartComposition(true)}
         onClearOrder={() => {
           clearCart();
-          setShowPaymentSuccess(false);
-          setTransmissionError(false);
+          dispatchPayment({ type: 'DISMISS_BANNER' });
         }}
       />
 
-      {/* UNIFIED Success Banner - Flow 4 (wallet ready) / Flows 5, 6, 7 (order sent) */}
+      {/* Payment failed (e.g. the wallet could not be loaded after a return) */}
+      <PaymentErrorBanner
+        message={paymentState.status === 'error' && paymentState.reason === 'failed' ? paymentState.error : null}
+        onDismiss={() => dispatchPayment({ type: 'DISMISS_BANNER' })}
+      />
+
+      {/* UNIFIED Success Banner - Flow 4 (wallet ready) / Flows 3, 5, 6, 7 (order sent) */}
       <FlowSuccessBanner
-        kind={flow4Success ? 'walletReady' : (flow5Success || flow6Success || flow7Success) ? 'orderSent' : null}
+        kind={paymentState.status === 'success' ? paymentState.banner : flow6Success ? 'orderSent' : null}
         onDismiss={() => {
-          // Clear all flow success states
-          setFlow4Success(false);
-          setFlow5Success(false);
           setFlow6Success(false);
-          setFlow7Success(false);
-          // Also clear the yellow "processing" banner for Flow 3 (guest checkout)
-          setShowPaymentSuccess(false);
-          setBlockchainComplete(true);
+          dispatchPayment({ type: 'DISMISS_BANNER' });
         }}
       />
 
@@ -2461,21 +1776,13 @@ export default function MenuPage() {
         </div>
       )}
 
-      <TopupSuccessBanner
-        show={showTopupSuccess}
-        onDismiss={() => {
-          setShowTopupSuccess(false);
-          setFlow5Success(true);
-          console.log('[TOPUP BANNER] Dismissed manually, showing unified success banner');
-        }}
-      />
-
-      {/* Account Creation Success - Blue Banner (Account Credentials) */}
+      {/* Account Creation Success - Blue Banner (credentials sent by email, Q-R4-1) */}
       <AccountCreatedBanner
-        credentials={showAccountCreated && accountCreationComplete ? newAccountCredentials : null}
+        account={paymentState.status === 'account_created'
+          ? { accountName: paymentState.accountName, euroBalance: paymentState.euroBalance }
+          : null}
         onDismiss={() => {
-          setShowAccountCreated(false);
-          setNewAccountCredentials(null);
+          dispatchPayment({ type: 'DISMISS_BANNER' });
         }}
       />
 
@@ -2532,6 +1839,7 @@ export default function MenuPage() {
           setShowDuplicateModal(false);
           setShowGuestWarningModal(false);
           setGuestCheckoutProcessing(false);
+          setGuestCheckoutStarted(false);
         }}
       />
 
@@ -2564,7 +1872,7 @@ export default function MenuPage() {
         guestTotal={(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)}
         discountLost={getDiscountAmount()}
         onProceed={() => proceedWithGuestCheckout()}
-        onBack={() => setShowGuestWarningModal(false)}
+        onBack={() => { setShowGuestWarningModal(false); setGuestCheckoutStarted(false); }}
       />
 
       {/* Wallet Status Display - Shows when credentials are loaded */}

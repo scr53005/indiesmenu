@@ -10,6 +10,18 @@ export const GUEST_WAITER_FEE_EUR = 1.0;
 /** Guest checkout surcharge on the no-discount price (card fees). */
 export const GUEST_FEE_RATE = 0.05;
 
+/**
+ * Does "Créer un compte" carry something to pay? A waiter call always does; otherwise only a
+ * non-empty cart (Flow 5). With nothing to pay it is Flow 4 (create the account only): no memo may
+ * be stored then, or the MiniWallet pulses for an order that never existed (found 2026-11-07),
+ * and no duplicate-order check, which would compare two empty carts.
+ */
+export function createAccountCarriesOrder(waiterCall: boolean, orderAmount: string): boolean {
+  if (waiterCall) return true;
+  const amount = parseFloat(orderAmount);
+  return Number.isFinite(amount) && amount > 0;
+}
+
 // ── memos ────────────────────────────────────────────────────────────────────
 
 /** `<cart memo> <suffix>`: the format of every order memo (merchant-hub needs the `-inno-` suffix). */

@@ -2,21 +2,30 @@
 // One pure function instead of the four return effects of the old app/menu/page.tsx; the
 // decisions are the same. The hub's return URLs (checked 2026-11-06):
 //   - guest checkout (api/checkout/guest):            payment=success&session_id=… | payment=cancelled
-//   - new account (user/success):                     account_created=true&session_id=…
-//   - imported account (lib/credential-session):      account_created=true&credential_token=…&flow=4
-//   - Flow 5 existing account (execute-order-payment): order_success=true&existing_account=true&credential_token=…&flow=6
+//   - new account (user/success, Flows 4 and 5):      account_created=true&session_id=…
+//   - Flow 4 variant B (lib/credential-session):      account_created=true&credential_token=…&flow=4
+//   (Flow 8, import by email + code, never leaves the page: hooks/useImportAccount.ts.)
+//   - Flow 5 existing account (execute-order-payment): order_success=true&existing_account=true&credential_token=…&flow=6[&optimistic_balance=…]
 //   - Flow 7 (webhooks, checkout/flow7-return):       order_success=true&flow=7&(credential_token=… | session_id=…&credential_pending=true)[&optimistic_balance=…]
-//   - top-up (lib/flows.ts):                           topup_success=true[&session_id=…][&amount=…]
+//   - Flows 4/5 via api/checkout/account:              topup_success=true&session_id=…&amount=…&flow=create_account_only|create_account_and_pay
+//     (despite the param name this is not a top-up: `amount` is the new account's balance)
+// Flows 1 and 2 (create / top up from wallet.innopay.lu) never return to a spoke. A spoke's only
+// top-up is Flow 7 (including variant 5b: a Flow 5 whose email has a known, underfunded wallet).
+// `topup_success` without a session id comes only from a dead hub redirect: ignored.
 // The flow marker is localStorage `innopay_flow_pending`, written just before leaving for the hub.
 
 export const FLOW_MARKER_KEY = 'innopay_flow_pending';
 
+// Flow 5 when the hub already knows the customer's email (an account created earlier at this or
+// another spoke): enough balance → the hub pays at once, like Flow 6 (`existing_account_paid`);
+// too little → variant 5b, a Flow 7 top-up (`flow7_paid`). Flow 4 with a known email imports that
+// account (`flow4_account`, same as a new one). The hub never sends `existing_account` without
+// `order_success` (checked 2026-11-06); if it ever did, the keys are taken as a Flow 4 (cart kept).
 export type CredentialOutcome =
   | 'existing_account_paid'   // Flow 5 with an account the hub already knew; order paid by the hub
-  | 'existing_account_unpaid' // same, but the order still has to be paid here (Flow 6 or 7)
-  | 'flow7_paid'              // top-up + order paid by the webhook
+  | 'flow7_paid'              // top-up + order paid by the webhook (Flow 7, variant 5b)
   | 'flow5_paid'              // new account, order paid by the webhook
-  | 'flow4_account'           // new or imported account, no order
+  | 'flow4_account'           // Flow 4: account created before ordering (iPhone Safari banner), no order
   | 'account_legacy';         // account created with no known flow: old path, the page reloads
 
 export type HubReturn =
@@ -25,9 +34,7 @@ export type HubReturn =
   | { kind: 'guest_paid'; sessionId: string }
   /** Flow 7 with the keys already on this phone: nothing to fetch. */
   | { kind: 'flow7_paid'; optimisticBalance: number | null }
-  | { kind: 'credentials'; outcome: CredentialOutcome; credentialToken: string | null; sessionId: string | null; optimisticBalance: number | null }
-  | { kind: 'topup_credentials'; sessionId: string; amount: number | null; accountOnly: boolean }
-  | { kind: 'topup_only'; amount: number | null };
+  | { kind: 'credentials'; outcome: CredentialOutcome; credentialToken: string | null; sessionId: string | null; optimisticBalance: number | null };
 
 function num(v: string | null): number | null {
   if (v === null || v.trim() === '') return null;
@@ -65,7 +72,7 @@ export function classifyReturn(
       : flowParam === '7' ? 'flow7_topup_and_pay'
       : flowMarker;
     const outcome: CredentialOutcome =
-      existingAccount ? (orderSuccess ? 'existing_account_paid' : 'existing_account_unpaid')
+      existingAccount ? (orderSuccess ? 'existing_account_paid' : 'flow4_account')
       : flow === 'flow7_topup_and_pay' ? 'flow7_paid'
       : flow === 'flow5_create_and_pay' ? 'flow5_paid'
       : flow === 'flow4_create_account_only' ? 'flow4_account'
@@ -73,11 +80,15 @@ export function classifyReturn(
     return { kind: 'credentials', outcome, credentialToken, sessionId, optimisticBalance };
   }
 
-  if (params.get('topup_success') === 'true') {
-    const amount = num(params.get('amount'));
-    return sessionId
-      ? { kind: 'topup_credentials', sessionId, amount, accountOnly: flowParam === 'create_account_only' }
-      : { kind: 'topup_only', amount };
+  // Flow 4 / 5 through api/checkout/account: the webhook created the account (and paid the order).
+  if (params.get('topup_success') === 'true' && sessionId) {
+    return {
+      kind: 'credentials',
+      outcome: flowParam === 'create_account_only' ? 'flow4_account' : 'flow5_paid',
+      credentialToken: null,
+      sessionId,
+      optimisticBalance: num(params.get('amount')),
+    };
   }
 
   return { kind: 'none' };

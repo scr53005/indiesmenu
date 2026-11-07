@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  GUEST_WAITER_FEE_EUR, WAITER_FEE_EUR, accountFlow, createAccountUrl, guestCheckoutRequest,
+  GUEST_WAITER_FEE_EUR, WAITER_FEE_EUR, accountFlow, createAccountCarriesOrder, createAccountUrl, guestCheckoutRequest,
   guestOrderAmount, orderMemo, reconcileBalance, signPayload, topupAndPayUrl, topupDeficit,
   waiterMemo, walletPaymentBody,
 } from './payment-requests';
@@ -9,6 +9,18 @@ const HUB = 'http://localhost:3000';
 const ORIGIN = 'http://192.168.178.55:3001';
 const CART_MEMO = 'd:12,q:2; TABLE 7 ';
 const SUFFIX = 'kcs-inno-ab12-cd34';
+
+// Regression (2026-11-07): Flow 4 with an empty cart stored a memo, so the new MiniWallet pulsed.
+describe('createAccountCarriesOrder', () => {
+  it('empty cart = Flow 4, nothing to pay', () => {
+    expect(createAccountCarriesOrder(false, '0.00')).toBe(false);
+    expect(createAccountCarriesOrder(false, '')).toBe(false);
+  });
+  it('a cart or a waiter call carries a payment', () => {
+    expect(createAccountCarriesOrder(false, '12.50')).toBe(true);
+    expect(createAccountCarriesOrder(true, '0.02')).toBe(true);
+  });
+});
 
 describe('memos', () => {
   it('order memo = cart memo + space + suffix (same as generateDistriatedHiveOp)', () => {

@@ -29,7 +29,7 @@ describe('classifyReturn — one case per hub return URL', () => {
       .toMatchObject({ kind: 'credentials', outcome: 'account_legacy' });
   });
 
-  it('imported account (credential-session, flow=4) wins over a stale marker', () => {
+  it('Flow 4 variant B (credential-session, flow=4) wins over a stale marker', () => {
     expect(classifyReturn(q('credential_token=ct&account_created=true&flow=4'), 'flow5_create_and_pay', false))
       .toMatchObject({ kind: 'credentials', outcome: 'flow4_account', credentialToken: 'ct' });
   });
@@ -37,8 +37,14 @@ describe('classifyReturn — one case per hub return URL', () => {
   it('Flow 5 with an account the hub already knew (execute-order-payment)', () => {
     expect(classifyReturn(q('order_success=true&existing_account=true&credential_token=ct&flow=6&table=7'), 'flow5_create_and_pay', false))
       .toMatchObject({ kind: 'credentials', outcome: 'existing_account_paid' });
+    // Never sent by the hub (2026-11-06); if it were, keep the keys and the cart (nothing paid).
     expect(classifyReturn(q('existing_account=true&credential_token=ct'), 'flow5_create_and_pay', false))
-      .toMatchObject({ kind: 'credentials', outcome: 'existing_account_unpaid' });
+      .toMatchObject({ kind: 'credentials', outcome: 'flow4_account' });
+  });
+
+  it('variant 5b: Flow 5 finds an underfunded account on the hub and returns as Flow 7', () => {
+    expect(classifyReturn(q('table=7&order_success=true&flow=7&session_id=cs&credential_pending=true&optimistic_balance=1.30'), 'flow5_create_and_pay', false))
+      .toEqual({ kind: 'credentials', outcome: 'flow7_paid', credentialToken: null, sessionId: 'cs', optimisticBalance: 1.3 });
   });
 
   it('Flow 7 started on this phone: keys already here, nothing to fetch', () => {
@@ -55,12 +61,15 @@ describe('classifyReturn — one case per hub return URL', () => {
       .toMatchObject({ kind: 'credentials', outcome: 'flow7_paid' });
   });
 
-  it('top-up returns (lib/flows.ts)', () => {
-    expect(classifyReturn(q('topup_success=true&session_id=cs&amount=15'), null, true))
-      .toEqual({ kind: 'topup_credentials', sessionId: 'cs', amount: 15, accountOnly: false });
-    expect(classifyReturn(q('topup_success=true&session_id=cs&flow=create_account_only'), null, false))
-      .toEqual({ kind: 'topup_credentials', sessionId: 'cs', amount: null, accountOnly: true });
-    expect(classifyReturn(q('topup_success=true&amount=10'), null, true)).toEqual({ kind: 'topup_only', amount: 10 });
-    expect(classifyReturn(q('topup_success=true&amount=abc'), null, true)).toEqual({ kind: 'topup_only', amount: null });
+  it('Flows 4/5 via api/checkout/account (topup_success + session): not a top-up', () => {
+    expect(classifyReturn(q('table=7&topup_success=true&session_id=cs&amount=7.5&flow=create_account_and_pay'), null, false))
+      .toEqual({ kind: 'credentials', outcome: 'flow5_paid', credentialToken: null, sessionId: 'cs', optimisticBalance: 7.5 });
+    expect(classifyReturn(q('topup_success=true&session_id=cs&amount=20&flow=create_account_only'), null, false))
+      .toMatchObject({ kind: 'credentials', outcome: 'flow4_account', optimisticBalance: 20 });
+  });
+
+  it('topup_success without a session (dead hub redirect; Flows 1/2 never reach a spoke) is ignored', () => {
+    expect(classifyReturn(q('table=7&topup_success=true'), null, true)).toEqual({ kind: 'none' });
+    expect(classifyReturn(q('topup_success=true&amount=10'), null, true)).toEqual({ kind: 'none' });
   });
 });

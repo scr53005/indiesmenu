@@ -1,15 +1,25 @@
 'use client';
 
 // Yellow "payment in progress" banners and the grey transmission-error banner (extracted from
-// app/menu/page.tsx in R2; markup unchanged).
+// app/menu/page.tsx in R2; markup unchanged). Since R4b they follow the payment state machine
+// (progressOf) instead of five flags.
 import { useI18n } from '@/lib/i18n';
+import type { PaymentState } from '@/lib/innopay/paymentStateMachine';
+
+/** Which yellow banner a state shows. */
+export type PaymentProgress = 'guestPaid' | 'accountCreating' | 'transmissionError' | null;
+
+export function progressOf(state: PaymentState): PaymentProgress {
+  if (state.status === 'processing') {
+    if (state.step === 'awaitingChain') return 'guestPaid';
+    if (state.step === 'accountCreating') return 'accountCreating';
+  }
+  if (state.status === 'error' && state.reason === 'transmission') return 'transmissionError';
+  return null;
+}
 
 interface Props {
-  showPaymentSuccess: boolean;
-  blockchainComplete: boolean;
-  transmissionError: boolean;
-  showAccountCreated: boolean;
-  accountCreationComplete: boolean;
+  progress: PaymentProgress;
   onShowOrder: () => void;
   onClearOrder: () => void;
 }
@@ -18,15 +28,12 @@ function Spinner() {
   return <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-700"></div>;
 }
 
-export default function PaymentProgressBanners({
-  showPaymentSuccess, blockchainComplete, transmissionError, showAccountCreated, accountCreationComplete,
-  onShowOrder, onClearOrder,
-}: Props) {
+export default function PaymentProgressBanners({ progress, onShowOrder, onClearOrder }: Props) {
   const { t } = useI18n();
   return (
     <>
-      {/* Payment Success Banner - Two States */}
-      {showPaymentSuccess && !blockchainComplete && !transmissionError && (
+      {/* Guest paid at Stripe, order on its way to the chain */}
+      {progress === 'guestPaid' && (
         <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">
@@ -41,7 +48,7 @@ export default function PaymentProgressBanners({
       )}
 
       {/* Transmission Error Banner - Shows below yellow payment success */}
-      {showPaymentSuccess && transmissionError && (
+      {progress === 'transmissionError' && (
         <>
           {/* Yellow payment success banner (stays visible) */}
           <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-3 shadow-lg">
@@ -82,7 +89,7 @@ export default function PaymentProgressBanners({
       )}
 
       {/* Account Creation Success - Yellow Banner (Processing) */}
-      {showAccountCreated && !accountCreationComplete && (
+      {progress === 'accountCreating' && (
         <div className="fixed top-0 left-0 right-0 z-[9000] bg-gradient-to-r from-yellow-500 to-yellow-600 text-blue-700 px-4 py-4 shadow-lg">
           <div className="max-w-4xl mx-auto flex items-center justify-center gap-4">
             <div className="flex items-center gap-3">

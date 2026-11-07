@@ -25,6 +25,8 @@ const fr = {
   'payment.showOrder': 'Commande',
   'payment.clearOrder': 'Effacer',
   'payment.accountCreatedPaid': 'Compte créé! Paiement réussi!',
+  // Grey error banner (PaymentErrorBanner)
+  'payment.credentialsFailed': "Paiement reçu, mais votre portefeuille n'a pas pu être chargé. Rechargez la page pour réessayer.",
 
   // Green success banner, flows 4–7
   'success.walletReady': 'Votre portefeuille Innopay est prêt, vous pouvez déjà commander',
@@ -45,16 +47,12 @@ const fr = {
   'kitchen.closedBody': 'La cuisine a fermé à {time} mais vous pouvez commander pour plus tard en utilisant la commande différée 🕔',
   'kitchen.closedBodyEn': 'The kitchen closed at {time} but you can order for later using the delayed order feature 🕔',
 
-  // Top-up success
-  'topup.success': 'Rechargement réussi!',
-  'topup.updatingBalance': 'Mise à jour du solde en cours...',
-
-  // Account created (blue banner with the credentials)
+  // Account created (blue banner; the credentials go by email, decision Q-R4-1)
   'account.createdTitle': 'Compte créé avec succès!',
   'account.orderPreparing': 'Votre commande est en cours de préparation',
   'account.name': 'Compte:',
   'account.balance': 'Solde:',
-  'account.password': 'Mot de passe:',
+  'account.credentialsEmailed': '✉️ Vos identifiants vous ont été envoyés par email.',
   'account.savedHint': '💡 Vos identifiants sont sauvegardés. Vous pouvez commander directement la prochaine fois!',
 
   // Duplicate order modal

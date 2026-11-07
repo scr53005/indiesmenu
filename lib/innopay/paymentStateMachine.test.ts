@@ -43,7 +43,7 @@ describe('paymentReducer', () => {
     const finished: PaymentState[] = [
       { status: 'success', flow: 6, banner: 'orderSent' },
       { status: 'waiter_called', table: '3' },
-      { status: 'account_created', flow: 4, accountName: 'a' },
+      { status: 'account_created', flow: 4, accountName: 'a', euroBalance: 0 },
       { status: 'error', flow: 6, error: 'x', canRetry: true, reason: 'failed' },
     ];
     for (const s of finished) {
@@ -69,8 +69,8 @@ describe('paymentReducer', () => {
   });
 
   it('account creation return ends in account_created', () => {
-    const s = run([{ type: 'RETURN_FROM_HUB', flow: 4 }, { type: 'ACCOUNT_CREATED', accountName: 'test000-000-1' }]);
-    expect(s).toEqual({ status: 'account_created', flow: 4, accountName: 'test000-000-1' });
+    const s = run([{ type: 'RETURN_FROM_HUB', flow: 4 }, { type: 'ACCOUNT_CREATED', accountName: 'test000-000-1', euroBalance: 5 }]);
+    expect(s).toEqual({ status: 'account_created', flow: 4, accountName: 'test000-000-1', euroBalance: 5 });
   });
 
   it('RESET from redirecting (duplicate modal, bfcache restore) and from processing', () => {
