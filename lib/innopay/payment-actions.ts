@@ -18,12 +18,13 @@
 
 import { createEuroTransferOperation } from '../utils';
 import { startBalanceSettling } from './balance-settle';
+import { buildHandoffProof, handoffParams } from './handoff';
 import { customerFacingError } from './customer-error';
 import { FLOW_MARKER_KEY, WAITER_PENDING_KEY } from './payment-return';
 import {
   GUEST_WAITER_FEE_EUR, WAITER_FEE_EUR, accountFlow, createAccountCarriesOrder, createAccountUrl,
-  guestCheckoutRequest, guestOrderAmount, orderMemo, reconcileBalance, signPayload, topupAndPayUrl,
-  waiterMemo, walletPaymentBody,
+  guestCheckoutRequest, guestOrderAmount, orderMemo, reconcileBalance, signPayload, topupWithoutKeyUrl,
+  waiterMemo, walletHandoffUrl, walletPaymentBody,
 } from './payment-requests';
 import type { PaymentEvent } from './paymentStateMachine';
 import type { WalletView } from './apply-return';
@@ -249,10 +250,14 @@ async function leaveForTopup(purchase: Purchase, accountName: string, amount: nu
   // The hub sends the balance after the top-up and the order; the old one is wrong from now on.
   deps.storage.removeItem(LAST_BALANCE_KEY);
   deps.dispatch({ type: 'SWITCH_TO_REDIRECT', flow: 7 });
-  deps.navigate(topupAndPayUrl({
-    hubUrl: deps.hubUrl, origin: deps.origin, table: deps.table, accountName,
-    orderAmount: amount, balance, memo,
-  }));
+  // R4d: prove the wallet with the local active key and let the hub's /wallet-handoff import it
+  // and start the top-up. Without a local key ("mixed" posture) there is nothing to sign with:
+  // the hub's /user page takes the order, like Flow 5.
+  const activeKey = deps.getActiveKey();
+  const common = { hubUrl: deps.hubUrl, origin: deps.origin, table: deps.table, recipient: deps.recipient, orderAmount: amount, memo };
+  deps.navigate(activeKey
+    ? walletHandoffUrl({ ...common, balance, handoff: handoffParams(buildHandoffProof(accountName, activeKey, deps.now())) })
+    : topupWithoutKeyUrl({ ...common, accountName }));
 }
 
 /**

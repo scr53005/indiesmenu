@@ -48,16 +48,6 @@ export function guestOrderAmount(totalNoDiscount: number): number {
   return totalNoDiscount * (1 + GUEST_FEE_RATE);
 }
 
-/**
- * Missing money for Flow 7, rounded UP to the cent so the top-up always covers the order.
- * The cents are cleaned of float noise before rounding up: 12.5 − 3.2 gives 930.0000000000001
- * cents, which the old page code rounded up to 9.31 €.
- */
-export function topupDeficit(orderAmount: number, balance: number): string {
-  const cents = Number(((orderAmount - balance) * 100).toFixed(6));
-  return (Math.ceil(cents) / 100).toFixed(2);
-}
-
 /** Flow 6 when the balance covers the order, Flow 7 (top-up + pay) otherwise. */
 export function accountFlow(balance: number, orderAmount: number): 6 | 7 {
   return balance >= orderAmount ? 6 : 7;
@@ -109,27 +99,49 @@ export function createAccountUrl(p: {
 }
 
 /**
- * Flow 7 (top-up + pay), legacy hub landing page. `order_memo` and `return_url` are encoded once
- * more by URLSearchParams: the hub decodes them twice, keep it that way.
- * (R4d replaces this with the signed /wallet-handoff when a local active key exists.)
+ * Flow 7 (top-up + pay) through the hub's secure /wallet-handoff (R4d, 2026-11-08): the signed
+ * proof (handoff.ts) lets the hub import this wallet and start the Stripe top-up directly. The
+ * hub picks the top-up (the shortfall rounded up to 5 €, at least 15 €). `balance` spares it a
+ * Hive-Engine read. Plain URLSearchParams: the hub decodes each param once.
  */
-export function topupAndPayUrl(p: {
-  hubUrl: string; origin: string; table: string; accountName: string;
-  orderAmount: number; balance: number; memo: string;
+export function walletHandoffUrl(p: {
+  hubUrl: string; origin: string; table: string; recipient: string;
+  orderAmount: number; balance: number; memo: string; handoff: Record<string, string>;
 }): string {
-  const returnUrl = `${p.origin}/menu?table=${p.table}`;
   const params = new URLSearchParams({
-    topup_for: 'order',
-    source: 'indiesmenu',
+    ...p.handoff,
+    restaurant: 'indies',
+    restaurant_account: p.recipient,
     table: p.table,
     order_amount: p.orderAmount.toFixed(2),
-    order_memo: encodeURIComponent(p.memo),
-    deficit: topupDeficit(p.orderAmount, p.balance),
-    account: p.accountName,
+    order_memo: p.memo,
     balance: p.balance.toFixed(2),
-    return_url: encodeURIComponent(returnUrl),
+    return_url: `${p.origin}/menu?table=${p.table}`,
   });
-  return `${p.hubUrl}?${params.toString()}`;
+  return `${p.hubUrl}/wallet-handoff?${params.toString()}`;
+}
+
+/**
+ * Flow 7 without a local active key ("mixed" posture: the key store was cleared): nothing to sign
+ * a proof with, so the customer goes through the hub's /user page with the order, like Flow 5.
+ * There the hub finds the account by email and pays it, or tops it up (variant 5b). Same fallback
+ * as millewee. (Indies used to send the account name to the hub's landing page, which then
+ * handed out that account's keys without any proof.)
+ */
+export function topupWithoutKeyUrl(p: {
+  hubUrl: string; origin: string; table: string; recipient: string; accountName: string;
+  orderAmount: number; memo: string;
+}): string {
+  const params = new URLSearchParams();
+  params.set('restaurant', 'indies');
+  params.set('restaurant_account', p.recipient);
+  params.set('table', p.table);
+  params.set('order_amount', p.orderAmount.toFixed(2));
+  params.set('memo', p.memo);
+  params.set('return_url', `${p.origin}/menu?table=${p.table}`);
+  params.set('account', p.accountName);
+  params.set('topup_for', 'order');
+  return `${p.hubUrl}/user?${params.toString()}`;
 }
 
 /** Flow 6 leg 1: the hub signs with the local active key, or with innopay's authority without one. */

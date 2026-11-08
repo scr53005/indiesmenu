@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PrivateKey, Signature, cryptoUtils } from '@hiveio/dhive';
+import { handoffMessage } from './handoff';
 import {
   payFromAccount, startCreateAccount, startGuestCheckout, type ActionDeps, type Purchase,
 } from './payment-actions';
@@ -9,6 +11,8 @@ const HUB = 'http://hub';
 const ORDER: Purchase = { kind: 'order', amountEuro: '12.50', cartMemo: 'b:7 TABLE 4', noDiscountEuro: '13.00', discount: '0.50' };
 const WAITER: Purchase = { kind: 'waiter', reasonEncoded: 'eau' };
 const NOW = 5_000_000;
+// A real (test-only) active key: the Flow 7 hand-off signs with it.
+const ACTIVE = PrivateKey.fromLogin('alice', 'test-password-not-real', 'active').toString();
 
 /** A canned hub answer, a thrown error, or 'hang': a hub that never answers (until aborted). */
 type Reply = { status?: number; body?: unknown } | Error | 'hang';
@@ -59,7 +63,7 @@ function setup(opts: {
     claimOrder: vi.fn(() => !opts.duplicate),
     navigate: vi.fn(),
     getAccountName: () => (opts.account === undefined ? 'alice' : opts.account),
-    getActiveKey: () => (opts.activeKey === undefined ? '5Kactive' : opts.activeKey),
+    getActiveKey: () => (opts.activeKey === undefined ? ACTIVE : opts.activeKey),
     clearCart: vi.fn(),
     startOrderPulsing: vi.fn(),
     showWallet: vi.fn(),
@@ -75,7 +79,7 @@ describe('payFromAccount: Flow 6', () => {
     const env = setup({ chainBalance: 20 });
     expect(await payFromAccount(ORDER, env.deps)).toBe(true);
     const signed = env.call('/api/sign-and-broadcast')!.body;
-    expect(signed.activePrivateKey).toBe('5Kactive');
+    expect(signed.activePrivateKey).toBe(ACTIVE);
     expect(JSON.parse(signed.operation.json).contractPayload).toMatchObject({ symbol: 'EURO', to: 'innopay', quantity: '12.50', memo: 'b:7 TABLE 4 kcs-inno-abcd-efgh' });
     // The hub appends the reference to orderMemo itself; no EUR/USD rate any more (the hub fetches it).
     expect(env.call('/api/wallet-payment')!.body).toEqual({
@@ -153,7 +157,9 @@ describe('payFromAccount: Flow 6', () => {
 });
 
 describe('payFromAccount: Flow 7 (too little balance)', () => {
-  it('order: memo claimed, marker set, stale balance dropped, off to the hub with the deficit', async () => {
+  // R4d: the secure hand-off. The old landing URL sent `account=` and the hub handed out that
+  // account's keys to anyone; now the URL carries a one-time proof signed with the active key.
+  it('order: memo claimed, marker set, off to /wallet-handoff with a proof the hub can verify', async () => {
     const env = setup({ chainBalance: 3.2, store: { innopay_lastBalance: '3.20' } });
     await payFromAccount(ORDER, env.deps);
     expect(env.deps.claimOrder).toHaveBeenCalledWith('b:7 TABLE 4 kcs-inno-abcd-efgh');
@@ -161,9 +167,29 @@ describe('payFromAccount: Flow 7 (too little balance)', () => {
     expect(env.store.has('innopay_lastBalance')).toBe(false);
     expect(env.state()).toEqual({ status: 'redirecting', flow: 7 });
     const url = new URL((env.deps.navigate as any).mock.calls[0][0]);
-    expect(url.searchParams.get('deficit')).toBe('9.30');
-    expect(url.searchParams.get('account')).toBe('alice');
+    expect(url.pathname).toBe('/wallet-handoff');
+    const p = Object.fromEntries(url.searchParams);
+    expect(p).toMatchObject({
+      handoff_account: 'alice', handoff_ts: String(NOW), restaurant: 'indies', restaurant_account: 'indies-test',
+      table: '4', order_amount: '12.50', order_memo: 'b:7 TABLE 4 kcs-inno-abcd-efgh', balance: '3.20',
+    });
+    // What the hub does (innopay/lib/handoff.ts): the signature recovers to the active public key.
+    const recovered = Signature.fromString(p.handoff_sig)
+      .recover(cryptoUtils.sha256(handoffMessage('alice', NOW, p.handoff_nonce))).toString();
+    expect(recovered).toBe(PrivateKey.fromString(ACTIVE).createPublic().toString());
+    expect(p.handoff_nonce).toMatch(/^[0-9a-f]{32}$/);
+    // Never a private key in the URL.
+    expect(url.toString()).not.toContain(ACTIVE);
     expect(env.call('/api/sign-and-broadcast')).toBeUndefined();
+  });
+
+  it('no local active key (mixed posture): the hub /user page with the order, no proof', async () => {
+    const env = setup({ chainBalance: 3.2, activeKey: null });
+    await payFromAccount(ORDER, env.deps);
+    const url = new URL((env.deps.navigate as any).mock.calls[0][0]);
+    expect(url.pathname).toBe('/user');
+    expect(url.searchParams.get('topup_for')).toBe('order');
+    expect(url.searchParams.has('handoff_sig')).toBe(false);
   });
 
   // Q-R4-2: the waiter call with too little money landed on a hub page that ignored its params.
@@ -173,7 +199,7 @@ describe('payFromAccount: Flow 7 (too little balance)', () => {
     expect(env.store.get(WAITER_PENDING_KEY)).toBe('4');
     const url = new URL((env.deps.navigate as any).mock.calls[0][0]);
     expect(url.searchParams.get('order_amount')).toBe('0.02');
-    expect(decodeURIComponent(url.searchParams.get('order_memo')!)).toBe('Un serveur est appelé n:eau TABLE 4 kcs-inno-abcd-efgh');
+    expect(url.searchParams.get('order_memo')).toBe('Un serveur est appelé n:eau TABLE 4 kcs-inno-abcd-efgh');
   });
 
   it('a Flow 7 order clears a stale waiter flag', async () => {

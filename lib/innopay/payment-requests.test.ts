@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GUEST_WAITER_FEE_EUR, WAITER_FEE_EUR, accountFlow, createAccountCarriesOrder, createAccountUrl, guestCheckoutRequest,
-  guestOrderAmount, orderMemo, reconcileBalance, signPayload, topupAndPayUrl, topupDeficit,
+  guestOrderAmount, orderMemo, reconcileBalance, signPayload, topupWithoutKeyUrl, walletHandoffUrl,
   waiterMemo, walletPaymentBody,
 } from './payment-requests';
 
@@ -43,17 +43,6 @@ describe('amounts', () => {
     expect(guestOrderAmount(20)).toBeCloseTo(21, 10);
   });
 
-  it('top-up deficit is rounded up to the cent', () => {
-    expect(topupDeficit(10, 7.501)).toBe('2.50');
-    expect(topupDeficit(10, 7.494)).toBe('2.51');
-    expect(topupDeficit(0.02, 0)).toBe('0.02');
-  });
-
-  it('top-up deficit ignores float noise (12.5 − 3.2 is not 9.31)', () => {
-    expect(topupDeficit(12.5, 3.2)).toBe('9.30');
-    expect(topupDeficit(0.3, 0.1)).toBe('0.20');
-  });
-
   it('Flow 6 when the balance covers the order, else Flow 7 (also for a 2-cent waiter call)', () => {
     expect(accountFlow(10, 10)).toBe(6);
     expect(accountFlow(9.99, 10)).toBe(7);
@@ -89,13 +78,23 @@ describe('requests', () => {
     expect(withDiscount.searchParams.get('discount')).toBe('1.50');
   });
 
-  it('Flow 7 legacy landing: memo and return_url encoded twice, as the hub expects', () => {
-    const url = new URL(topupAndPayUrl({ hubUrl: HUB, origin: ORIGIN, table: '7', accountName: 'test000-000-067', orderAmount: 12.5, balance: 3.2, memo: 'a b;' }));
-    expect(url.origin + url.pathname).toBe('http://localhost:3000/');
+  // R4d: Flow 7 goes through the hub's secure /wallet-handoff (the hub decodes each param once).
+  it('Flow 7 wallet hand-off: the proof, the order and the balance; no key in the URL', () => {
+    const handoff = { handoff_account: 'alice', handoff_ts: '1', handoff_nonce: 'n', handoff_sig: 's' };
+    const url = new URL(walletHandoffUrl({ hubUrl: HUB, origin: ORIGIN, table: '7', recipient: 'indies-test', orderAmount: 12.5, balance: 3.2, memo: 'a b;', handoff }));
+    expect(url.origin + url.pathname).toBe('http://localhost:3000/wallet-handoff');
     expect(Object.fromEntries(url.searchParams)).toEqual({
-      topup_for: 'order', source: 'indiesmenu', table: '7', order_amount: '12.50',
-      order_memo: 'a%20b%3B', deficit: '9.30', account: 'test000-000-067', balance: '3.20',
-      return_url: encodeURIComponent('http://192.168.178.55:3001/menu?table=7'),
+      ...handoff, restaurant: 'indies', restaurant_account: 'indies-test', table: '7',
+      order_amount: '12.50', order_memo: 'a b;', balance: '3.20', return_url: 'http://192.168.178.55:3001/menu?table=7',
+    });
+  });
+
+  it('Flow 7 without a local active key: the hub /user page with the order (no landing import)', () => {
+    const url = new URL(topupWithoutKeyUrl({ hubUrl: HUB, origin: ORIGIN, table: '7', recipient: 'indies-test', accountName: 'alice', orderAmount: 0.02, memo: 'm' }));
+    expect(url.origin + url.pathname).toBe('http://localhost:3000/user');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      restaurant: 'indies', restaurant_account: 'indies-test', table: '7', order_amount: '0.02', memo: 'm',
+      return_url: 'http://192.168.178.55:3001/menu?table=7', account: 'alice', topup_for: 'order',
     });
   });
 
