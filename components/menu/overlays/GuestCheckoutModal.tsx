@@ -4,6 +4,7 @@
 // without an account (+5 %, discount lost). Extracted from app/menu/page.tsx in R2; markup unchanged.
 import type { ReactNode } from 'react';
 import { Interpolate, useI18n } from '@/lib/i18n';
+import { GUEST_TIMEOUT_MS } from '@/lib/innopay/payment-actions';
 
 interface Props {
   open: boolean;
@@ -31,7 +32,7 @@ export default function GuestCheckoutModal({ open, waiterFlow, processing, secon
       }`}
     >
       {processing
-        ? <>{t('guest.redirecting', { seconds })}<span className="inline-block ml-1 animate-bounce">...</span></>
+        ? <>{t('guest.redirecting', { seconds, max: GUEST_TIMEOUT_MS / 1000 })}<span className="inline-block ml-1 animate-bounce">...</span></>
         : <Interpolate text={t('guest.continuePay')} values={{ amount: <span className="text-red-500">{amount}</span> }} />}
     </button>
   );

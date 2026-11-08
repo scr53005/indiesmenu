@@ -10,7 +10,7 @@ let cleanup: (() => void) | null = null;
 afterEach(() => { cleanup?.(); cleanup = null; vi.useRealTimers(); });
 
 function renderBanner(
-  onCreateAccount: () => boolean | void,
+  onCreateAccount: () => boolean | void | Promise<boolean | void>,
   props: { guestCheckoutStarted?: boolean; importDisabled?: boolean; cartEmpty?: boolean } = {},
 ): HTMLButtonElement {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -86,4 +86,14 @@ it('guest checkout started: the guest key stays sunk; disabled import is flat', 
   expect(guest.className).not.toContain('active:translate-y-');
   const importButton = byText(buttons, /Importer un compte/);
   expect(importButton.className).not.toContain('shadow-[');
+});
+
+// R4c: "Créer un compte" first checks that the hub answers; when it does not, the promise resolves
+// false and the button must spring back (it stayed sunk with "Un instant…").
+it('springs back when the async create resolves false (hub down)', async () => {
+  const button = renderBanner(() => Promise.resolve(false));
+  act(() => button.click());
+  await act(async () => {});
+  expect(button.textContent).toContain('Créer un compte');
+  expect(button.getAttribute('aria-busy')).toBe('false');
 });

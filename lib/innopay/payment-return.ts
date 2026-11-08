@@ -15,6 +15,11 @@
 // The flow marker is localStorage `innopay_flow_pending`, written just before leaving for the hub.
 
 export const FLOW_MARKER_KEY = 'innopay_flow_pending';
+/**
+ * Set (to the table) when a waiter call leaves for the hub (Flows 3, 5, 7; payment-actions.ts):
+ * its return keeps the cart and shows the waiter banner instead of "order sent".
+ */
+export const WAITER_PENDING_KEY = 'innopay_waiter_call_pending';
 
 // Flow 5 when the hub already knows the customer's email (an account created earlier at this or
 // another spoke): enough balance → the hub pays at once, like Flow 6 (`existing_account_paid`);

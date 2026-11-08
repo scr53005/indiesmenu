@@ -17,11 +17,12 @@
 //     Flows 4/5 (the old page showed "Rechargement réussi" and reloaded: it took them for top-ups).
 
 import { SETTLE_MS, startBalanceSettling } from './balance-settle';
-import { FLOW_MARKER_KEY, type CredentialOutcome, type HubReturn } from './payment-return';
+import { FLOW_MARKER_KEY, WAITER_PENDING_KEY, type CredentialOutcome, type HubReturn } from './payment-return';
 import type { FlowType, PaymentEvent } from './paymentStateMachine';
 
 /** The memo stored before leaving for the hub (lib/utils storeMemoBeforeOrder); feeds the pulse. */
 export const LATEST_MEMO_KEY = 'innopay_latestMemoContent';
+const LATEST_MEMO_TIME_KEY = 'innopay_latestMemoDateTime';
 const LAST_BALANCE_KEY = 'innopay_lastBalance';
 
 /** The legacy account return reloads the page so the wallet appears (old page: 3 s). */
@@ -68,16 +69,24 @@ export function flowOfOutcome(outcome: CredentialOutcome): FlowType {
   }
 }
 
-function pulseStoredOrder(deps: ReturnDeps): void {
-  const memo = deps.storage.getItem(LATEST_MEMO_KEY);
-  if (memo) deps.startOrderPulsing(memo);
-}
-
-/** The order was paid by the hub: empty the cart (state + storage) and end the flow. */
-function orderDone(deps: ReturnDeps): void {
+/**
+ * The hub has paid what the customer left for. A waiter call (WAITER_PENDING_KEY, R4c) keeps the
+ * cart and shows the waiter banner; an order empties the cart, shows "order sent" and pulses.
+ * Exported for the guest poll in usePaymentReturn.
+ */
+export function finishPaid(deps: Pick<ReturnDeps, 'dispatch' | 'storage' | 'clearCart' | 'startOrderPulsing'>): void {
+  const waiterTable = deps.storage.getItem(WAITER_PENDING_KEY);
+  deps.storage.removeItem(FLOW_MARKER_KEY);
+  if (waiterTable !== null) {
+    deps.storage.removeItem(WAITER_PENDING_KEY);
+    deps.dispatch({ type: 'WAITER_CALLED', table: waiterTable });
+    return;
+  }
   deps.clearCart();
   deps.storage.setItem('cart', '[]');
-  deps.storage.removeItem(FLOW_MARKER_KEY);
+  deps.dispatch({ type: 'PAYMENT_SUCCESS', banner: 'orderSent' });
+  const memo = deps.storage.getItem(LATEST_MEMO_KEY);
+  if (memo) deps.startOrderPulsing(memo);
 }
 
 function balanceOf(value: number | null | undefined): number {
@@ -120,7 +129,13 @@ export async function applyHubReturn(ret: HubReturn, deps: ReturnDeps): Promise<
       return;
 
     case 'cancelled':
-      // Stripe "back": nothing was paid, the cart is still there.
+      // Stripe "back": nothing was paid, the cart is still there. Forget the order stored before
+      // leaving (R4c): otherwise the MiniWallet pulses for it for up to 2 h, and paying the same
+      // cart again at once trips the duplicate-order modal.
+      deps.storage.removeItem(LATEST_MEMO_KEY);
+      deps.storage.removeItem(LATEST_MEMO_TIME_KEY);
+      deps.storage.removeItem(WAITER_PENDING_KEY);
+      deps.storage.removeItem(FLOW_MARKER_KEY);
       deps.cleanUrl();
       return;
 
@@ -133,7 +148,6 @@ export async function applyHubReturn(ret: HubReturn, deps: ReturnDeps): Promise<
     case 'flow7_paid': {
       // Flow 7 started on this phone: the keys are already here.
       deps.dispatch({ type: 'RETURN_FROM_HUB', flow: 7 });
-      orderDone(deps);
       const accountName = deps.getAccountName();
       if (accountName && ret.optimisticBalance !== null) {
         settle(deps, accountName, ret.optimisticBalance);
@@ -141,8 +155,7 @@ export async function applyHubReturn(ret: HubReturn, deps: ReturnDeps): Promise<
         // No balance from the hub: read the chain once it has the top-up.
         deps.later(deps.refetchBalance, SETTLE_MS);
       }
-      deps.dispatch({ type: 'PAYMENT_SUCCESS', banner: 'orderSent' });
-      pulseStoredOrder(deps);
+      finishPaid(deps);
       deps.cleanUrl();
       return;
     }
@@ -176,17 +189,13 @@ async function applyCredentialReturn(
         deps.refetchBalance();
         deps.later(deps.refetchBalance, SETTLE_MS);
       }
-      orderDone(deps);
-      deps.dispatch({ type: 'PAYMENT_SUCCESS', banner: 'orderSent' });
-      pulseStoredOrder(deps);
+      finishPaid(deps);
       break;
 
     case 'flow5_paid':
     case 'flow7_paid':
       settle(deps, accountName, newBalance);
-      orderDone(deps);
-      deps.dispatch({ type: 'PAYMENT_SUCCESS', banner: 'orderSent' });
-      pulseStoredOrder(deps);
+      finishPaid(deps);
       break;
 
     case 'flow4_account':

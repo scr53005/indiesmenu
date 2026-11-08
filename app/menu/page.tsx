@@ -18,7 +18,7 @@ import { useImportAccount } from '@/hooks/useImportAccount';
 import PaymentProgressBanners, { progressOf } from '@/components/menu/overlays/PaymentProgressBanners';
 import PaymentErrorBanner from '@/components/menu/overlays/PaymentErrorBanner';
 import { usePaymentReturn } from '@/hooks/usePaymentReturn';
-import { initialPaymentState, paymentReducer } from '@/lib/innopay/paymentStateMachine';
+import { initialPaymentState, isBusy, paymentReducer } from '@/lib/innopay/paymentStateMachine';
 import { FlowSuccessBanner, WaiterCalledBanner } from '@/components/menu/overlays/SuccessBanners';
 import { KitchenClosedBanner, RestaurantClosedPopup } from '@/components/menu/overlays/ClosedNotices';
 import AccountCreatedBanner from '@/components/menu/overlays/AccountCreatedBanner';
@@ -30,12 +30,12 @@ import WalletStatusBar from '@/components/menu/overlays/WalletStatusBar';
 import { CallWaiterModal, WaiterRequestedStrip } from '@/components/menu/overlays/CallWaiterOverlays';
 import CartCompositionModal from '@/components/menu/overlays/CartCompositionModal';
 import BottomBanner from '@/components/ui/BottomBanner';
-import { createAccountCarriesOrder } from '@/lib/innopay/payment-requests';
-import { getLatestEurUsdRate, getInnopayUrl, createEuroTransferOperation, signAndBroadcastOperation, encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart, distriate } from '@/lib/utils';
+import { usePaymentFlow } from '@/hooks/usePaymentFlow';
+import type { Purchase } from '@/lib/innopay/payment-actions';
+import { encodeComment, checkDuplicateMemo, storeMemoBeforeOrder, getMemoFixedPart } from '@/lib/utils';
 import { isKitchenOpen, getKitchenCloseTime, isRestaurantOpen, getNextOpenDay } from '@/lib/config/kitchen-hours';
 import {
   getAccountName,
-  getActiveKey,
   loadWalletBlob,
   purgeForbidden,
   clearCredentials,
@@ -58,7 +58,7 @@ import { defaultMenuSection, groupMenu, luxembourgMinutes } from '@/lib/data/gro
 const MENU_SELECTOR_HEIGHT = 73;
 
 export default function MenuPage() {
-  const { cart, table, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, getMemoWithDistriate, setTable, updateComment, delayedTiming, setDelayedTiming } = useCart();
+  const { cart, table, addItem, removeItem, updateQuantity, clearCart, orderNow, callWaiter, getTotalItems, getTotalPrice, getTotalEurPrice, getTotalEurPriceNoDiscount, getDiscountAmount, getMemo, setTable, updateComment, delayedTiming, setDelayedTiming } = useCart();
   // Server-rendered menu (app/menu/layout.tsx); null only when the server could not load it.
   const initialMenu = useInitialMenu();
   // Customer language (lib/i18n): always 'fr' until R5 adds en/lb to SUPPORTED_LANGUAGES.
@@ -122,10 +122,6 @@ export default function MenuPage() {
 
   // Guest checkout button click state (for visual feedback while Stripe initializes)
   const [guestCheckoutStarted, setGuestCheckoutStarted] = useState(false);
-  // Prevents double-click on the guest checkout confirm button (duplicate Stripe sessions)
-  const [guestCheckoutProcessing, setGuestCheckoutProcessing] = useState(false);
-  const [guestCheckoutSeconds, setGuestCheckoutSeconds] = useState(0);
-  const guestCheckoutTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Restaurant / kitchen closed states
   const [isRestaurantClosed, setIsRestaurantClosed] = useState(false);
@@ -179,10 +175,6 @@ export default function MenuPage() {
       setShowWalletBalance(true);
     }
   }, [balance, accountName]);
-
-  // Flow 6 and waiter successes stay flags until R4c moves those buttons onto the machine.
-  const [flow6Success, setFlow6Success] = useState(false); // pay_with_account
-  const [waiterCalledSuccess, setWaiterCalledSuccess] = useState(false); // call_waiter
 
   // Flow 6 cooldown: prevent ordering before blockchain finalizes previous payment
   const [flow6Cooldown, setFlow6Cooldown] = useState(0); // seconds remaining
@@ -270,19 +262,29 @@ export default function MenuPage() {
     writeSpendRubisFirst(localStorage, value);
   }, []);
 
-  // State for order processing timer
-  const [orderProcessing, setOrderProcessing] = useState(false);
-  // Leaving for the hub/Stripe (Flow 7): the order button says "Veuillez patienter…".
-  const [redirecting, setRedirecting] = useState(false);
+  // A payment is running (the machine says which): the order button is frozen and shows the
+  // seconds since the tap, like the guest modal.
+  const paymentBusy = isBusy(paymentState);
+  const [busySeconds, setBusySeconds] = useState(0);
   useEffect(() => {
-    // Back button from the hub: Safari/Chrome restore this page from memory (bfcache) with its
-    // state frozen, so un-freeze the button or it would stay on "Veuillez patienter…".
-    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) setRedirecting(false); };
+    if (!paymentBusy) return;
+    setBusySeconds(0);
+    const timer = setInterval(() => setBusySeconds((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, [paymentBusy]);
+  useEffect(() => {
+    // Back button from the hub / Stripe: Safari/Chrome restore this page from memory (bfcache)
+    // with its state frozen, so un-freeze the button or it would stay on "Veuillez patienter…".
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) dispatchPayment({ type: 'RESET' }); };
     window.addEventListener('pageshow', onPageShow);
     return () => window.removeEventListener('pageshow', onPageShow);
   }, []);
-  const [orderElapsedSeconds, setOrderElapsedSeconds] = useState(0);
-  const orderTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // The waiter banner goes after 15 s, as before.
+  useEffect(() => {
+    if (paymentState.status !== 'waiter_called') return;
+    const timer = setTimeout(() => dispatchPayment({ type: 'DISMISS_BANNER' }), 15_000);
+    return () => clearTimeout(timer);
+  }, [paymentState.status]);
 
   // State for header carousel
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -291,16 +293,9 @@ export default function MenuPage() {
     '/images/indiesExt1600x878.jpg'
   ];
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (orderTimerRef.current) {
-        clearInterval(orderTimerRef.current);
-      }
-      if (guestCheckoutTimerRef.current) {
-        clearInterval(guestCheckoutTimerRef.current);
-      }
-    };
+  const showWallet = useCallback((wallet: { accountName: string; euroBalance: number }) => {
+    setWalletBalance(wallet);
+    setShowWalletBalance(true);
   }, []);
 
   // Returns from the hub / Stripe and the popup hand-off (hooks/usePaymentReturn.ts; what each
@@ -310,7 +305,7 @@ export default function MenuPage() {
     dispatch: dispatchPayment,
     clearCart,
     startOrderPulsing,
-    showWallet: (wallet) => { setWalletBalance(wallet); setShowWalletBalance(true); },
+    showWallet,
     refetchBalance,
     cleanUrl: () => cleanUrlPreservingTable('PAYMENT RETURN'),
     onWalletConnected: (username) => {
@@ -318,6 +313,44 @@ export default function MenuPage() {
       setShowWalletNotification(false);
     },
   });
+
+  // Duplicate-order guard (Level 2): the same order less than 15 min ago opens the modal; its
+  // "order anyway" sets skipDuplicateCheckRef for one retry. Otherwise the memo is stored for the pulse.
+  const claimOrder = useCallback((memo: string): boolean => {
+    if (!skipDuplicateCheckRef.current && checkDuplicateMemo(memo)) {
+      setShowDuplicateModal(true);
+      return false;
+    }
+    skipDuplicateCheckRef.current = false;
+    storeMemoBeforeOrder(memo);
+    return true;
+  }, []);
+
+  // Outgoing payments (hooks/usePaymentFlow.ts; what each flow does is in
+  // lib/innopay/payment-actions.ts).
+  const paymentFlow = usePaymentFlow({
+    state: paymentState,
+    dispatch: dispatchPayment,
+    table,
+    recipient,
+    claimOrder,
+    clearCart,
+    startOrderPulsing,
+    showWallet,
+  });
+  // What is being paid, read from the cart at tap time.
+  const purchaseOf = useCallback((waiter: boolean, reason?: string | null): Purchase => (waiter
+    ? { kind: 'waiter', reasonEncoded: reason?.trim() ? encodeComment(reason.trim()) : '' }
+    : {
+      kind: 'order',
+      amountEuro: getTotalEurPrice(),
+      cartMemo: getMemo(),
+      noDiscountEuro: getTotalEurPriceNoDiscount(),
+      discount: getDiscountAmount(),
+    }), [getTotalEurPrice, getMemo, getTotalEurPriceNoDiscount, getDiscountAmount]);
+  // Guest modal: its "pay" button spins while the Stripe session is being created.
+  const guestCheckoutProcessing = paymentState.status === 'redirecting' && paymentState.flow === 3;
+
   const paymentProgress = progressOf(paymentState);
   // A hub return is being shown: the "create an account" banner must stay out of the way.
   const hubReturnShowing = paymentState.status === 'processing' || paymentState.status === 'success'
@@ -560,234 +593,11 @@ export default function MenuPage() {
       return;
     }
 
-    // Check if user has a wallet (SPOKE-KEY-SECURITY.md): only active + memo are stored.
-    const accountName = getAccountName();
-    const activeKey = getActiveKey();
-
-    // Call waiter parameters (0.02 EURO tokens, special memo)
-    const callWaiterAmount = 0.02;
-    const reasonEncoded = reason?.trim() ? ` n:${encodeComment(reason.trim())}` : '';
-    // A fresh `-inno-` reference, like every order: merchant-hub only forwards memos containing
-    // `-inno-`, and the hub's /api/wallet-payment (security fix 2026-11-02) pays the restaurant
-    // only if the customer's transfer memo contains the `distriateSuffix` it is given. With the
-    // bare literal '-inno-' as suffix and no reference in the memo, every wallet waiter call was
-    // refused ("transfer memo does not reference this order"), found 2026-11-05.
-    const { distriate } = await import('@/lib/utils');
-    const waiterSuffix = distriate();
-    const callWaiterMemo = `Un serveur est appelé${reasonEncoded} ${table ? `TABLE ${table} ` : ''}${waiterSuffix}`;
-
-    console.log('[CALL WAITER] Order details:', {
-      hasAccount: !!accountName,
-      hasActiveKey: !!activeKey,
-      amount: callWaiterAmount,
-      memo: callWaiterMemo
-    });
-
-    // "Mixed" posture: an account is enough — if the local active key is absent
-    // (e.g. evicted store) we sign via the seamless innopay-authority fallback below.
-    if (accountName) {
-      // User has credentials - pay with EURO tokens (pay_with_account or pay_with_topup flow)
-      console.log('[CALL WAITER] Customer has credentials, initiating EURO token payment');
-
-      // Start timer
-      setOrderProcessing(true);
-      setOrderElapsedSeconds(0);
-      orderTimerRef.current = setInterval(() => {
-        setOrderElapsedSeconds(prev => prev + 1);
-      }, 1000);
-
-      try {
-        // Get balance from React Query cache (already fetched by useBalance hook)
-        console.log('[CALL WAITER] Getting EURO balance for:', accountName);
-
-        // Use cached balance from useBalance hook, fallback to localStorage
-        let euroBalance = balance ?? 0;
-        if (euroBalance === 0) {
-          const optimisticBalanceStr = localStorage.getItem('innopay_lastBalance');
-          if (optimisticBalanceStr) {
-            euroBalance = parseFloat(optimisticBalanceStr);
-            console.log('[CALL WAITER] Using fallback localStorage balance:', euroBalance);
-          }
-        } else {
-          console.log('[CALL WAITER] Using cached balance from React Query:', euroBalance);
-        }
-
-        console.log('[CALL WAITER] Customer EURO balance:', euroBalance);
-
-        if (euroBalance >= callWaiterAmount) {
-          // CALL WAITER: Typical FLOW 6 architecture (0.02€ with special memo to restaurant)
-          // This IS a complete payment flow - restaurant must receive the transfer to trigger waiter
-          console.log('[CALL WAITER] Sufficient balance, using FLOW 6 architecture');
-
-          // 1. Get EUR/USD rate
-          const today = new Date();
-          const rateData = await getLatestEurUsdRate(today);
-          const eurUsdRate = rateData.conversion_rate;
-          console.log('[CALL WAITER] EUR/USD rate:', eurUsdRate, 'isFresh:', rateData.isFresh);
-
-          // 2. Import necessary functions
-          const { createEuroTransferOperation } = await import('@/lib/utils');
-
-          // 3. Create EURO transfer operation (customer → innopay)
-          // No distriate suffix needed for call waiter - use memo directly
-          const euroOp = createEuroTransferOperation(
-            accountName,
-            'innopay',
-            callWaiterAmount.toFixed(2),  // Convert to string
-            callWaiterMemo  // Full memo, not a suffix
-          );
-
-          console.log('[CALL WAITER] Payment details:', {
-            amount: callWaiterAmount,
-            memo: callWaiterMemo,
-            eurUsdRate
-          });
-
-          // 4. Sign and broadcast EURO transfer via innopay API
-          const innopaySignUrl = getInnopayUrl();
-
-          const signPayload: any = {
-            operation: euroOp,
-          };
-
-          if (activeKey) {
-            signPayload.activePrivateKey = activeKey;
-            console.log('[CALL WAITER] Sending active key (hub falls back to innopay authority on authority error)');
-          } else {
-            // No local active key → seamless innopay-authority fallback (mixed posture).
-            signPayload.useInnopayAuthority = true;
-            signPayload.accountName = accountName;
-            console.log('[CALL WAITER] No local active key — requesting innopay-authority signing');
-          }
-
-          const signResponse = await fetch(`${innopaySignUrl}/api/sign-and-broadcast`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(signPayload)
-          });
-
-          if (!signResponse.ok) {
-            const errorData = await signResponse.json();
-            throw new Error(errorData.message || 'Signing failed');
-          }
-
-          const signResult = await signResponse.json();
-          const customerTxId = signResult.txId;
-          const usedFallback = signResult.usedFallback;
-
-          if (usedFallback) {
-            console.log('[CALL WAITER] EURO transfer successful using innopay authority (fallback)! TX:', customerTxId);
-          } else {
-            console.log('[CALL WAITER] EURO transfer successful with user key! TX:', customerTxId);
-          }
-
-          // 5. Update mini-wallet balance after successful EURO transfer
-          const newBalance = euroBalance - callWaiterAmount;
-          console.log('[CALL WAITER] Updating wallet balance from', euroBalance, 'to', newBalance);
-          setWalletBalance({
-            accountName,
-            euroBalance: parseFloat(newBalance.toFixed(2))
-          });
-
-          // Update localStorage optimistically (instant UI update)
-          localStorage.setItem('innopay_lastBalance', newBalance.toFixed(2));
-          localStorage.setItem('innopay_lastBalance_timestamp', Date.now().toString());
-
-          // Force immediate fresh balance fetch from blockchain
-          console.log('[CALL WAITER] Triggering fresh balance fetch from blockchain...');
-          refetchBalance();
-
-          // 6. Call innopay API to execute transfer to restaurant (innopay → restaurant)
-          // This is CRITICAL - restaurant must receive the transfer with memo to trigger waiter
-          const innopayUrl = getInnopayUrl();
-          console.log('[CALL WAITER] Calling wallet-payment API to forward to restaurant...');
-
-          const paymentPayload = {
-            customerAccount: accountName,
-            customerTxId: customerTxId,
-            recipient: process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe',
-            amountEuro: callWaiterAmount,
-            eurUsdRate: eurUsdRate,
-            orderMemo: callWaiterMemo,
-            distriateSuffix: waiterSuffix  // the reference inside callWaiterMemo (hub checks it)
-          };
-
-          console.log('[CALL WAITER] Payment payload:', paymentPayload);
-
-          const response = await fetch(`${innopayUrl}/api/wallet-payment`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(paymentPayload)
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[CALL WAITER] wallet-payment API error:', response.status, errorText);
-
-            // Stop timer on API error
-            if (orderTimerRef.current) {
-              clearInterval(orderTimerRef.current);
-            }
-            setOrderProcessing(false);
-            throw new Error('Failed to forward payment to restaurant');
-          }
-
-          const result = await response.json();
-          console.log('[CALL WAITER] Payment forwarded to restaurant!', result);
-
-          // Stop timer and show waiter called success (NO cart clearing for call waiter)
-          if (orderTimerRef.current) {
-            clearInterval(orderTimerRef.current);
-          }
-          setOrderProcessing(false);
-          setWaiterCalledSuccess(true);
-
-          // Hide after 15 seconds
-          setTimeout(() => {
-            setWaiterCalledSuccess(false);
-          }, 15000);
-
-        } else {
-          // ───────────────────────────────────────────────────────────────────────────────
-          // CALL WAITER: Insufficient balance → redirect to topup (TO BE REFACTORED LATER)
-          // Note: This is NOT the main pay_with_topup flow (that's at line 1121)
-          // TODO: Refactor to use consistent API approach like main checkout flow
-          // ───────────────────────────────────────────────────────────────────────────────
-          console.log('[CALL WAITER] Insufficient balance, redirecting to top-up');
-
-          // Stop timer
-          if (orderTimerRef.current) {
-            clearInterval(orderTimerRef.current);
-          }
-          setOrderProcessing(false);
-
-          // Calculate top-up amount needed
-          const topupNeeded = callWaiterAmount - euroBalance;
-          console.log('[CALL WAITER] Top-up needed:', topupNeeded);
-
-          // Redirect to Innopay for top-up with order details
-          const innopayUrl = getInnopayUrl();
-          const params = new URLSearchParams();
-          params.set('table', table);
-          params.set('order_amount', callWaiterAmount.toString());
-          params.set('memo', callWaiterMemo);
-
-          window.location.href = `${innopayUrl}/?${params.toString()}`;
-        }
-
-      } catch (error) {
-        console.error('[CALL WAITER] Error:', error);
-
-        // Stop timer
-        if (orderTimerRef.current) {
-          clearInterval(orderTimerRef.current);
-        }
-        setOrderProcessing(false);
-
-        alert('Erreur lors du paiement. Veuillez réessayer.');
-      }
-
-    } else {
+    // An account on this phone pays the 0.02 €: Flow 6, or Flow 7 when the balance is short
+    // (lib/innopay/payment-actions.ts). Without a local active key the hub signs with innopay's
+    // authority ("mixed" posture).
+    const paidFromAccount = await paymentFlow.payFromAccount(purchaseOf(true, reason));
+    if (!paidFromAccount) {
       // No credentials - show wallet notification (create_account_and_pay flow)
       console.log('[CALL WAITER] No credentials, showing wallet notification');
 
@@ -825,7 +635,7 @@ export default function MenuPage() {
         }
       }
     }
-  }, [table, callWaiter, walletCredentials, getInnopayUrl]);
+  }, [isRestaurantClosed, paymentFlow, purchaseOf, callWaiter, walletCredentials]);
 
   const handleOrder = useCallback(async () => {
     if (cart.length === 0) {
@@ -846,391 +656,14 @@ export default function MenuPage() {
       return;
     }
 
-    // Check if user has a wallet (SPOKE-KEY-SECURITY.md): only active + memo are stored.
-    const accountName = getAccountName();
-    const activeKey = getActiveKey();
-
-    console.log('[WALLET PAYMENT] Checking credentials:', {
-      hasAccount: !!accountName,
-      hasActiveKey: !!activeKey
-    });
-
-    // "Mixed" posture: an account is enough — a missing local active key is signed
-    // via the seamless innopay-authority fallback below.
-    if (accountName) {
-      // ═════════════════════════════════════════════════════════════════════════
-      // FLOW 6 & 7 ENTRY POINT - EXISTING ACCOUNT PAYMENT (Nov 2025)
-      // ═════════════════════════════════════════════════════════════════════════
-      // User has credentials → Check balance → Route to Flow 6 or Flow 7
-      // Flow 6 (sufficient balance): Direct payment with dual-currency system
-      // Flow 7 (insufficient balance): Redirect to innopay for topup
-      // Reference: lib/flows.ts, FLOWS.md lines 148-244
-      // ═════════════════════════════════════════════════════════════════════════
-      console.log('[WALLET PAYMENT] Customer has credentials, initiating EURO token payment');
-
-      // Block during Flow 6 cooldown (blockchain hasn't finalized yet)
-      if (flow6Cooldown > 0) {
-        console.log('[WALLET PAYMENT] Blocked — Flow 6 cooldown active:', flow6Cooldown, 's remaining');
-        return;
-      }
-
-      // Start timer
-      setOrderProcessing(true);
-      setOrderElapsedSeconds(0);
-      orderTimerRef.current = setInterval(() => {
-        setOrderElapsedSeconds(prev => prev + 1);
-      }, 1000);
-
-      try {
-        // 1. Get cart total first
-        const amountEuro = getTotalEurPrice();
-        const amountEuroNum = parseFloat(amountEuro);
-
-        // alert('Étape 1: Vérification du solde EURO...');
-        // 2. Check customer's EURO token balance using robust API strategy
-        console.log('[WALLET PAYMENT] Checking EURO balance for:', accountName);
-
-        // Get optimistic balance from localStorage
-        let currentEuroBalance = 0;
-        const optimisticBalanceStr = localStorage.getItem('innopay_lastBalance');
-        if (optimisticBalanceStr) {
-          currentEuroBalance = parseFloat(optimisticBalanceStr);
-          console.log('[WALLET PAYMENT] Optimistic balance:', currentEuroBalance);
-        }
-
-        // Try to get real balance from API
-        try {
-          const response = await fetch(`/api/balance/euro?account=${encodeURIComponent(accountName)}`);
-          if (response.ok) {
-            const data = await response.json();
-            const apiBalance = data.balance;
-
-            // Validate against optimistic balance (±1 EUR tolerance)
-            if (optimisticBalanceStr) {
-              const roundedApi = Math.round(apiBalance);
-              const roundedOptimistic = Math.round(currentEuroBalance);
-              if (Math.abs(roundedApi - roundedOptimistic) <= 1) {
-                console.log('[WALLET PAYMENT] API balance validates optimistic balance');
-              } else {
-                currentEuroBalance = apiBalance;
-                console.log('[WALLET PAYMENT] Updated to API balance:', currentEuroBalance);
-              }
-            } else {
-              currentEuroBalance = apiBalance;
-              console.log('[WALLET PAYMENT] Using API balance:', currentEuroBalance);
-            }
-
-            // Update localStorage
-            localStorage.setItem('innopay_lastBalance', currentEuroBalance.toFixed(2));
-          }
-        } catch (apiError) {
-          console.warn('[WALLET PAYMENT] API fetch failed, using optimistic balance:', apiError);
-          // Continue with optimistic balance if we have one
-          if (!optimisticBalanceStr) {
-            // Stop timer
-            if (orderTimerRef.current) {
-              clearInterval(orderTimerRef.current);
-              orderTimerRef.current = null;
-            }
-            setOrderProcessing(false);
-
-            alert('Nous rencontrons actuellement des problèmes techniques, veuillez nous en excuser');
-            return;
-          }
-        }
-
-        console.log('[WALLET PAYMENT] Final EURO balance:', currentEuroBalance, 'Required:', amountEuroNum);
-
-        // ─────────────────────────────────────────────────────────────────────────
-        // FLOW 6 vs FLOW 7 DECISION POINT (Dec 2025)
-        // ─────────────────────────────────────────────────────────────────────────
-        // Decision: Sufficient balance → FLOW 6 (pay_with_account)
-        //           Insufficient balance → FLOW 7 (pay_with_topup)
-        // Reference: lib/flows.ts detectFlow(), FLOWS.md lines 197-244
-        // ─────────────────────────────────────────────────────────────────────────
-        // Check if sufficient balance for Flow 6
-        if (currentEuroBalance < amountEuroNum) {
-          // Round UP deficit to nearest cent to avoid rounding errors
-          const deficitRaw = amountEuroNum - currentEuroBalance;
-          const deficit = (Math.ceil(deficitRaw * 100) / 100).toFixed(2);
-          // alert(`Solde insuffisant! Vous avez ${currentEuroBalance.toFixed(2)} EURO mais il faut ${amountEuroNum.toFixed(2)} EURO. Redirection vers la page de rechargement...`);
-
-          // Redirect to innopay top-up page
-          const innopayUrl = getInnopayUrl();
-
-          // Stop timer before redirect
-          if (orderTimerRef.current) {
-            clearInterval(orderTimerRef.current);
-            orderTimerRef.current = null;
-          }
-          setOrderProcessing(false);
-
-          // ─────────────────────────────────────────────────────────────────────────
-          // FLOW 7: pay_with_topup - UNIFIED WEBHOOK ARCHITECTURE (Dec 2025)
-          // ─────────────────────────────────────────────────────────────────────────
-          // Architecture: Redirect to innopay with order context → User tops up via Stripe
-          //               → Webhook handles ALL transfers (topup + order payment + change)
-          //               → Stripe redirects back to indiesmenu with order_success=true
-          // Reference: FLOWS.md lines 197-244
-          // NOTE: Cart persists in localStorage automatically - no need to store separately!
-          // ─────────────────────────────────────────────────────────────────────────
-
-          // Generate order memo with distriate suffix (added Dec 18, 2025)
-          const orderMemo = getMemoWithDistriate();
-
-          // Duplicate order check (Level 2 guardrail)
-          if (!skipDuplicateCheckRef.current && checkDuplicateMemo(orderMemo)) {
-            console.log('[FLOW 7] Duplicate memo detected, showing warning modal');
-            if (orderTimerRef.current) { clearInterval(orderTimerRef.current); orderTimerRef.current = null; }
-            setOrderProcessing(false);
-            setShowDuplicateModal(true);
-            return;
-          }
-          skipDuplicateCheckRef.current = false;
-          storeMemoBeforeOrder(orderMemo);
-
-          // Build return URL for Stripe redirect after topup completion
-          const returnUrl = `${window.location.origin}/menu?table=${table}`;
-
-          // Prepare context parameters for innopay
-          const params = new URLSearchParams({
-            topup_for: 'order',                              // Flag: topup for restaurant order
-            source: 'indiesmenu',                            // Source application
-            table: table,                                     // Table number
-            order_amount: amountEuroNum.toFixed(2),          // Order total
-            order_memo: encodeURIComponent(orderMemo),       // Order details with distriate suffix
-            deficit: deficit,                                 // Amount needed
-            account: accountName,                             // Account name (for MiniWallet display)
-            balance: currentEuroBalance.toFixed(2),          // Current balance
-            return_url: encodeURIComponent(returnUrl)        // Return URL after Stripe payment
-          });
-
-          // Set Flow 7 marker for success detection on return
-          localStorage.setItem('innopay_flow_pending', 'flow7_topup_and_pay');
-          console.log('[FLOW 7] Set flow marker: flow7_topup_and_pay');
-
-          // Clear stale balance - will be refreshed from webhook data on return
-          localStorage.removeItem('innopay_lastBalance');
-          console.log('[FLOW 7] Cleared old balance - will fetch fresh after topup');
-
-          console.log('[FLOW 7] Redirecting to innopay with unified webhook approach');
-          console.log('[FLOW 7] Context params:', Object.fromEntries(params));
-
-          // Redirect to innopay landing page with order context
-          // Webhook will execute all transfers and Stripe will redirect back with session_id
-          // Freeze the button until the browser has left: loading the hub takes a few seconds
-          // on a phone, and a button back on "Commandez" looked like the click had failed.
-          setRedirecting(true);
-          window.location.href = `${innopayUrl}?${params.toString()}`;
-          return;
-        }
-
-        // ─────────────────────────────────────────────────────────────────────────
-        // FLOW 6: pay_with_account - TWO-LEG DUAL-CURRENCY ARCHITECTURE (Nov 2025)
-        // ─────────────────────────────────────────────────────────────────────────
-        // Architecture: Customer → innopay (HBD attempt + EURO collateral)
-        //               → innopay API executes restaurant transfer (HBD priority, EURO fallback)
-        //               → Records outstanding debt if HBD insufficient
-        // Reference: lib/flows.ts detectFlow(), FLOWS.md lines 148-196
-        // Status: ✅ STABLE - DO NOT BREAK
-        // ─────────────────────────────────────────────────────────────────────────
-
-        // alert('Étape 2: Récupération du taux EUR/USD...');
-        // 3. Fetch EUR/USD rate using the same approach as kitchen backend
-        const today = new Date();
-        const rateData = await getLatestEurUsdRate(today);
-        const eurUsdRate = rateData.conversion_rate;
-
-        console.log('[WALLET PAYMENT] EUR/USD rate data:', rateData);
-        console.log('[WALLET PAYMENT] EUR/USD rate:', eurUsdRate, 'isFresh:', rateData.isFresh);
-        // alert(`DEBUG: Taux EUR/USD récupéré = ${eurUsdRate} (type: ${typeof eurUsdRate}, isFresh: ${rateData.isFresh})`);
-
-        // alert('Étape 3: Import des fonctions...');
-        // Import necessary functions (signAndBroadcast is now done server-side)
-        const { distriate, createEuroTransferOperation } = await import('@/lib/utils');
-
-        // alert('Étape 4: Génération du suffix...');
-        // 4. Generate distriateSuffix ONCE (used for both transfers)
-        const suffix = distriate();
-        console.log('[WALLET PAYMENT] Generated suffix:', suffix);
-
-        // alert('Étape 5: Récupération des détails...');
-        // 5. Get payment details
-        const orderMemo = getMemo();
-
-        console.log('[WALLET PAYMENT] Payment details:', { amountEuro, orderMemo, suffix, eurUsdRate });
-
-        // Duplicate order check (Level 2 guardrail)
-        const fullMemo = `${orderMemo} ${suffix}`;
-        if (!skipDuplicateCheckRef.current && checkDuplicateMemo(fullMemo)) {
-          console.log('[FLOW 6] Duplicate memo detected, showing warning modal');
-          if (orderTimerRef.current) { clearInterval(orderTimerRef.current); orderTimerRef.current = null; }
-          setOrderProcessing(false);
-          setShowDuplicateModal(true);
-          return;
-        }
-        skipDuplicateCheckRef.current = false;
-        storeMemoBeforeOrder(fullMemo);
-
-        // alert(`Étape 6: Création opération EURO (${amountEuro}€)...`);
-        // 6. Create EURO transfer operation (customer → innopay)
-        // Include the full order memo alongside the distriate suffix so the
-        // on-chain customer-leg transfer reflects what was ordered (not just
-        // an opaque tag). Matches the memo format used elsewhere.
-        const euroOp = createEuroTransferOperation(
-          accountName,
-          'innopay',
-          amountEuro,
-          fullMemo  // orderMemo + distriate suffix
-        );
-
-        // alert('Étape 7: Signature et diffusion (serveur)...');
-        console.log('[WALLET PAYMENT] Sending operation to server for signing...');
-
-        // 5. Sign and broadcast EURO transfer SERVER-SIDE with cascade fallback
-        const innopaySignUrl = getInnopayUrl();
-
-        // Send the active key if we have one; the hub tries it first and falls back to
-        // innopay authority on an authority error. If we have no local active key,
-        // request innopay-authority signing explicitly (mixed posture).
-        const signPayload: any = {
-          operation: euroOp,
-        };
-
-        if (activeKey) {
-          signPayload.activePrivateKey = activeKey;
-          console.log('[WALLET PAYMENT] Sending active key (hub falls back to innopay authority on authority error)');
-        } else {
-          signPayload.useInnopayAuthority = true;
-          signPayload.accountName = accountName;
-          console.log('[WALLET PAYMENT] No local active key — requesting innopay-authority signing');
-        }
-
-        const signResponse = await fetch(`${innopaySignUrl}/api/sign-and-broadcast`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(signPayload)
-        });
-
-        if (!signResponse.ok) {
-          const errorData = await signResponse.json();
-          throw new Error(errorData.message || 'Signing failed');
-        }
-
-        const signResult = await signResponse.json();
-        const txId = signResult.txId;
-        const usedFallback = signResult.usedFallback;
-
-        if (usedFallback) {
-          console.log('[WALLET PAYMENT] EURO transfer successful using innopay authority (fallback)! TX:', txId);
-        } else {
-          console.log('[WALLET PAYMENT] EURO transfer successful with user key! TX:', txId);
-        }
-        // alert(`Étape 8: Transaction réussie! TX: ${txId.substring(0, 8)}...`);
-
-        // Update mini-wallet balance after successful EURO transfer
-        const newBalance = currentEuroBalance - amountEuroNum;
-        console.log('[WALLET PAYMENT] Updating wallet balance from', currentEuroBalance, 'to', newBalance);
-        setWalletBalance({
-          accountName,
-          euroBalance: parseFloat(newBalance.toFixed(2))
-        });
-
-        // Update localStorage optimistically (instant UI update)
-        localStorage.setItem('innopay_lastBalance', newBalance.toFixed(2));
-        localStorage.setItem('innopay_lastBalance_timestamp', Date.now().toString());
-        console.log('[WALLET PAYMENT] Updated localStorage balance optimistically:', newBalance.toFixed(2));
-
-        // Balance will be refreshed from blockchain after the 12s cooldown expires
-        // (the trust window prevents premature fetches that would return stale data)
-        console.log('[WALLET PAYMENT] Balance refresh deferred — trust window active for 12s');
-
-        // 7. Call innopay API to execute HBD/EURO transfer to restaurant
-        const innopayUrl = getInnopayUrl();
-
-        console.log('[WALLET PAYMENT] Calling innopay API...');
-
-        const paymentPayload = {
-          customerAccount: accountName,
-          customerTxId: txId,
-          recipient: process.env.NEXT_PUBLIC_HIVE_ACCOUNT || 'indies.cafe',
-          amountEuro: amountEuro,
-          eurUsdRate: eurUsdRate,
-          orderMemo: orderMemo,
-          distriateSuffix: suffix
-        };
-
-        console.log('[WALLET PAYMENT] Payment payload:', paymentPayload);
-        // alert(`DEBUG: Envoi à wallet-payment - eurUsdRate = ${eurUsdRate}, amountEuro = ${amountEuro}`);
-
-        const response = await fetch(`${innopayUrl}/api/wallet-payment`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(paymentPayload)
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          // alert(`ERREUR API wallet-payment: Status ${response.status} - ${errorText}`);
-          console.error('[WALLET PAYMENT] API error:', response.status, errorText);
-
-          // Stop timer on API error
-          if (orderTimerRef.current) {
-            clearInterval(orderTimerRef.current);
-            orderTimerRef.current = null;
-          }
-          setOrderProcessing(false);
-          return;
-        }
-
-        const result = await response.json();
-        console.log('[WALLET PAYMENT] Payment complete!', result);
-        // alert(`SUCCESS: Paiement traité! Type: ${result.transferType || 'unknown'}`);
-
-        // Stop timer
-        if (orderTimerRef.current) {
-          clearInterval(orderTimerRef.current);
-          orderTimerRef.current = null;
-        }
-        setOrderProcessing(false);
-
-        // 7. Clear cart and show success
-        clearCart();
-
-        // Clear Flow 5 handover marker if this was part of Flow 5
-        const flowState = localStorage.getItem('innopay_flow_pending');
-        if (flowState === 'flow5_existing_account_handover') {
-          console.log('[FLOW 5] Flow 6 payment successful - clearing flow marker');
-          localStorage.removeItem('innopay_flow_pending');
-        }
-
-        // Set Flow 6 cooldown: prevent next Flow 6 for 12 seconds
-        // Hive block time 3s + Hive-Engine indexing 3-10s = balance not queryable yet
-        const FLOW6_COOLDOWN_MS = 12000;
-        const cooldownUntil = Date.now() + FLOW6_COOLDOWN_MS;
-        localStorage.setItem('innopay_balance_trustUntil', cooldownUntil.toString());
-        localStorage.setItem('innopay_flow6_cooldown_until', cooldownUntil.toString());
-        console.log('[FLOW 6] Cooldown set for 12s — blockchain needs time to finalize');
-
-        // Show unified order success banner (replaced alert for consistency with other flows)
-        setFlow6Success(true);
-
-        // Start post-order pulsing (Level 3 guardrail)
-        startOrderPulsing(getMemoFixedPart(fullMemo));
-
-      } catch (error: any) {
-        console.error('[WALLET PAYMENT] Error:', error);
-        // alert(`Erreur: ${error.message || 'Erreur inconnue'}. Vérifiez la console pour plus de détails.`);
-
-        // Stop timer on error
-        if (orderTimerRef.current) {
-          clearInterval(orderTimerRef.current);
-          orderTimerRef.current = null;
-        }
-        setOrderProcessing(false);
-      }
-
-      return; // Exit early - don't run the hive://sign/ flow
+    // An account on this phone: Flow 6, or Flow 7 when the balance is short
+    // (lib/innopay/payment-actions.ts). Without a local active key the hub signs with innopay's
+    // authority ("mixed" posture).
+    if (getAccountName()) {
+      // Not during the Flow 6 cooldown: the chain has not shown the last payment yet.
+      if (flow6Cooldown > 0) return;
+      await paymentFlow.payFromAccount(purchaseOf(false));
+      return;
     }
 
     // If we reach here, no credentials found
@@ -1313,7 +746,7 @@ export default function MenuPage() {
         setIsSafariBanner(false); // This is a protocol handler failure, not Safari detection
       }
     }, 3000);
-  }, [cart, cart.length, orderNow, walletCredentials, isRestaurantClosed, delayedTiming, startOrderPulsing]);
+  }, [cart, orderNow, walletCredentials, isRestaurantClosed, delayedTiming, startOrderPulsing, flow6Cooldown, paymentFlow, purchaseOf]);
 
   const handleGuestCheckout = useCallback(() => {
     if (cart.length === 0) {
@@ -1425,68 +858,13 @@ export default function MenuPage() {
     }
   }, [pendingHiveUrl]);
 
-  // Handle "Créer un compte" button in wallet notification banner
-  // Returns whether it left for the hub (false: duplicate modal), so the banner button un-sinks.
-  const handleCreateAccount = useCallback((): boolean => {
-    const baseUrl = typeof window !== 'undefined'
-      ? `${getInnopayUrl()}/user`
-      : 'https://wallet.innopay.lu/user';
-
-    let orderAmount, discount, customMemo;
-
-    if (isCallWaiterFlow) {
-      orderAmount = '0.02';
-      discount = '0';
-      const reasonEncoded = waiterReason?.trim() ? ` n:${encodeComment(waiterReason.trim())}` : '';
-      // `-inno-` reference required: merchant-hub drops memos without it, so this waiter call
-      // never reached the CO page (found 2026-11-06; same rule as the wallet waiter call).
-      customMemo = `Un serveur est appelé${reasonEncoded} ${table ? `TABLE ${table} ` : ''}${distriate()}`;
-      console.log(`[${new Date().toISOString()}] [CALL WAITER] Opening account creation for call waiter`);
-    } else {
-      orderAmount = getTotalEurPrice();
-      discount = getDiscountAmount();
-      customMemo = getMemoWithDistriate();
-      console.log(`[${new Date().toISOString()}] [INDIESMENU] Opening account creation with params:`, {
-        orderAmount,
-        discount,
-        memoLength: customMemo.length,
-        memo: customMemo.substring(0, 100) + (customMemo.length > 100 ? '...' : '')
-      });
-    }
-
-    const params = new URLSearchParams();
-    params.set('restaurant', 'indies');
-    params.set('restaurant_account', recipient);
-    params.set('table', table);
-    params.set('order_amount', orderAmount);
-    if (parseFloat(discount) > 0) {
-      params.set('discount', discount);
-    }
-    params.set('memo', customMemo);
-
-    const returnUrl = `${window.location.origin}/menu`;
-    params.set('return_url', returnUrl);
-    console.log('[FLOW 5] Return URL set:', returnUrl);
-
-    // Flow 4 (empty cart, no waiter call) creates the account only: no order, so no duplicate
-    // check and no stored memo (a stored memo makes the MiniWallet pulse for a phantom order).
-    if (createAccountCarriesOrder(isCallWaiterFlow, orderAmount)) {
-      // Duplicate order check (Level 2 guardrail)
-      if (!skipDuplicateCheckRef.current && checkDuplicateMemo(customMemo)) {
-        console.log('[FLOW 5] Duplicate memo detected, showing warning modal');
-        setShowDuplicateModal(true);
-        return false;
-      }
-      skipDuplicateCheckRef.current = false;
-      storeMemoBeforeOrder(customMemo);
-    }
-
-    localStorage.setItem('innopay_flow_pending', 'flow5_create_and_pay');
-    console.log('[FLOW 5] Set flow marker: flow5_create_and_pay');
-
-    window.location.href = `${baseUrl}?${params.toString()}`;
-    return true;
-  }, [isCallWaiterFlow, waiterReason, table, recipient, getTotalEurPrice, getDiscountAmount, getMemoWithDistriate]);
+  // "Créer un compte" in the wallet notification banner: Flow 5 (account + the cart or the waiter
+  // call), or Flow 4 with an empty cart. Returns whether it left for the hub (false: duplicate
+  // modal), so the banner button springs back.
+  const handleCreateAccount = useCallback(
+    (): Promise<boolean> => paymentFlow.createAccount(purchaseOf(isCallWaiterFlow, waiterReason)),
+    [paymentFlow, purchaseOf, isCallWaiterFlow, waiterReason],
+  );
 
   // Handle dismissing wallet notification banner
   const handleDismissBanner = useCallback(() => {
@@ -1507,111 +885,17 @@ export default function MenuPage() {
     }
   }, [handleGuestCheckout, isCallWaiterFlow]);
 
+  // Flow 3, from the guest modal's "pay" button (lib/innopay/payment-actions.ts).
   const proceedWithGuestCheckout = useCallback(async () => {
-    if (guestCheckoutProcessing) return; // Prevent duplicate Stripe sessions
-    setGuestCheckoutProcessing(true);
-    setGuestCheckoutSeconds(0);
-    guestCheckoutTimerRef.current = setInterval(() => {
-      setGuestCheckoutSeconds(s => s + 1);
-    }, 1000);
-    try {
-      // Hide wallet notification banner when guest checkout starts
-      setGuestCheckoutStarted(true);
-
-      let amountEuroWithFee: number;
-      let customMemo: string;
-
-      if (isCallWaiterFlow) {
-        // Waiter service: flat 1€ fee (includes CC commission)
-        amountEuroWithFee = 1.00;
-        const { distriate } = await import('@/lib/utils');
-        const distriateSuffix = distriate('gst');
-        const reasonEncoded = waiterReason?.trim() ? ` n:${encodeComment(waiterReason.trim())}` : '';
-        customMemo = `Un serveur est appelé${reasonEncoded} ${table ? `TABLE ${table}` : ''} ${distriateSuffix}`.replace(/\s+/g, ' ').trim();
-        console.log('Guest checkout (waiter):', { amountEuroWithFee, memo: customMemo });
-      } else {
-        // Normal order: no-discount price + 5% processing fee
-        const amountEuroNoDiscount = parseFloat(getTotalEurPriceNoDiscount());
-        amountEuroWithFee = amountEuroNoDiscount * 1.05;
-        const { distriate } = await import('@/lib/utils');
-        const distriateSuffix = distriate('gst');
-        const baseMemo = getMemo();
-        customMemo = `${baseMemo} ${distriateSuffix}`;
-        console.log('Guest checkout:', { amountEuroWithFee, memo: customMemo, distriateSuffix });
-      }
-
-      // Duplicate order check (Level 2 guardrail)
-      if (!skipDuplicateCheckRef.current && checkDuplicateMemo(customMemo)) {
-        console.log('[FLOW 3] Duplicate memo detected, showing warning modal');
-        setShowDuplicateModal(true);
-        return;
-      }
-      skipDuplicateCheckRef.current = false;
-      storeMemoBeforeOrder(customMemo);
-
-      const innopayUrl = getInnopayUrl();
-
-      console.log('[DEBUG] Current hostname:', window.location.hostname);
-      console.log('[DEBUG] Determined innopayUrl:', innopayUrl);
-
-      // Build return URL for success redirect (always back to current origin)
-      const returnUrl = `${window.location.origin}/menu?table=${table}`;
-
-      console.log('Fetching from:', `${innopayUrl}/api/checkout/guest`);
-      console.log('Request body:', { amountEuro: amountEuroWithFee, recipient, memo: customMemo, returnUrl });
-
-      // Timeout after 30 seconds to avoid infinite spinner
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-      const response = await fetch(`${innopayUrl}/api/checkout/guest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amountEuro: amountEuroWithFee,
-          // Never hard-code the account: on dev this must be indies-test (NEXT_PUBLIC_HIVE_ACCOUNT).
-          recipient,
-          memo: customMemo,
-          returnUrl
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Response error data:', errorData);
-        throw new Error(`Checkout failed: ${response.statusText} - ${JSON.stringify(errorData)}`);
-      }
-
-      const data = await response.json();
-      console.log('Response data:', data);
-
-      const { url } = data;
-      console.log('Redirecting to Stripe:', url);
-
-      // Redirect to Stripe checkout - DON'T clear cart yet, wait for blockchain confirmation
-      window.location.href = url;
-
-    } catch (error: any) {
-      console.error('Guest checkout error:', error);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-
-      if (guestCheckoutTimerRef.current) { clearInterval(guestCheckoutTimerRef.current); guestCheckoutTimerRef.current = null; }
-      setGuestCheckoutProcessing(false); // Re-enable button on error
+    if (guestCheckoutProcessing) return; // one Stripe session per tap
+    setGuestCheckoutStarted(true);
+    const left = await paymentFlow.guestCheckout(purchaseOf(isCallWaiterFlow, waiterReason));
+    if (!left) {
+      // Duplicate modal or grey error banner: back on the menu, the guest key usable again.
       setGuestCheckoutStarted(false);
-      setShowGuestWarningModal(false); // Close modal so user can retry
-      const isTimeout = error instanceof DOMException && error.name === 'AbortError';
-      const errorDetails = isTimeout
-        ? 'Le processeur de paiements ne répond pas.'
-        : (error.message || 'Erreur inconnue');
-      alert(`${errorDetails}\n\nVeuillez réessayer ou contacter contact@innopay.lu`);
+      setShowGuestWarningModal(false);
     }
-  }, [getTotalEurPriceNoDiscount, getMemo, clearCart, table, guestCheckoutProcessing, isCallWaiterFlow, waiterReason, recipient]);
+  }, [guestCheckoutProcessing, paymentFlow, purchaseOf, isCallWaiterFlow, waiterReason]);
 
 
   const toggleCategory = useCallback((categoryId: number) => {
@@ -1714,14 +998,10 @@ export default function MenuPage() {
 
       {/* UNIFIED Success Banner - Flow 4 (wallet ready) / Flows 3, 5, 6, 7 (order sent) */}
       <FlowSuccessBanner
-        kind={paymentState.status === 'success' ? paymentState.banner : flow6Success ? 'orderSent' : null}
-        onDismiss={() => {
-          setFlow6Success(false);
-          dispatchPayment({ type: 'DISMISS_BANNER' });
-        }}
+        kind={paymentState.status === 'success' ? paymentState.banner : null}
+        onDismiss={() => dispatchPayment({ type: 'DISMISS_BANNER' })}
       />
-
-      <WaiterCalledBanner show={waiterCalledSuccess} onDismiss={() => setWaiterCalledSuccess(false)} />
+      <WaiterCalledBanner show={paymentState.status === 'waiter_called'} onDismiss={() => dispatchPayment({ type: 'DISMISS_BANNER' })} />
 
       {/* Restaurant Closed Popup — shown when trying to order drinks outside opening hours */}
       {showClosedPopup && <RestaurantClosedPopup info={nextOpenInfo} onClose={() => setShowClosedPopup(false)} />}
@@ -1824,7 +1104,6 @@ export default function MenuPage() {
         onOrderAnyway={() => {
           setShowDuplicateModal(false);
           setShowGuestWarningModal(false);
-          setGuestCheckoutProcessing(false);
           skipDuplicateCheckRef.current = true;
           // Mixed posture: an account is sufficient — a missing local active key
           // is handled by the innopay-authority fallback inside handleOrder().
@@ -1838,7 +1117,6 @@ export default function MenuPage() {
         onCancel={() => {
           setShowDuplicateModal(false);
           setShowGuestWarningModal(false);
-          setGuestCheckoutProcessing(false);
           setGuestCheckoutStarted(false);
         }}
       />
@@ -1868,7 +1146,7 @@ export default function MenuPage() {
         open={showGuestWarningModal}
         waiterFlow={isCallWaiterFlow}
         processing={guestCheckoutProcessing}
-        seconds={guestCheckoutSeconds}
+        seconds={busySeconds}
         guestTotal={(parseFloat(getTotalEurPriceNoDiscount()) * 1.05).toFixed(2)}
         discountLost={getDiscountAmount()}
         onProceed={() => proceedWithGuestCheckout()}
@@ -1927,12 +1205,12 @@ export default function MenuPage() {
             <button onClick={() => { setWaiterReason(''); setWaiterConfirmed(false); setShowWaiterModal(true); }} className="call-waiter-button">
               Serveur&nbsp;!
             </button>
-            <button onClick={handleOrder} className="order-now-button" disabled={redirecting || orderProcessing || flow6Cooldown > 0}>
-              {redirecting
-                ? t('order.redirecting')
+            <button onClick={handleOrder} className="order-now-button" disabled={paymentBusy || flow6Cooldown > 0}>
+              {paymentState.status === 'redirecting'
+                ? t('order.redirecting', { seconds: busySeconds })
                 : flow6Cooldown > 0
                   ? t('order.balanceCooldown', { seconds: flow6Cooldown })
-                  : orderProcessing ? `${orderElapsedSeconds}s` : t('order.button')}
+                  : paymentBusy ? `${busySeconds}s` : t('order.button')}
             </button>
           </div>
         </div>

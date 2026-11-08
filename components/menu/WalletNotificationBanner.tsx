@@ -57,8 +57,8 @@ interface WalletNotificationBannerProps {
   table: string;
   recipient: string;
   onImportAccount: () => void;
-  /** Returns false when it did not leave the page (e.g. the duplicate-order modal opened). */
-  onCreateAccount: () => boolean | void;
+  /** Returns (or resolves to) false when it did not leave the page (duplicate-order modal, hub down). */
+  onCreateAccount: () => boolean | void | Promise<boolean | void>;
   onExternalWallet: () => void;
   onGuestCheckout: () => void;
   onDismiss: () => void;
@@ -112,7 +112,10 @@ const WalletNotificationBanner: React.FC<WalletNotificationBannerProps> = React.
   const handleCreateClick = () => {
     if (creating) return; // second tap while the hub loads
     setCreating(true);
-    if (onCreateAccount() === false) setCreating(false);
+    const left = onCreateAccount();
+    if (left === false) setCreating(false);
+    // Async since R4c: the page first checks that the hub answers (false: duplicate modal or hub down).
+    else if (left instanceof Promise) void left.then((ok) => { if (ok === false) setCreating(false); });
   };
 
   return (

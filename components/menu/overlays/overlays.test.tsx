@@ -53,7 +53,8 @@ it('guest waiter warning and the redirect state', () => {
   const body = text(host)!;
   expect(body).toContain('Appeler un serveur sans compte coûte 1.00€ (commission carte bancaire).');
   expect(body).toContain('En créant un compte Innopay gratuit, ce service ne coûte que 0.02€.');
-  expect(body).toContain('Redirection vers le paiement (3s)');
+  // The limit is shown, so a slow Stripe start does not look like a hang (user request 2026-11-08).
+  expect(body).toContain('Redirection vers le paiement (3s/30s)');
   expect(body).not.toContain('Créer un compte (0.02€)'); // hidden while redirecting
 });
 

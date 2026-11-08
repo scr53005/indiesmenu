@@ -10,7 +10,7 @@ import { getInnopayUrl } from '@/lib/utils';
 import { getAccountName, saveKeys, saveWalletBlob } from '@/lib/innopay/keystore';
 import { classifyReturn, FLOW_MARKER_KEY } from '@/lib/innopay/payment-return';
 import {
-  ACCOUNT_CREATING_MS, LATEST_MEMO_KEY, applyHubReturn, isAllowedWalletOrigin, parseWalletMessage,
+  ACCOUNT_CREATING_MS, applyHubReturn, finishPaid, isAllowedWalletOrigin, parseWalletMessage,
   type HubCredentials, type WalletView,
 } from '@/lib/innopay/apply-return';
 import type { PaymentEvent, PaymentState } from '@/lib/innopay/paymentStateMachine';
@@ -106,10 +106,8 @@ export function usePaymentReturn(options: PaymentReturnOptions): void {
         if (data?.isComplete) {
           stop();
           const { clearCart, startOrderPulsing, dispatch } = latest.current;
-          clearCart(); // only now: the order is on the chain
-          const memo = localStorage.getItem(LATEST_MEMO_KEY);
-          if (memo) startOrderPulsing(memo);
-          dispatch({ type: 'PAYMENT_SUCCESS', banner: 'orderSent' });
+          // Only now: the order is on the chain. A guest waiter call keeps the cart.
+          finishPaid({ dispatch, storage: localStorage, clearCart, startOrderPulsing });
           return;
         }
       } catch (error) {

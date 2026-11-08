@@ -15,7 +15,7 @@ const fr = {
   // Cart order button
   'order.button': 'Commandez',
   'order.balanceCooldown': 'Solde... {seconds}s',
-  'order.redirecting': 'Veuillez patienter…',
+  'order.redirecting': 'Veuillez patienter… {seconds}s',
 
   // Payment progress (yellow) and transmission error (grey)
   'payment.success': 'Paiement réussi!',
@@ -27,6 +27,11 @@ const fr = {
   'payment.accountCreatedPaid': 'Compte créé! Paiement réussi!',
   // Grey error banner (PaymentErrorBanner)
   'payment.credentialsFailed': "Paiement reçu, mais votre portefeuille n'a pas pu être chargé. Rechargez la page pour réessayer.",
+  'payment.connectionError': 'Connexion impossible. Vérifiez votre connexion internet et réessayez.',
+  'payment.failed': "Le paiement n'a pas abouti. Veuillez réessayer.",
+  'payment.technicalProblem': 'Nous rencontrons actuellement des problèmes techniques, veuillez nous en excuser.',
+  'payment.notForwarded': "Votre paiement est parti, mais la commande n'a pas pu être transmise. Veuillez appeler un serveur.",
+  'payment.guestTimeout': 'Le processeur de paiements ne répond pas. Veuillez réessayer.',
 
   // Green success banner, flows 4–7
   'success.walletReady': 'Votre portefeuille Innopay est prêt, vous pouvez déjà commander',
@@ -108,7 +113,7 @@ const fr = {
   'guest.discountLost': 'En commandant sans créer un compte vous {lost}',
   'guest.discountLostAmount': 'renoncez à un discount de: {amount}',
   'guest.goBack': 'Revenir pour bénéficier',
-  'guest.redirecting': 'Redirection vers le paiement ({seconds}s)',
+  'guest.redirecting': 'Redirection vers le paiement ({seconds}s/{max}s)',
   'guest.continuePay': 'Continuer et payer {amount}',
 
   // Connected wallet strip

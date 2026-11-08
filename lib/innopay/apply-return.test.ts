@@ -67,6 +67,41 @@ describe('applyHubReturn — one case per return', () => {
     expect(env.state()).toEqual({ status: 'idle' });
   });
 
+  // R4c (planned 2026-11-06): an order abandoned at Stripe kept the MiniWallet pulsing for 2 h, and
+  // paying the same cart again tripped the duplicate-order modal.
+  it('Stripe cancel forgets the stored order, the waiter flag and the flow marker', async () => {
+    const env = setup({ store: {
+      innopay_latestMemoContent: 'memo-x', innopay_latestMemoDateTime: '123',
+      innopay_waiter_call_pending: '7', [FLOW_MARKER_KEY]: 'flow5_create_and_pay', cart: '[1]',
+    } });
+    await returnTo('table=7&payment=cancelled', env);
+    for (const key of ['innopay_latestMemoContent', 'innopay_latestMemoDateTime', 'innopay_waiter_call_pending', FLOW_MARKER_KEY]) {
+      expect(env.store.has(key), key).toBe(false);
+    }
+    expect(env.store.get('cart')).toBe('[1]');
+  });
+
+  // R4c: a waiter call paid through the hub (Q-R4-2: Flow 7 when the balance is short) used to
+  // empty the cart and say "order sent".
+  it('waiter call back from Flow 7: cart kept, waiter banner, no pulse', async () => {
+    const env = setup({ account: 'alice', store: { [FLOW_MARKER_KEY]: 'flow7_topup_and_pay', innopay_waiter_call_pending: '7', cart: '[1]', innopay_latestMemoContent: 'm' } });
+    await returnTo('order_success=true&flow=7&session_id=cs&credential_pending=true&optimistic_balance=14.98', env, true);
+    expect(env.deps.clearCart).not.toHaveBeenCalled();
+    expect(env.store.get('cart')).toBe('[1]');
+    expect(env.state()).toEqual({ status: 'waiter_called', table: '7' });
+    expect(env.deps.startOrderPulsing).not.toHaveBeenCalled();
+    expect(env.store.has('innopay_waiter_call_pending')).toBe(false);
+    expect(env.deps.showWallet).toHaveBeenCalledWith({ accountName: 'alice', euroBalance: 14.98 });
+  });
+
+  it('waiter call back from Flow 5 (new account): keys saved, cart kept, waiter banner', async () => {
+    const env = setup({ store: { [FLOW_MARKER_KEY]: 'flow5_create_and_pay', innopay_waiter_call_pending: '12', cart: '[1]' } });
+    await returnTo('account_created=true&session_id=cs_9', env);
+    expect(env.deps.saveKeys).toHaveBeenCalled();
+    expect(env.deps.clearCart).not.toHaveBeenCalled();
+    expect(env.state()).toEqual({ status: 'waiter_called', table: '12' });
+  });
+
   it('Flow 3 guest paid: yellow "awaiting the chain", cart kept until the poll confirms', async () => {
     const env = setup();
     await returnTo('table=7&payment=success&session_id=cs_1', env);
